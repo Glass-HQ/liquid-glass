@@ -563,8 +563,7 @@ function Home({ theme, preference, onPreferenceChange }: SiteThemeProps) {
       <SiteNavigation shapeRef={sidebarShape} view={view} theme={theme} preference={preference} onPreferenceChange={onPreferenceChange} />
       <div className="site-main">
         <GlassShape radius={8} render={<a href="#main-content" aria-label="Skip to content" />} className="skip-link">Skip to content</GlassShape>
-        <GlassScene appearance={theme} className={`docs-scroll-scene ${view !== "introduction" ? "has-stepper" : ""}`}>
-          <GlassContent layout="flow" className="docs-backdrop">
+        <div className={`docs-scroll-scene ${view !== "introduction" ? "has-stepper" : ""}`}>
             <div ref={pageViewport} className="docs-viewport">
               <div className="site-topbar"><SidebarTrigger aria-label="Toggle navigation" /></div>
               <div className="page docs-page">
@@ -583,8 +582,8 @@ function Home({ theme, preference, onPreferenceChange }: SiteThemeProps) {
                 </main>
               </div>
             </div>
-          </GlassContent>
           {view !== "introduction" && <ComponentStepper
+            theme={theme}
             items={componentLinks}
             active={view === "all" ? visibleExample : componentLinks.findIndex((item) => item.value === view)}
             onNavigate={(index) => {
@@ -599,7 +598,7 @@ function Home({ theme, preference, onPreferenceChange }: SiteThemeProps) {
               } else location.hash = value
             }}
           />}
-        </GlassScene>
+        </div>
       </div>
     </SidebarProvider>
   )

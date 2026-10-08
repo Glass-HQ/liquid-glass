@@ -2,7 +2,8 @@ import { generateClipPath, observeResize } from "@lisse/core"
 import { useLayoutEffect, useRef } from "react"
 import { Stepper } from "pasito"
 import "pasito/styles.css"
-import { GlassSurface } from "@glass-sdk/liquid-glass"
+import { GlassContent, GlassScene, GlassSurface } from "@glass-sdk/liquid-glass"
+import type { GlassAppearance } from "@glass-sdk/liquid-glass"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons"
 import { Button } from "@/components/ui/button"
@@ -10,10 +11,11 @@ import { Button } from "@/components/ui/button"
 type Item = { value: string; label: string }
 
 /** Pasito owns the steps; the public glass surface supplies the material. */
-export function ComponentStepper({ items, active, onNavigate }: {
+export function ComponentStepper({ items, active, onNavigate, theme }: {
   items: readonly Item[]
   active: number
   onNavigate: (index: number) => void
+  theme: GlassAppearance
 }) {
   const root = useRef<HTMLElement>(null)
   const focusStep = useRef(false)
@@ -36,7 +38,11 @@ export function ComponentStepper({ items, active, onNavigate }: {
     return () => stop.forEach(unsubscribe => unsubscribe())
   }, [active, items])
 
+  // The stepper carries its own small scene: a page-wide scene would push
+  // the whole column through a software filter on WebKit.
   return <div className="component-stepper-position">
+    <GlassScene className="component-stepper-scene" material="regular" appearance={theme}>
+    <GlassContent><div className="component-stepper-backdrop" /></GlassContent>
     <GlassSurface ref={root} render={<nav />} aria-label="Component navigation" material="regular" radius="capsule" interactive className="component-stepper"
       onKeyDown={(event) => {
         if (!(event.target instanceof HTMLElement) || event.target.getAttribute("role") !== "tab") return
@@ -58,5 +64,6 @@ export function ComponentStepper({ items, active, onNavigate }: {
         <HugeiconsIcon icon={ArrowRight01Icon} size={18} />
       </Button>
     </GlassSurface>
+    </GlassScene>
   </div>
 }
