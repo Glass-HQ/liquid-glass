@@ -1,0 +1,40 @@
+{
+  "name": "liquid-glass-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "bun run --cwd packages/liquid-glass build && bun run --cwd apps/site build",
+    "typecheck": "bun run --cwd packages/liquid-glass build && bun run --cwd apps/site typecheck",
+    "test": "bun test packages/liquid-glass",
+    "lint": "oxlint apps/site/src packages/liquid-glass/src --deny-warnings",
+    "test:gpu": "node scripts/gpu-smoke.mjs && node scripts/progressive-gpu-smoke.mjs",
+    "check:shader": "node packages/liquid-glass/node_modules/vgpu/bin/vgpu.js check packages/liquid-glass/src/gpu/maps.wgsl --require-validation && node packages/liquid-glass/node_modules/vgpu/bin/vgpu.js check packages/liquid-glass/src/gpu/progressive.wgsl --require-validation",
+    "vgpu": "node packages/liquid-glass/node_modules/vgpu/bin/vgpu.js",
+    "check:gpu": "bun run vgpu doctor",
+    "native:build": "node scripts/build-native.mjs",
+    "native": "bun run native:build && open \"apps/native-reference/build/Liquid Glass Reference.app\"",
+    "release:check": "bun run check:version && bun run typecheck && bun run lint && bun run test && bun run build && bun run check:package && bun run check:gpu && bun run check:shader && bun run test:gpu",
+    "icons": "node scripts/site-icons.mjs",
+    "check:package": "npm pack --workspace @glass-sdk/liquid-glass --dry-run",
+    "check:version": "node packages/liquid-glass/scripts/check-version.mjs"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "@types/pngjs": "^6.0.5",
+    "oxlint": "^1.87.0",
+    "pngjs": "^7.0.0",
+    "vercel": "^62.4.0"
+  },
+  "overrides": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}

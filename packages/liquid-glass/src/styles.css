@@ -1,0 +1,341 @@
+:where(.lg-scene) {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+}
+:where(.lg-content) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+:where(.lg-surface) {
+  position: relative;
+  background: transparent;
+  border: 0;
+  box-sizing: border-box;
+  --lg-material-foreground: var(--lg-foreground, #111113);
+  color: var(--lg-material-foreground);
+}
+:where(.lg-surface)[data-glass-appearance="dark"] {
+  --lg-material-foreground: var(--lg-foreground, #fff);
+  color: var(--lg-material-foreground);
+}
+:where(.lg-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.625;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+:where(.lg-button)[data-popup-open] {
+  background: var(--lg-control-highlight);
+}
+:where(.lg-button):focus-visible,
+:where(.lg-tab):focus-visible {
+  outline: none;
+  background: var(--lg-control-highlight);
+}
+:where(.lg-button):disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+:where(.lg-toolbar) {
+  --lg-toolbar-inset: 3px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+:where(.lg-toolbar-cluster) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--lg-toolbar-inset, 3px);
+  flex: 1 0 auto;
+}
+:where(.lg-toolbar)[data-segmented] > :where(.lg-toolbar-cluster) { flex: 0 0 auto; }
+:where(.lg-toolbar) :where(.lg-button) {
+  min-height: 22px;
+  padding: 0 8px;
+}
+:where(.lg-tabs-list) {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  gap: 0;
+}
+:where(.lg-tab) {
+  display: grid;
+  align-items: center;
+  position: relative;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+  height: 26px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 1.333333;
+  font-weight: 500;
+
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 160ms;
+}
+:where(.lg-tab-label) {
+  grid-area: 1 / 1;
+}
+:where(.lg-tab)[data-active] {
+  opacity: 1;
+  font-weight: 500;
+}
+:where(.lg-menu-positioner) {
+  z-index: 20;
+}
+:where(.lg-menu-anchor) {
+  display: inline-flex;
+  vertical-align: middle;
+}
+:where(.lg-menu, .lg-toolbar, .lg-toolbar-cluster, .lg-button, .lg-tabs-list) {
+  /* Tint the existing material instead of covering it with an opaque fill.
+     currentColor follows the control foreground in either appearance. */
+  --lg-control-highlight: color-mix(in oklab, currentColor 8%, transparent);
+}
+:where(.lg-menu) {
+  --lg-menu-inset: 4px;
+  --lg-menu-highlight: var(--lg-control-highlight);
+  min-width: 128px;
+  padding: var(--lg-menu-inset);
+  outline: none;
+  overscroll-behavior: contain;
+}
+:where(.lg-menu)
+  :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) {
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 4px 8px;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.625;
+  cursor: default;
+  outline: none;
+}
+:where(.lg-menu)
+  :is(
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"]
+  )[data-highlighted],
+:where(.lg-menu)
+  :is(
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"]
+  ):focus-visible,
+:where(.lg-menu)
+  :is(
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"]
+  ):active {
+  background: var(--lg-menu-highlight);
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(.lg-tab) {
+    transition: none;
+  }
+}
+
+/* Interactive glass illuminates from within, starting beneath the pointer.
+   The scene writes --lg-glow (0–1) and its position on the surface. */
+:where(.lg-surface[data-glass-interactive]) {
+  --lg-glow-color: rgb(255 255 255 / 0.3);
+  background-image: radial-gradient(
+    var(--lg-glow-size, 64px) circle at var(--lg-glow-x, 50%) var(--lg-glow-y, 50%),
+    color-mix(in srgb, var(--lg-glow-color) calc(var(--lg-glow, 0) * 100%), transparent),
+    transparent
+  );
+}
+:where(.lg-surface[data-glass-interactive][data-glass-appearance="dark"]) {
+  --lg-glow-color: rgb(255 255 255 / 0.16);
+}
+:where(.lg-surface[data-glass-interactive]) { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
+/* While glass grows out of, or back into, another shape, its content waits
+   for room: it condenses out of a blur as the outline opens, and dissolves
+   back into one as it closes. */
+:where(.lg-surface[data-glass-morph]) > * {
+  opacity: calc(var(--lg-morph, 1) * var(--lg-glass-ready, 1));
+  filter: blur(calc((1 - var(--lg-morph, 1)) * 6px));
+}
+/* Glass that has become another surface: its material is drawn by that
+   surface, and its own content withdraws as the glass leaves it. */
+:where([data-glass-morph-source]) {
+  opacity: calc(1 - var(--lg-morph-source, 1));
+  filter: blur(calc(var(--lg-morph-source, 1) * 3px));
+}
+
+:where(.lg-tab-indicator) {
+  position: absolute;
+  left: var(--active-tab-left);
+  top: var(--active-tab-top);
+  width: var(--active-tab-width);
+  height: var(--active-tab-height);
+  pointer-events: none;
+}
+
+:where(.lg-button)[data-size="xs"],
+:where(.lg-button)[data-size="icon-xs"] { min-height: 20px; }
+:where(.lg-button)[data-size="sm"],
+:where(.lg-button)[data-size="icon-sm"] { min-height: 24px; }
+:where(.lg-button)[data-size="lg"],
+:where(.lg-button)[data-size="icon-lg"] { min-height: 32px; padding-inline: 10px; }
+:where(.lg-button)[data-size="xs"] { font-size: 10px; }
+:where(.lg-button)[data-size^="icon"] { width: 28px; height: 28px; padding: 0; }
+:where(.lg-button)[data-size="icon-xs"] { width: 20px; height: 20px; }
+:where(.lg-button)[data-size="icon-sm"] { width: 24px; height: 24px; }
+:where(.lg-button)[data-size="icon-lg"] { width: 32px; height: 32px; }
+:where(.lg-button) > svg, :where(.lg-toolbar-button) > svg { width: 14px; height: 14px; }
+:where(.lg-button)[data-size="xs"] > svg,
+:where(.lg-button)[data-size="icon-xs"] > svg { width: 10px; height: 10px; }
+:where(.lg-button)[data-size="sm"] > svg,
+:where(.lg-button)[data-size="icon-sm"] > svg { width: 12px; height: 12px; }
+:where(.lg-button)[data-size="lg"] > svg,
+:where(.lg-button)[data-size="icon-lg"] > svg { width: 16px; height: 16px; }
+
+:where(.lg-toolbar-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+:where(.lg-toolbar-button)[data-size="default"] {
+  width: auto;
+  padding-inline: 8px;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+:where(.lg-toolbar, .lg-toolbar-cluster)[data-orientation="vertical"] { flex-direction: column; }
+:where(.lg-toolbar-spacer) {
+  flex: 1 0 var(--lg-toolbar-space, 8px);
+  align-self: stretch;
+  pointer-events: none;
+}
+:where(.lg-toolbar-spacer)[data-sizing="fixed"] { flex-grow: 0; }
+:where(.lg-toolbar-button):is(:hover, :focus-visible, :active, [aria-pressed="true"], [data-popup-open]):not([data-disabled]):not(:disabled) {
+  background: var(--lg-control-highlight);
+}
+:where(.lg-toolbar-button):focus-visible {
+  outline: none;
+}
+:where(.lg-toolbar-button)[data-disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+:where(.lg-tabs-list)[data-size="sm"] :where(.lg-tab) { height: 22px; }
+:where(.lg-tabs-list)[data-size="lg"] :where(.lg-tab) {
+  height: 30px;
+  padding-inline: 12px;
+  font-size: 13px;
+}
+:where(.lg-tabs-list)[data-orientation="vertical"] {
+  flex-direction: column;
+}
+:where(.lg-tabs-list)[data-orientation="vertical"] :where(.lg-tab-indicator) {
+  left: var(--active-tab-left);
+  top: var(--active-tab-top);
+
+}
+:where(.lg-tab)[data-disabled],
+:where(.lg-menu) [data-disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+:where(.lg-menu) [role="separator"] {
+  height: 1px;
+  margin: 4px 8px;
+  background: currentColor;
+  opacity: 0.15;
+}
+
+:where(.lg-menu) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) > svg { width: 14px; height: 14px; }
+
+/* Open popups and their optical layer share a stacking context above nearby content. */
+/* Set by the scene while a popup surface is registered in it. A `:has()` rule
+   here would re-style the whole scene on every inline style change inside it. */
+:where(.lg-scene[data-glass-popup]) { z-index: 20; }
+
+:where(.lg-content[data-layout="flow"]) { position: relative; inset: auto; height: auto; }
+:where(.lg-progressive-blur) { position: absolute; pointer-events: none; }
+:where(.lg-progressive-blur[data-edge="top"]) { inset: 0 0 auto; height: var(--lg-blur-size); }
+:where(.lg-progressive-blur[data-edge="bottom"]) { inset: auto 0 0; height: var(--lg-blur-size); }
+:where(.lg-progressive-blur[data-edge="inline-start"]) { inset-block: 0; inset-inline-start: 0; width: var(--lg-blur-size); }
+:where(.lg-progressive-blur[data-edge="inline-end"]) { inset-block: 0; inset-inline-end: 0; width: var(--lg-blur-size); }
+
+:where(.lg-slider) { position: relative; width: 280px; max-width: 100%; touch-action: none; }
+:where(.lg-slider-control) { position: relative; display: flex; align-items: center; height: 28px; user-select: none; }
+:where(.lg-slider-track) { position: relative; width: 100%; height: 6px;  background: rgb(128 128 128 / 0.3); }
+:where(.lg-slider-fill) { height: 100%;  background: var(--lg-accent); }
+:where(.lg-slider-thumb) { width: 20px; height: 16px; translate: -50% -50%;  cursor: grab; z-index: 1; outline: none; }
+:where(.lg-slider-thumb):dir(rtl) { translate: 50% -50%; }
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-thumb) { translate: -50% 50%; }
+:where(.lg-slider-thumb)[data-press-phase="pressed"] { cursor: grabbing; }
+:where(.lg-control-thumb) { --lg-control-progress: 0; --lg-control-grow-x: 2.5px; --lg-control-grow-y: 2px; }
+:where(.lg-switch-thumb) { --lg-control-grow-x: 9px; --lg-control-grow-y: 5.5px; }
+:where(.lg-control-lens, .lg-control-face) { position: absolute; inset: calc(-1 * var(--lg-control-grow-y) * var(--lg-control-progress)) calc(-1 * var(--lg-control-grow-x) * var(--lg-control-progress));  pointer-events: none; }
+:where(.lg-control-face) { background: #fff; opacity: calc(1 - var(--lg-control-progress)); box-shadow: 0 1px 2px rgb(0 0 0 / 0.1), 0 3px 12px rgb(0 0 0 / 0.1); }
+:where(.lg-control-lens) { opacity: var(--lg-control-progress); }
+
+:where(.lg-slider-thumb):focus-within { outline: none; }
+:where(.lg-slider-ticks) { display: flex; justify-content: space-between; position: absolute; inset-inline: 0; top: 23px; pointer-events: none; }
+:where(.lg-slider-ticks) > span { width: 2px; height: 2px; border-radius: 50%; background: rgb(128 128 128 / 0.65); }
+:where(.lg-slider)[data-orientation="vertical"] { width: 28px; height: 200px; }
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-control) { width: 28px; height: 100%; justify-content: center; }
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-track) { width: 6px; height: 100%; }
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-fill) { width: 100%; }
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-ticks) { inset: 0 auto 0 23px; flex-direction: column-reverse; }
+:where(.lg-switch) { --lg-switch-travel: 18px; position: relative; display: inline-flex; align-items: center; flex-shrink: 0; box-sizing: border-box; width: 54px; height: 24px; padding: 2px; border: 0;  cursor: pointer; touch-action: none; user-select: none; outline: none; transition: background-color 200ms ease-in-out; }
+:where(.lg-switch-track) { position: absolute; inset: 0; pointer-events: none; background: rgb(128 128 128 / 0.4); transition: background-color 200ms ease-in-out; }
+:where(.lg-switch)[data-checked] > .lg-switch-track, :where(.lg-switch)[data-presentation-checked="true"] > .lg-switch-track { background: var(--lg-accent); }
+:where(.lg-switch)[data-presentation-checked="false"] > .lg-switch-track { background: rgb(128 128 128 / 0.4); }
+:where(.lg-switch):dir(rtl) { --lg-switch-travel: -18px; }
+:where(.lg-switch-thumb) { position: relative; display: block; width: 32px; height: 20px;  flex-shrink: 0; left: calc(var(--lg-switch-position, 0) * var(--lg-switch-travel)); }
+
+
+:where(.lg-switch):focus-visible { outline: none; }
+:where(.lg-switch)[data-readonly] { cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  :where(.lg-slider-thumb, .lg-switch, .lg-switch-track, .lg-switch-thumb, .lg-control-face),
+  :where(.lg-switch)[data-dragging] :where(.lg-switch-thumb) { transition: none; }
+}
+@media (forced-colors: active) {
+  :where(.lg-slider-track, .lg-switch-track) { background: Canvas; border: 1px solid ButtonText; }
+  :where(.lg-slider-fill), :where(.lg-switch)[data-checked] > .lg-switch-track { background: Highlight; }
+  :where(.lg-slider-thumb, .lg-switch-thumb) { background: ButtonText; }
+}
+
+:where(.lg-switch:has([data-glass-motion="none"]), .lg-switch:has([data-glass-motion="none"]) > .lg-switch-track) { transition: none; }
+
+/* No rounded-rectangle first paint while Lisse measures the shape. */
+[data-lg-shape]:not([style*="clip-path"]), .lg-surface:not([style*="clip-path"]) { visibility: hidden; }

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preload" href="/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <title>Liquid Glass</title>
+    <meta name="description" content="Liquid Glass materials for React, the web, and Electron. Explore Clear and Regular, interactive examples." />
+    <meta name="theme-color" content="#faf9f6" />
+    <script>
+      try {
+        const saved = localStorage.getItem("liquid-glass-theme");
+        const dark = saved === "dark" || (saved !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        document.querySelector('meta[name="theme-color"]').content = dark ? "#191918" : "#faf9f6";
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

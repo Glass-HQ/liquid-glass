@@ -1,0 +1,15 @@
+name: GPU acceptance
+on: workflow_dispatch
+jobs:
+  rendering:
+    runs-on: [self-hosted, macOS, gpu]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run check:gpu
+      - run: bun run check:shader
+      - run: bun run test:gpu

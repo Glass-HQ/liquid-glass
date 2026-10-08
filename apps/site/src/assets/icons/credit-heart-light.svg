@@ -1,0 +1,13 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="glass" x1="12" y1="3" x2="12" y2="21.733" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#575757" stop-opacity=".6"/>
+      <stop offset="1" stop-color="#151515" stop-opacity=".6"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="12" y1="3" x2="12" y2="16" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M12 5.1799C9.85935 2.67747 5.87341 2.13931 3.04042 4.56899C2.16094 5.32323 1.51422 6.33666 1.21601 7.44688C.630384 9.62989 1.27073 11.789 2.71098 13.2714C4.3634 14.9721 8.07484 18.6558 10.5277 21.0904L10.5894 21.1517C11.3704 21.9267 12.6296 21.9267 13.4105 21.1517L13.4723 21.0904C15.9251 18.6558 19.6366 14.9721 21.289 13.2714C22.7292 11.789 23.3696 9.62989 22.784 7.44688C22.4857 6.33666 21.839 5.32323 20.9595 4.56899C18.1266 2.13931 14.1406 2.67747 12 5.1799Z" fill="url(#glass)" stroke="url(#edge)" stroke-width=".75"/>
+</svg>

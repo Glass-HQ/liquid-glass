@@ -1,0 +1,47 @@
+name: Publish npm package
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact reviewed package version to publish
+        required: true
+        default: '0.0.1'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: npm-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@latest
+      - name: Verify reviewed version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node -e 'const p=require("./packages/liquid-glass/package.json"); if(p.version!==process.env.RELEASE_VERSION) throw Error("Version differs from reviewed release")'
+      - run: bun run check:version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run test
+      - run: bun run build
+      - run: bun run check:package
+      # Requires npm's trusted publisher configured for this exact repository
+      # and publish.yml. First publication may need interactive owner auth.
+      # Browser/GPU acceptance is recorded locally before manual dispatch.
+      - run: bun run check:version
+      - run: npm publish --workspace @glass-sdk/liquid-glass --access public --provenance
+      - name: Verify registry metadata
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npm view "@glass-sdk/liquid-glass@$RELEASE_VERSION" version dist.integrity

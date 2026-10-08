@@ -1,0 +1,82 @@
+{
+  "name": "@glass-sdk/liquid-glass",
+  "version": "0.0.1",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/types/core/index.d.ts",
+      "import": "./dist/core.js"
+    },
+    "./gpu": {
+      "types": "./dist/types/gpu/index.d.ts",
+      "import": "./dist/gpu.js"
+    },
+    "./dom": {
+      "types": "./dist/types/dom/index.d.ts",
+      "import": "./dist/dom.js"
+    },
+    "./styles.css": {
+      "types": "./dist/styles.d.css.ts",
+      "default": "./dist/styles.css"
+    }
+  },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.json && cp src/styles.css dist/styles.css && cp src/styles.d.css.ts dist/styles.d.css.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false",
+    "dev": "vite build --watch --emptyOutDir false",
+    "prepack": "bun run build",
+    "prepublishOnly": "node scripts/check-version.mjs"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@lisse/core": "^0.7.2",
+    "vgpu": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vgpu/wgsl": "^0.5.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0",
+    "react-dom": ">=19.0.0"
+  },
+  "description": "Liquid Glass materials and accessible React components for the web and Electron, built with vgpu and WGSL.",
+  "homepage": "https://liquid-glass.glassapp.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Glass-HQ/liquid-glass.git",
+    "directory": "packages/liquid-glass"
+  },
+  "bugs": {
+    "url": "https://github.com/Glass-HQ/liquid-glass/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "keywords": [
+    "liquid-glass",
+    "vgpu",
+    "webgpu",
+    "react",
+    "electron",
+    "refraction"
+  ]
+}
