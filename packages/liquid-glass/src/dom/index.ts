@@ -497,6 +497,10 @@ export function createGlassScene(
     // over its sharp original. Each pass also replaces lower glass.
     const composite = (lens: Lens, input: string) => {
       const p = `s${lens.serial}`;
+      // The material is opaque inside its mask, so drawing it over the input
+      // replaces what it covers. WebKit pays for every full-size pass, so it
+      // merges once instead of cutting the covered input out first.
+      if (webkit) return `<feMerge result="${p}composite"><feMergeNode in="${input}"/>${layersOf.get(lens)!.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`;
       return `<feComposite in="${input}" in2="${p}mask" operator="out" result="${p}outside"/><feMerge result="${p}composite"><feMergeNode in="${p}outside"/>${layersOf.get(lens)!.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`;
     };
     if (drawn.length && webkit) {

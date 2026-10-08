@@ -4,6 +4,10 @@ import type { GlassRadius } from "../core/shape.js";
 import { contentReveal, morphDraw, morphShape, openingAxis, planMorph, radiusPixels, sourceConceal } from "../core/morph-path.js";
 import type { Box, MorphEndpoints, MorphGeometry, MorphStop } from "../core/morph-path.js";
 import type { GlassMotion, SurfaceAnimator } from "./interaction.js";
+import { webkit } from "./filter-budget.js";
+/** WebKit decodes every map a filter switches to during a frame it already
+ * paints slowly; a path of fewer prepared shapes switches maps less often. */
+const stopCount = (count: number) => webkit ? Math.max(4, Math.round(count / 2)) : count;
 export { radiusPixels } from "../core/morph-path.js";
 
 /** A shape an animation passes through, for its maps to be prepared ahead. */
@@ -154,7 +158,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       return { ...rect, radius: declaredRadius(glass!), layoutWidth: size.width || rect.width, layoutHeight: size.height || rect.height };
     })() : undefined;
     const neck = options.neck ?? 18;
-    const stops = planMorph(endpoints, neck > 0 ? drop : undefined, { dpr: 1, restDpr: dpr(), neck, stops: neck > 0 ? 14 : 10 });
+    const stops = planMorph(endpoints, neck > 0 ? drop : undefined, { dpr: 1, restDpr: dpr(), neck, stops: stopCount(neck > 0 ? 14 : 10) });
     // The resting endpoints use layout sizes, which the maps are keyed by.
     if (morph === "become" && glass) { const size = layoutSize(glass); if (size.width && size.height) Object.assign(stops[0]!.shape, { width: size.width, height: size.height }); }
     Object.assign(stops.at(-1)!.shape, { width: to.width, height: to.height });
@@ -293,7 +297,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
             ? { left: lastFrame.left - plan.layout.x, top: lastFrame.top - plan.layout.y, width: lastFrame.width, height: lastFrame.height }
             : { left: box.x, top: box.y, width: box.width, height: box.height };
           const endpoints: MorphEndpoints = { from: current, fromRadius: ownRadius(current.width, current.height), to: { left: next.x, top: next.y, width: next.width, height: next.height }, toRadius: options.radius };
-          const stops = planMorph(endpoints, undefined, { stops: 12, dpr: 1, restDpr: dpr() });
+          const stops = planMorph(endpoints, undefined, { stops: stopCount(12), dpr: 1, restDpr: dpr() });
           plan = { endpoints, stops, shapes: stops.map((stop) => stop.shape), layout: next };
           progress.configure(springs.layout).jump(0).target = 1;
         }
