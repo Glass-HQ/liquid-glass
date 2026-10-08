@@ -244,7 +244,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
   // Attached to an element already leaving: run the exit from its first frame.
   const leaving = Boolean(options.from) && element.hasAttribute("data-ending-style");
   let entering = Boolean(options.from) && options.enter !== false && !leaving && options.motion() !== "none";
-  let placement: Box | undefined, waited = 0;
+  let placement: Box | undefined, waited = 0, settledFrames = 0;
   if (options.from) observer.observe(element, { attributes: true, attributeFilter: ["data-ending-style"] });
   if (leaving && options.motion() !== "none") exit();
   if (entering) {
@@ -277,10 +277,16 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       now = at;
       if (entering) {
         // Placement can settle a frame after mount: plan from where it lands.
+        // Base UI marks the popup until it has laid it out at its anchor;
+        // glass drawn before that would be redrawn, at the scene's cost.
         const rect = rectOf(element);
-        const stable = placement && Math.hypot(rect.left - placement.left, rect.top - placement.top) < 0.5;
+        const placed = !element.hasAttribute("data-starting-style");
+        const stable = placed && placement && Math.hypot(rect.left - placement.left, rect.top - placement.top) < 0.5
+          && Math.abs(rect.width - placement.width) < 0.5 && Math.abs(rect.height - placement.height) < 0.5;
         placement = rect;
-        if (stable || ++waited > 3) {
+        // Two settled frames: the first paint can land before placement.
+        settledFrames = stable ? settledFrames + 1 : 0;
+        if (settledFrames >= 2 || ++waited > 8) {
           entering = false;
           if (!element.hasAttribute("data-ending-style")) enter();
           if (!morphing) finish();
@@ -367,7 +373,9 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       // Waiting for placement, or parked at the source after an exit.
       if (closed || entering) return 0;
       if (!morphing) return 1;
-      if (!plan) return fade.value;
+      // Fading the glass itself redraws the scene every frame; on WebKit the
+      // material arrives whole and leaves with the popup.
+      if (!plan) return webkit ? 1 : fade.value;
       // A bubble from a plain element condenses over its first moments instead of popping in.
       return plan.glass ? 1 : Math.min(1, Math.max(0, progress.value / 0.2));
     },

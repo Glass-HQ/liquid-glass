@@ -1,3 +1,4 @@
+import { webkit } from "./filter-budget.js";
 /** Keep SVG filters as retained elements. Each frame's markup is parsed into
  * an inert template and compared with the live filters: matching filters only
  * have changed attributes written, so image primitives keep their loaded
@@ -78,7 +79,9 @@ function link(image: Element, resolve: (token: string) => string | undefined) {
   const url = resolve(image.getAttribute("data-map")!);
   if (!url || image.getAttribute("href") === url) return;
   image.setAttribute("href", url);
-  const defs = image.closest("defs");
+  // WebKit repaints on its own, and treats the unchanged attribute as a
+  // change: each write there evaluates the whole scene again.
+  const defs = webkit ? null : image.closest("defs");
   if (defs) settle(defs);
 }
 const settling = new WeakMap<Element, number>();
