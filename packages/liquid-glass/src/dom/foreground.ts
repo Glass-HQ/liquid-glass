@@ -43,22 +43,37 @@ export function overlaps(a: Pick<ForegroundLens, "x" | "y" | "w" | "h">, b: Pick
  * extension or opaque material fill belongs in this foreground contribution.
  */
 export function foregroundFilter(id: string, target: ForegroundLens, overlays: readonly ForegroundLens[]): string {
-  const width = target.w, height = target.h;
+  // Scene measurements are viewport pixels; a filter runs before its target's
+  // CSS scale. Put each axis back into the target's local coordinate space.
+  const sx = target.w > 0 ? (target.element?.offsetWidth || target.w) / target.w : 1;
+  const sy = target.h > 0 ? (target.element?.offsetHeight || target.h) / target.h : 1;
+  const displacementScale = Math.max(sx, sy);
+  const anisotropic = Math.abs(sx - sy) > 1e-6;
   const parts: string[] = [];
   let input = "SourceGraphic";
   for (const [i, lens] of overlays.entries()) {
     if (!lens.maps) continue;
     const p = `f${i}`, x = lens.x - target.x - 2, y = lens.y - target.y - 2;
-    const image = (plane: MapPlane, result: string) => mapImage(lens.maps!, plane, result, x, y, lens.w + 4, lens.h + 4, width, height);
-    parts.push(image("mask", `${p}rawmask`), image("displacement", `${p}rawmap`));
-    parts.push(`<feComponentTransfer in="${p}rawmask" result="${p}mask"><feFuncA type="linear" slope="${lens.opacity}"/></feComponentTransfer>`);
-    parts.push(`<feFlood flood-color="rgb(128,128,128)" result="${p}neutral"/><feComposite in="${p}rawmap" in2="${p}neutral" operator="over" result="${p}map"/>`);
+    const image = (plane: MapPlane, result: string) => mapImage(lens.maps!, plane, result, x, y, lens.w + 4, lens.h + 4, 1 / sx, 1 / sy);
+    const region = (margin = 0) => `x="${(x - margin) * sx}" y="${(y - margin) * sy}" width="${(lens.w + 4 + 2 * margin) * sx}" height="${(lens.h + 4 + 2 * margin) * sy}"`;
+    const bounds = region();
+    const opaque = lens.opacity >= 1;
+    parts.push(image("mask", opaque ? `${p}mask` : `${p}rawmask`), image("displacement", anisotropic ? `${p}rawmap` : `${p}map`));
+    // feDisplacementMap has one scalar for both axes. Compress its channels
+    // around neutral to match unequal target scales without clipping values.
+    if (anisotropic) parts.push(`<feComponentTransfer in="${p}rawmap" ${bounds} result="${p}map"><feFuncR type="linear" slope="${sx / displacementScale}" intercept="${(1 - sx / displacementScale) / 2}"/><feFuncG type="linear" slope="${sy / displacementScale}" intercept="${(1 - sy / displacementScale) / 2}"/></feComponentTransfer>`);
+    if (!opaque) parts.push(`<feComponentTransfer in="${p}rawmask" ${bounds} result="${p}mask"><feFuncA type="linear" slope="${lens.opacity}"/></feComponentTransfer>`);
     const blur = materials[lens.options.material ?? "clear"].blur;
-    parts.push(`<feGaussianBlur in="${input}" stdDeviation="${blur / width} ${blur / height}" result="${p}blur"/>`);
     const refraction = lens.options.refraction ?? materials[lens.options.material ?? "clear"].refraction;
-    parts.push(`<feDisplacementMap in="${p}blur" in2="${p}map" scale="${refraction * 2 / width}" xChannelSelector="R" yChannelSelector="G" result="${p}refracted"/>`);
-    parts.push(`<feComposite in="${p}refracted" in2="${p}mask" operator="in" result="${p}inside"/><feComposite in="${input}" in2="${p}mask" operator="out" result="${p}outside"/><feMerge result="${p}result"><feMergeNode in="${p}outside"/><feMergeNode in="${p}inside"/></feMerge>`);
+    // Only the lens samples blurred foreground. Preserve its whole sampling
+    // neighborhood while bounding the expensive intermediate; the untouched
+    // input still carries all foreground overflow through the final merge.
+    if (blur > 0) parts.push(`<feGaussianBlur in="${input}" ${region(Math.ceil(3 * blur + Math.abs(refraction) + 2))} stdDeviation="${blur * sx} ${blur * sy}" result="${p}blur"/>`);
+    // Every pixel the mask reveals lies inside the opaque displacement map.
+    // Neutral filling outside that map cannot contribute to the final image.
+    parts.push(`<feDisplacementMap in="${blur > 0 ? `${p}blur` : input}" in2="${p}map" ${bounds} scale="${refraction * 2 * displacementScale}" xChannelSelector="R" yChannelSelector="G" result="${p}refracted"/>`);
+    parts.push(`<feComposite in="${p}refracted" in2="${p}mask" operator="in" ${bounds} result="${p}inside"/><feComposite in="${input}" in2="${p}mask" operator="out" result="${p}outside"/><feMerge result="${p}result"><feMergeNode in="${p}outside"/><feMergeNode in="${p}inside"/></feMerge>`);
     input = `${p}result`;
   }
-  return `<filter id="${id}" x="-1" y="-1" width="3" height="3" filterUnits="objectBoundingBox" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB">${parts.join("")}</filter>`;
+  return `<filter id="${id}" x="-1" y="-1" width="3" height="3" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${parts.join("")}</filter>`;
 }

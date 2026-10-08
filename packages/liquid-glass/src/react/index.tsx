@@ -158,20 +158,28 @@ export function GlassContent({
   ref,
   ...props
 }: GlassContentProps) {
-  const { controller } = useScene();
+  const { controller, maxSurfaces } = useScene();
   const attach = useCallback(
     (element: HTMLDivElement | null) => {
-      controller.setContent(element);
+      const hosts: HTMLElement[] = [];
+      for (let parent = element?.parentElement; parent?.hasAttribute("data-glass-filter-host"); parent = parent.parentElement) hosts.push(parent);
+      controller.setContent(element, hosts);
       return () => {
         controller.setContent(null);
       };
     },
     [controller],
   );
-  return useRender({
+  let rendered = useRender({
     ref: [attach, ref ?? null],
     props: { ...props, "data-layout": layout, className: `lg-content ${className}` },
   });
+  // A fixed tree preserves child state and refs when a menu changes the
+  // number of optical passes. Keeping the structure on every engine also
+  // keeps server rendering and hydration identical.
+  for (let index = 0; index <= maxSurfaces; index++)
+    rendered = <div key={index} data-glass-filter-host="" data-layout={layout}>{rendered}</div>;
+  return rendered;
 }
 /** How a glass surface moves. Every option is available to any surface. */
 export interface GlassMotionProps {

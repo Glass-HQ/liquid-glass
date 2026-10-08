@@ -133,12 +133,42 @@ export interface MorphPlanOptions {
  * and `radius` its declared corners, so its stop matches its own resting map. */
 export interface MorphGlass extends Box { radius: GlassRadius; layoutWidth: number; layoutHeight: number }
 const round = (v: number, unit: number) => Math.round(v / unit) * unit;
+// A detached popup is removed from the DOM after closing, but its path is
+// reusable. Keep a small number of local plans, independent of page position.
+const detachedPlans = new Map<string, MorphStop[]>();
 /** Plan the shapes an animation passes through, so their maps can be
  * prepared together before it starts. Stops are spaced evenly by how much
  * the shape changes between them; the endpoints are exact. A drop leaving
  * glass adds the traced unions of the two while they are joined, beginning
  * with the glass's own shape while the drop is still inside it. */
 export function planMorph(e: MorphEndpoints, glass: MorphGlass | undefined, options: MorphPlanOptions = {}): MorphStop[] {
+  if (!glass) return traceMorph(e, glass, options);
+  // Tracing in viewport coordinates made fractional scrolling change every
+  // union map's pixels and cache key. Local coordinates also avoid loss of
+  // precision when a scene is far from the viewport origin.
+  const local = (box: Box): Box => ({
+    ...box,
+    left: Number((box.left - glass.left).toFixed(8)),
+    top: Number((box.top - glass.top).toFixed(8)),
+  });
+  const endpoints = { ...e, from: local(e.from), to: local(e.to) };
+  const source = { ...glass, left: 0, top: 0 };
+  const key = JSON.stringify([endpoints, source, options]);
+  let stops = detachedPlans.get(key);
+  if (stops) detachedPlans.delete(key);
+  else stops = traceMorph(endpoints, source, options);
+  detachedPlans.set(key, stops);
+  if (detachedPlans.size > 16) detachedPlans.delete(detachedPlans.keys().next().value!);
+  // Callers adjust endpoint dimensions to their layout sizes. Give them
+  // separate records while sharing the immutable, expensive traced outlines.
+  return stops.map((stop) => ({
+    ...stop,
+    shape: { ...stop.shape },
+    ...(stop.box ? { box: { ...stop.box, left: stop.box.left + glass.left, top: stop.box.top + glass.top } } : {}),
+  }));
+}
+
+function traceMorph(e: MorphEndpoints, glass: MorphGlass | undefined, options: MorphPlanOptions): MorphStop[] {
   const { stops: count = 14, unions = 16, neck = 18, dpr = 1, restDpr = dpr } = options;
   const fine = 240;
   const shapes = Array.from({ length: fine + 1 }, (_, i) => morphShape(e, i / fine));

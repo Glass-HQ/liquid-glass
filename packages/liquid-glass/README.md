@@ -34,6 +34,8 @@ export function Example() {
 
 Import the stylesheet once. It requires neither Tailwind nor a CSS reset. Put glass components inside `GlassScene`, with one `GlassContent` layer for the background. Text, SVG, and images in that layer stay live. In Next.js, use a client component.
 
+`GlassContent` keeps your props, ref, and children on its source element inside stable transparent wrappers. Target its class rather than relying on it being a direct child of the scene. Put opacity and clipping intended for the finished composition on `GlassScene` or a shared ancestor; `GlassContent` styles describe the input behind the glass.
+
 ## Components
 
 | Component | Purpose |
@@ -71,7 +73,7 @@ Set defaults on `GlassScene`; individual surfaces can override them. Menu popups
 
 Slider and switch pressed thumbs default to Clear, with refraction of 5px and 7.75px respectively. Their `tint` sets the track color.
 
-System reduced-motion preferences always apply, including with `motion="full"`. Reduced motion removes stretching and travel; `"none"` removes transitions.
+System reduced-motion preferences always apply, including with `motion="full"`. Reduced motion removes stretching and travel; `"none"` removes transitions. Safari uses the same motion settings as other browsers.
 
 Override styles with `className`, inline styles, or CSS utilities. The stylesheet uses low-specificity `:where()` selectors. Use `radius` to change corners so the material and content clip agree. Override `--lg-foreground` for text and icon colors.
 
@@ -212,14 +214,17 @@ scene.dispose();
 
 Use the positioned scene/content/surface structure from the React example. `scene.addForeground(element)` registers foreground content and returns a cleanup function. `scene.addAnimator(animator)` updates custom animation before scene measurements.
 
+For complex scenes in Firefox, pass nested transparent hosts to `scene.setContent(content, hosts)`, ordered from the innermost ancestor to the outermost. Give each host `data-glass-filter-host=""` and the content's `data-layout` value so the library stylesheet sizes it correctly. Allocate one host per surface capacity plus an outer host for progressive blur. Create these containers before mounting stateful content. React's `GlassContent` supplies them automatically. Each stage filters the preceding stage's live DOM output; no background is duplicated. Missing hosts or an oversized individual branch are reported through `onDiagnostic`.
+
 The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, and controller APIs for custom integrations. Type declarations describe their options.
 
 ## Requirements and limitations
 
 - React 19+ for React components; HTTPS or localhost and an available WebGPU adapter for rendering.
-- **Safari has known rendering issues.** The initial release showed blank tab-example content in Safari. Chromium, Firefox, Safari, and Electron are acceptance targets; the initial publication did not establish current parity across all four.
+- SVG filter performance varies between browser engines. Safari can spend substantially longer filtering large content layers than Chromium, even when material maps are cached. Keep scenes close to the content they need to refract, and test animated menus on the devices you support. Chromium, Firefox, Safari, and Electron are acceptance targets; they do not have identical performance.
+- For consistent refraction in Safari, give `GlassContent` an opaque background. Transparent source pixels can leave the original content visible beneath its refracted image.
 - Use bounded scenes with explicit content layers. Arbitrary page-backdrop sampling, native video composition, rotated/transformed ancestors, and native ports are outside the supported scope. Cross-origin image policies apply.
-- `GlassScene.maxSurfaces` defaults to 16 and accepts at most 64. Use `onDiagnostic` for map readiness, construction timing, and GPU errors.
+- `GlassScene.maxSurfaces` defaults to 16 and accepts at most 64. Use `onDiagnostic` for map readiness, construction timing, filter graph limits, and GPU errors. Firefox limits each element's filter chain to 64 operations; `GlassContent` distributes complex scenes across its stable filter hosts.
 - NodeNext TypeScript consumers currently need `skipLibCheck: true` for upstream vgpu declarations.
 
 ## How it works

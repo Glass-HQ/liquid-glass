@@ -1,6 +1,5 @@
 import { Spring, rubberBand, springs } from "../core/spring.js";
 import type { SpringOptions } from "../core/spring.js";
-import { webkit } from "./filter-budget.js";
 
 /** `full` follows the system: reduced motion always removes elasticity. */
 export type GlassMotion = "full" | "reduced" | "none";
@@ -9,11 +8,6 @@ export type GlassMotion = "full" | "reduced" | "none";
 let reducedQuery: MediaQueryList | undefined;
 export function resolveMotion(motion: GlassMotion | undefined): GlassMotion {
   if (motion === "none" || motion === "reduced") return motion;
-  // WebKit paints every glass surface of a scene again, in software, for
-  // each frame in which any outline moves: elasticity and travel there cost
-  // hundreds of milliseconds a frame. Glass keeps its light and its content
-  // motion; its outlines hold still.
-  if (webkit) return "reduced";
   if (typeof matchMedia !== "function") return "full";
   reducedQuery ??= matchMedia("(prefers-reduced-motion: reduce)");
   return reducedQuery.matches ? "reduced" : "full";
@@ -51,6 +45,10 @@ export function attachInteraction(element: HTMLElement, motion: () => GlassMotio
   let glowX = 0, glowY = 0;
   // Velocity of the surface itself while held, for surfaces the application drags.
   let carriedX = 0, carriedY = 0;
+  // A settled light remains visible without another style mutation or frame.
+  const writeStyle = (name: string, value: string) => {
+    if (element.style.getPropertyValue(name) !== value) element.style.setProperty(name, value);
+  };
 
   const size = () => ({ width: element.offsetWidth || 1, height: element.offsetHeight || 1 });
   /** Untransformed center and the visual-to-layout ratio of the live element. */
@@ -141,7 +139,9 @@ export function attachInteraction(element: HTMLElement, motion: () => GlassMotio
     frame(now, quiet) {
       // Held still: the springs resume from here once the scene moves again.
       if (quiet) { previous = now; return true; }
-      const dt = previous ? Math.min((now - previous) / 1000, 1 / 20) : 1 / 60;
+      // The analytic springs are stable across dropped frames. Capping time
+      // here would make a slow paint stretch the gesture's wall-clock duration.
+      const dt = previous ? Math.max(0, (now - previous) / 1000) : 1 / 60;
       previous = now;
       const level = motion();
       const { width, height } = size();
@@ -177,14 +177,15 @@ export function attachInteraction(element: HTMLElement, motion: () => GlassMotio
       const lit = glow.value > 0.001;
       if (moved || scaled || lit || pointer || keyboard) {
         written = true;
-        element.style.translate = moved ? `${tx.value.toFixed(3)}px ${ty.value.toFixed(3)}px` : saved.translate;
-        element.style.scale = scaled ? `${sx.toFixed(5)} ${sy.toFixed(5)}` : saved.scale;
-        element.style.setProperty("--lg-glow", lit ? glow.value.toFixed(4) : "0");
-        element.style.setProperty("--lg-glow-x", `${glowX.toFixed(2)}px`);
-        element.style.setProperty("--lg-glow-y", `${glowY.toFixed(2)}px`);
-        element.style.setProperty("--lg-glow-size", `${Math.max(36, Math.min(180, Math.max(width, height) * 0.9)).toFixed(1)}px`);
-        if (pointer || keyboard) element.dataset.glassPressed = "";
-        else delete element.dataset.glassPressed;
+        writeStyle("translate", moved ? `${tx.value.toFixed(3)}px ${ty.value.toFixed(3)}px` : saved.translate);
+        writeStyle("scale", scaled ? `${sx.toFixed(5)} ${sy.toFixed(5)}` : saved.scale);
+        writeStyle("--lg-glow", lit ? glow.value.toFixed(4) : "0");
+        writeStyle("--lg-glow-x", `${glowX.toFixed(2)}px`);
+        writeStyle("--lg-glow-y", `${glowY.toFixed(2)}px`);
+        writeStyle("--lg-glow-size", `${Math.max(36, Math.min(180, Math.max(width, height) * 0.9)).toFixed(1)}px`);
+        if (pointer || keyboard) {
+          if (element.dataset.glassPressed !== "") element.dataset.glassPressed = "";
+        } else if (element.dataset.glassPressed !== undefined) delete element.dataset.glassPressed;
       } else if (written) {
         written = false;
         element.style.translate = saved.translate;
@@ -192,7 +193,10 @@ export function attachInteraction(element: HTMLElement, motion: () => GlassMotio
         for (const name of ["--lg-glow", "--lg-glow-x", "--lg-glow-y", "--lg-glow-size"]) element.style.removeProperty(name);
         delete element.dataset.glassPressed;
       }
-      return Boolean(pointer || keyboard) || written || [tx, ty, press, glow].some((spring) => !spring.settled);
+      const active = Boolean(pointer) || [tx, ty, press, glow].some((spring) => !spring.settled);
+      // An input after the ticker slept starts now, not at its last heartbeat.
+      if (!active) previous = 0;
+      return active;
     },
     dispose() {
       release();

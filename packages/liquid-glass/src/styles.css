@@ -9,6 +9,23 @@
   width: 100%;
   height: 100%;
 }
+:where([data-glass-filter-host]) { display: contents; }
+/* Separate rendered elements keep complex Gecko filter graphs within its
+   per-element operation limit. Other engines need no additional boxes. */
+@supports (-moz-appearance: none) {
+  :where([data-glass-filter-host]) {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  :where([data-glass-filter-host][data-layout="flow"]) {
+    position: relative;
+    inset: auto;
+    height: auto;
+  }
+}
 :where(.lg-surface) {
   position: relative;
   background: transparent;
@@ -179,6 +196,11 @@
 :where(.lg-surface[data-glass-morph]) > * {
   opacity: calc(var(--lg-morph, 1) * var(--lg-glass-ready, 1));
   filter: blur(calc((1 - var(--lg-morph, 1)) * 6px));
+  /* Keep animated text blur on its own layer: WebKit can otherwise flash
+     unpainted pixels while the containing outline changes. This hint does
+     not replace an author's transform and expires with the morph. */
+  will-change: transform;
+  backface-visibility: hidden;
 }
 /* Glass that has become another surface: its material is drawn by that
    surface, and its own content withdraws as the glass leaves it. */

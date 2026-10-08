@@ -603,6 +603,12 @@ footer {
 .menu-options-toolbar > .lg-toolbar-cluster { gap: 2px; padding: 4px; }
 .menu-options-toolbar .lg-toolbar-button { width: 28px; height: 28px; padding: 0; color: inherit; }
 .menu-options-toolbar .lg-toolbar-button[aria-pressed="true"] { background: var(--lg-control-highlight); }
+@media (max-width: 640px) {
+  .menu-options-toolbar { max-width: 100%; flex-wrap: wrap; justify-content: center; row-gap: 8px; }
+  .menu-options-toolbar > .lg-toolbar-cluster { flex: 0 1 auto; min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .menu-options-toolbar > .lg-toolbar-spacer { display: none; }
+  .has-bottom-controls .example-center { bottom: 108px; }
+}
 .submenu-chevron { margin-left: auto; padding-left: 12px; }
 .dark .code-sample code span[style] { color: var(--shiki-dark) !important; }
 .api-reference { margin-top: 48px; }

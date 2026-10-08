@@ -10,6 +10,7 @@ import type {
 } from "../core/progressive.js";
 import { getProgressiveMaps } from "./progressive-maps.js";
 import { blurOutsets, filterBudgetFactor, webkit } from "./filter-budget.js";
+import { filterPrimitiveCount, gecko } from "./filter-stages.js";
 /** The scroller's parent when it is a clipping wrapper holding nothing else. */
 function stillFrame(scroller: HTMLElement): HTMLElement | undefined {
   const parent = scroller.parentElement;
@@ -174,6 +175,8 @@ export function createProgressiveLayer(
     filter = "",
     disposed = false;
   let nodes: SVGElement[] = [];
+  let graphError: Error | undefined;
+  let graphOperations = 0;
   // Written every frame otherwise; an unchanged value must not restyle the scene.
   const setEdges = (value: string) => { if (root.dataset.glassBlurEdges !== value) root.dataset.glassBlurEdges = value; };
   function clear() {
@@ -182,6 +185,8 @@ export function createProgressiveLayer(
     topology = "";
     filter = "";
     nodes = [];
+    graphError = undefined;
+    graphOperations = 0;
     if (!viewportMode) setEdges("0");
   }
   const registeredCount = () => registrations.size + [...scrollRegistrations].reduce(
@@ -221,6 +226,10 @@ export function createProgressiveLayer(
       return () => remove.forEach((cleanup) => cleanup());
     },
     count(): number { return nodes.filter((node) => node.localName === "feFlood").length; },
+    operations(): number { return graphOperations; },
+    error(): Error | undefined {
+      return graphError ?? [...viewports.values()].map((state) => state.layer.error()).find(Boolean);
+    },
     update(content: HTMLElement | null): string {
       const viewportCount = viewportMode ? 0 : updateViewports();
       if (!viewportMode) setEdges(String(viewportCount));
@@ -359,9 +368,10 @@ export function createProgressiveLayer(
           regions.map((r) => `${r.edge}:${r.refraction > 0}`).join(",");
         if (topology !== nextTopology) {
           topology = nextTopology;
-          svg.innerHTML = regions.length
-            ? `<defs>${graph(id, regions, width, height)}</defs>`
-            : "";
+          const markup = regions.length ? graph(id, regions, width, height) : "";
+          graphOperations = gecko ? filterPrimitiveCount(markup) : 0;
+          graphError = graphOperations > 64 ? new RangeError(`Progressive blur requires ${graphOperations} filter operations; this browser supports 64 per element.`) : undefined;
+          svg.innerHTML = markup ? `<defs>${markup}</defs>` : "";
           nodes = [...svg.querySelectorAll<SVGElement>("[data-region]")];
         } else {
           // Keep feImage resources and the filter graph alive while scrolling.
