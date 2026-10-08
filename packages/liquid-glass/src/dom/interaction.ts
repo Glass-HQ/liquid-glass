@@ -1,5 +1,6 @@
 import { Spring, rubberBand, springs } from "../core/spring.js";
 import type { SpringOptions } from "../core/spring.js";
+import { webkit } from "./filter-budget.js";
 
 /** `full` follows the system: reduced motion always removes elasticity. */
 export type GlassMotion = "full" | "reduced" | "none";
@@ -8,6 +9,11 @@ export type GlassMotion = "full" | "reduced" | "none";
 let reducedQuery: MediaQueryList | undefined;
 export function resolveMotion(motion: GlassMotion | undefined): GlassMotion {
   if (motion === "none" || motion === "reduced") return motion;
+  // WebKit paints every glass surface of a scene again, in software, for
+  // each frame in which any outline moves: elasticity and travel there cost
+  // hundreds of milliseconds a frame. Glass keeps its light and its content
+  // motion; its outlines hold still.
+  if (webkit) return "reduced";
   if (typeof matchMedia !== "function") return "full";
   reducedQuery ??= matchMedia("(prefers-reduced-motion: reduce)");
   return reducedQuery.matches ? "reduced" : "full";

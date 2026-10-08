@@ -50,9 +50,11 @@ export function createMapWarmer(root: HTMLElement) {
   };
   let touches = 0;
   const repaint = () => {
-    // The filter does not repaint by itself when its images arrive.
+    // The filter does not repaint by itself when its images arrive. A real
+    // change also brings up WebKit's filter renderer, whose first evaluation
+    // on a page stalls for over a second; better here than on a gesture.
     const generation = ++touches;
-    for (const delay of [16, 60, 150]) setTimeout(() => { if (touches === generation) filter.setAttribute("x", "0"); }, delay);
+    for (const delay of [16, 60, 150]) setTimeout(() => { if (touches === generation) filter.setAttribute("x", filter.getAttribute("x") === "0" ? "0.000001" : "0"); }, delay);
   };
   const urls = (maps: MaterialMaps) => [maps.displacement, maps.mask, maps.highlight, maps.outline, ...Object.values(maps.capsule?.planes ?? {}).flat()];
   return {

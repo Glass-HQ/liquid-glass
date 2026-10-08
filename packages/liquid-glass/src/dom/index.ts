@@ -88,6 +88,8 @@ interface Lens {
   maps?: MaterialMaps;
   error?: Error;
   key?: string;
+  /** The geometry measured most recently, which an in-flight request may predate. */
+  wanted?: string;
   /** One map request in flight per lens; the newest result is shown meanwhile. */
   inflight?: boolean;
   animators: SurfaceAnimator[];
@@ -218,7 +220,10 @@ export function createGlassScene(
   let lastPaintOrder = "";
   const foregroundStyles = new Map<HTMLElement, string>();
   const foregrounds = new Set<ForegroundLens & { serial: number }>();
-  const releaseContent = (element: HTMLElement) => { element.style.filter = ""; };
+  const releaseContent = (element: HTMLElement) => {
+    element.style.filter = "";
+    if (element.style.willChange === "transform") element.style.willChange = "";
+  };
   const restoreForeground = (element: HTMLElement) => {
     const original = foregroundStyles.get(element);
     if (original !== undefined) {
@@ -497,6 +502,10 @@ export function createGlassScene(
     // over its sharp original. Each pass also replaces lower glass.
     const composite = (lens: Lens, input: string) => {
       const p = `s${lens.serial}`;
+      // The material is opaque inside its mask, so drawing it over the input
+      // replaces what it covers. WebKit pays for every full-size pass, so it
+      // merges once instead of cutting the covered input out first.
+      if (webkit) return `<feMerge result="${p}composite"><feMergeNode in="${input}"/>${layersOf.get(lens)!.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`;
       return `<feComposite in="${input}" in2="${p}mask" operator="out" result="${p}outside"/><feMerge result="${p}composite"><feMergeNode in="${p}outside"/>${layersOf.get(lens)!.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`;
     };
     if (drawn.length && webkit) {
@@ -582,6 +591,7 @@ export function createGlassScene(
    * and the next request starts as soon as it resolves. */
   function request(l: Lens, g: MapGeometry, slice: boolean) {
     const key = slice ? mapKey(g) : JSON.stringify(g);
+    l.wanted = key;
     if (key === l.key || l.inflight) return;
     const settled = slice ? peekSurfaceMaterialMaps(g) : peekMaterialMaps(g);
     if (settled && (warmer.has(settled) || !l.maps)) {
@@ -600,6 +610,10 @@ export function createGlassScene(
       .then((maps) => {
         l.inflight = false;
         if (disposed || !lenses.has(l)) return;
+        // Glass not yet showing waits for the shape it has since taken on
+        // WebKit, where drawing the stale map first costs a frame of the
+        // whole scene; elsewhere the early frame is cheap and reassuring.
+        if (webkit && !l.maps && l.wanted !== key) { l.key = undefined; ticker.wake(); return; }
         const warm = warmer.has(maps);
         warmer.warm(maps);
         const apply = () => {
@@ -833,6 +847,10 @@ export function createGlassScene(
       if (content) releaseContent(content);
       if (content) ticker.unobserve(content);
       content = element;
+      // WebKit applies a reference filter again whenever the element paints,
+      // which a popup, caret or highlight above it causes. A layer of its own
+      // keeps the filtered result until the filter or the content changes.
+      if (element && webkit && !element.style.willChange) element.style.willChange = "transform";
       if (element) ticker.observe(element);
       dirty = true;
       ticker.wake();
