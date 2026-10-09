@@ -1,4 +1,4 @@
-import { useGlassForeground } from "./index.js";
+import { useGlassForeground } from "./scene.js";
 import { useMergedRef } from "./merged-ref.js";
 import { GlassShape } from "./shape.js";
 import { useEffect, useRef, useState } from "react";

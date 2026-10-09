@@ -29,7 +29,12 @@ export default defineConfig({
       external: (id) =>
         /^(react|react-dom|vgpu|@lisse\/(?:core|react)|@base-ui\/react)(\/|$)/.test(id),
       output: {
-        banner: (chunk) => (chunk.name === "index" ? '"use client";' : ""),
+        // One output file per source module, so an app's bundler can drop the
+        // components and engine code it never imports.
+        preserveModules: true,
+        preserveModulesRoot: "src",
+        entryFileNames: "[name].js",
+        banner: (chunk) => (chunk.name === "index" || chunk.name.startsWith("react/") ? '"use client";' : ""),
       },
     },
   },
