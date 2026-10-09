@@ -444,12 +444,13 @@ export function createGlassScene(
     const region = (box: FilterBounds) => `x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}"`;
     // Edge pixels are repeated only past the sides some surface samples
     // beyond; glass well inside its content reads the source directly.
-    // WebKit only needs edge extension when the actual surface leaves the
-    // content. Tiling the blur padding of full-height panels can exceed its
-    // software buffer even though the visible surface stays inside.
+    // WebKit repeats them only as far as displacement reads: tiling the blur
+    // padding of full-height panels can exceed its software buffer, while
+    // glass near an edge must refract the content's edge, not transparency.
     const buildStage = (stageUnits: readonly Lens[][]) => {
       const unitOf = new Map(stageUnits.flatMap((unit) => unit.map((l) => [l, unit] as const)));
-      const tiles = stageUnits.length ? edgeTiles(width, height, bounds, "scene", crossedSides(width, height, stageUnits.flat().map((l) => webkit ? { x: l.x, y: l.y, width: l.w, height: l.h } : cropOf(l)))) : { markup: "", names: {} };
+      const reads = stageUnits.flat().map((l) => webkit ? sampling.get(l)! : cropOf(l));
+      const tiles = stageUnits.length ? edgeTiles(width, height, webkit ? unionSamplingBounds(reads) : bounds, "scene", crossedSides(width, height, reads)) : { markup: "", names: {} };
       const parts: string[] = [tiles.markup];
       const source = "SourceGraphic";
       const beneathOf = new Map(stageUnits.map((unit, index) => {
