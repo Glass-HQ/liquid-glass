@@ -7,6 +7,8 @@ import { mapImage, mapUrl } from "./map-image.js";
 import type { MapPlane } from "./map-image.js";
 import type { MaterialMaps } from "./maps.js";
 import { frostMarkup, overlayTintMarkup, tintChannels, tintMarkup, toneMarkup } from "./material-graph.js";
+import { progressiveGraph } from "./progressive.js";
+import type { ProgressiveRegion } from "./progressive.js";
 
 /** A surface's border box on screen and the scale its transforms apply. */
 export interface LayerFrame { left: number; top: number; sx: number; sy: number; clientLeft: number; clientTop: number }
@@ -83,7 +85,11 @@ export function createLensLayers(root: HTMLElement) {
   const reference = (element: HTMLElement) => `-moz-element(#${CSS.escape(element.id)})`;
 
   return {
-    update(lenses: readonly LayerLens[], content: HTMLElement, contentRect: Box) {
+    /** `blur` is the scene's progressive blur when it is drawn on a host
+     * around the content rather than on the content: layers then blur their
+     * own copy of the content the same way, so they never render the whole
+     * blurred content to sample a small part of it. */
+    update(lenses: readonly LayerLens[], content: HTMLElement, contentRect: Box, blur?: { left: number; top: number; regions: readonly ProgressiveRegion[] }) {
       if (contentId?.element !== content) {
         if (contentId) restoreContentId();
         contentId = { element: content, original: content.getAttribute("id"), id: content.id || `lg-content-${owner}` };
@@ -137,7 +143,22 @@ export function createLensLayers(root: HTMLElement) {
           const other = layers.get(below.serial);
           if (other?.screen && other !== layer) sources.push({ image: reference(other.element), box: other.screen });
         }
-        sources.push({ image: reference(content), box: contentRect });
+        // Glass inside opaque glass that encloses it sees only that glass.
+        // Every -moz-element() source renders its whole element, so skipping
+        // the content saves a full render of it whenever the content changes.
+        const parent = lens.parents[0], enclosing = parent && layers.get(parent.serial)?.screen;
+        const covered = parent && enclosing && parent.opacity >= 0.999 &&
+          enclosing.left <= screen.left && enclosing.top <= screen.top &&
+          enclosing.left + enclosing.width >= screen.left + screen.width && enclosing.top + enclosing.height >= screen.top + screen.height;
+        if (!covered) sources.push({ image: reference(content), box: contentRect });
+        // The progressive blur the content shows on screen, in this layer's space.
+        const regions = covered || !blur ? [] : blur.regions.flatMap((r) => {
+          const [x, y] = toLayer(contentRect.left + blur.left + r.x, contentRect.top + blur.top + r.y);
+          const mapped = { ...r, x, y, width: r.width / f.sx, height: r.height / f.sy, blur: r.blur / Math.max(f.sx, f.sy), refraction: r.refraction / Math.max(f.sx, f.sy) };
+          const reach = 3 * mapped.blur + mapped.refraction;
+          return mapped.x < local.width + reach && mapped.x + mapped.width > -reach && mapped.y < local.height + reach && mapped.y + mapped.height > -reach ? [mapped] : [];
+        });
+        if (regions.length) markup.push(progressiveGraph(`${layer.base}-blur`, regions, local.width, local.height, "gecko"));
         write(layer, "left", `${local.left}px`);
         write(layer, "top", `${local.top}px`);
         write(layer, "width", `${local.width}px`);
@@ -183,7 +204,11 @@ export function createLensLayers(root: HTMLElement) {
         markup.push(`<filter id="${layer.base}" x="0" y="0" width="1" height="1" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${graph}</filter>`);
       }
       const live = patchFilters(defs, markup, mapUrl);
-      for (const { layer } of plans) write(layer, "filter", `url("#${live(layer.base)}")`);
+      const blurred = new Set(markup.map((m) => /id="([^"]+)"/.exec(m)![1]));
+      for (const { layer } of plans) {
+        const id = `${layer.base}-blur`;
+        write(layer, "filter", [blurred.has(id) ? `url("#${live(id)}")` : "", `url("#${live(layer.base)}")`].filter(Boolean).join(" "));
+      }
     },
     owns(node: Node): boolean {
       if (svg.contains(node)) return true;

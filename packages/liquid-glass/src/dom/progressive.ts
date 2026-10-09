@@ -281,11 +281,14 @@ export function createProgressiveLayer(
   const reduced = matchMedia("(prefers-reduced-transparency: reduce)");
   const contrast = matchMedia("(forced-colors: active)");
   let markup = "", filter = "", regionCount = 0;
+  /** Regions drawn this frame, in the target's coordinates. */
+  let current: ProgressiveRegion[] = [];
   let graphError: Error | undefined;
   let graphOperations = 0;
   // Written every frame otherwise; an unchanged value must not restyle the scene.
   const setEdges = (value: string) => { if (root.dataset.glassBlurEdges !== value) root.dataset.glassBlurEdges = value; };
   function clear() {
+    current = [];
     if (markup) patchFilters(defs, [], maskUrl);
     markup = "";
     filter = "";
@@ -330,6 +333,8 @@ export function createProgressiveLayer(
       return () => remove.forEach((cleanup) => cleanup());
     },
     count(): number { return regionCount; },
+    /** Regions blurred directly on the scene's own target, as of the last update. */
+    regions(): readonly ProgressiveRegion[] { return current; },
     operations(): number { return graphOperations; },
     outsets(): number { return currentOutsets; },
     scrollsContent(): boolean { return scrollsContent; },
@@ -440,6 +445,7 @@ export function createProgressiveLayer(
           refraction: (o.refraction ?? 0) * strength,
         });
       }
+      current = regions;
       if (!regions.length) {
         if (markup || filter) clear();
         if (!viewportMode) setEdges(String(viewportCount));

@@ -10,6 +10,10 @@
   height: 100%;
 }
 :where(.lg-content[data-layout="scroll"]) { overflow: auto; }
+:where([data-glass-blur-host]) { display: contents; }
+/* Gecko blurs this wrapper on the GPU, so glass copies the content unblurred. */
+:where([data-glass-blur-host][data-glass-blur-active]) { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+:where([data-glass-blur-host][data-glass-blur-active][data-layout="flow"]) { position: relative; inset: auto; height: auto; }
 :where(.lg-scroll-paint-root) { position: absolute; inset: 0; overflow: visible; }
 :where(.lg-scroll-paint-root > foreignObject) { overflow: visible; }
 /* Gecko draws each surface's glass in a layer beneath its children. */

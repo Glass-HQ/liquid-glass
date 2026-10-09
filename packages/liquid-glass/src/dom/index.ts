@@ -263,10 +263,16 @@ export function createGlassScene(
     style.releasePaint?.();
   };
   let contentStyle: FilterStyle | undefined;
+  /** In Gecko, progressive blur draws on a wrapper around the content, so
+   * glass layers can copy the content without rendering its blur. */
+  let blurHost: { element: HTMLElement; style: FilterStyle; matches?: boolean } | undefined;
+  let blurKey = "";
   const foregroundStyles = new Map<HTMLElement, FilterStyle>();
   const foregrounds = new Set<ForegroundLens & { serial: number }>();
   const releaseContent = (element: HTMLElement) => {
     if (contentStyle) releaseFilter(element, contentStyle);
+    if (blurHost) { releaseFilter(blurHost.element, blurHost.style); blurHost.element.removeAttribute("data-glass-blur-active"); }
+    blurHost = undefined;
     contentStyle = undefined;
   };
   const restoreForeground = (element: HTMLElement) => {
@@ -610,7 +616,7 @@ export function createGlassScene(
           if (below && !layer.parents.includes(below) && !l.element.contains(earlier.element) && fieldTouches(earlier, l, reach(l))) layer.beneath.push(below);
         }
       }
-      layers.update([...layered.values()], content, contentRect);
+      layers.update([...layered.values()], content, contentRect, blurHost?.matches ? { left: 0, top: 0, regions: progressive.regions() } : undefined);
     } else if (drawn.length) {
       let primitives = buildStage(units);
       if (webkit) {
@@ -937,7 +943,17 @@ export function createGlassScene(
     // CSS stacking can change without geometry changing, but only with the DOM.
     const paintOrder = orderForeground().map((target) => target.serial).join(",");
     if (paintOrder !== lastPaintOrder) { dirty = true; lastPaintOrder = paintOrder; }
+    // The wrapper draws the content's blur only where it has the content's box.
+    if (blurHost) {
+      const box = blurHost.element.getBoundingClientRect();
+      blurHost.matches = Math.abs(box.left - r.left) < 0.5 && Math.abs(box.top - r.top) < 0.5 && Math.abs(box.width - r.width) < 0.5 && Math.abs(box.height - r.height) < 0.5;
+    }
     const blur = content ? progressive.update(content) : "";
+    // Layers apply the same regions themselves.
+    if (blurHost) {
+      const key = JSON.stringify([blurHost.matches, progressive.regions()]);
+      if (key !== blurKey) { blurKey = key; dirty = true; }
+    }
     const nextOutsets = progressive.outsets();
     if (nextOutsets !== progressiveOutsets) { progressiveOutsets = nextOutsets; dirty = true; }
     const changed = dirty;
@@ -952,8 +968,9 @@ export function createGlassScene(
     writes.push(() => {
       if (rebuild) compose(contentWidth, contentHeight);
       if (content) {
-        const filters = (progressive.scrollsContent() ? [blur, surfaceFilters] : [surfaceFilters, blur]).filter(Boolean).join(" ");
+        const filters = blurHost?.matches ? surfaceFilters : (progressive.scrollsContent() ? [blur, surfaceFilters] : [surfaceFilters, blur]).filter(Boolean).join(" ");
         if (contentStyle) applyFilter(content, contentStyle, filters);
+        if (blurHost) applyFilter(blurHost.element, blurHost.style, blurHost.matches ? blur : "");
       }
       if (progressiveErrorChanged) notify();
     });
@@ -974,6 +991,11 @@ export function createGlassScene(
       // which a popup, caret or highlight above it causes. A layer of its own
       // keeps the filtered result until the filter or the content changes.
       if (element) contentStyle = retainFilter(element);
+      const host = element?.parentElement;
+      if (layers && host?.hasAttribute("data-glass-blur-host")) {
+        host.setAttribute("data-glass-blur-active", "");
+        blurHost = { element: host, style: retainFilter(host) };
+      }
       if (element) ticker.observe(element);
       dirty = true;
       ticker.wake();

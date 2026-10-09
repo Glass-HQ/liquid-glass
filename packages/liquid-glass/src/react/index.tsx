@@ -179,6 +179,8 @@ export function GlassContent({
     ref: [attach, ref ?? null],
     props: { ...props, "data-layout": layout, className: `lg-content ${className}` },
   });
+  // Gecko draws progressive blur on this wrapper; elsewhere it has no box.
+  rendered = <div data-glass-blur-host="" data-layout={layout}>{rendered}</div>;
   // WebKit otherwise translates the entire cached reference-filter image
   // during asynchronous overflow scrolling, including stationary glass and
   // blur masks. A foreignObject keeps this live DOM scrollport and its filter

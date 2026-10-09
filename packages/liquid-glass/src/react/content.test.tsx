@@ -26,14 +26,14 @@ test("content keeps one fixed element while scene surfaces enter and leave", () 
   for (const capacity of [1, undefined, 64]) for (const layout of ["overlay", "flow", "scroll"] as const) {
     const count = capacity ?? 16;
     const empty = renderContent(capacity, 0, layout);
-    expect(empty).not.toContain("data-glass-filter-host");
+    expect(empty.match(/data-glass-blur-host=""/g)?.length).toBe(1);
     expect(empty.match(/id="source"/g)?.length).toBe(1);
     expect(empty.match(/name="draft"/g)?.length).toBe(1);
     expect(empty).toContain('class="lg-content author-content"');
     expect(empty).toContain('aria-label="Backdrop"');
     expect(empty).toContain('style="width:240px;min-height:160px;filter:grayscale(1)"');
     expect(empty).toContain('value="Keep this value"');
-    expect(empty.match(new RegExp(`data-layout="${layout}"`, "g"))?.length).toBe(1);
+    expect(empty.match(new RegExp(`data-layout="${layout}"`, "g"))?.length).toBe(2);
     for (const surfaces of [1, count]) expect(renderContent(capacity, surfaces, layout)).toBe(empty);
   }
 });
