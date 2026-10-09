@@ -24,7 +24,8 @@ import type { ProgressiveBlurOptions } from "../core/progressive.js";
 export type { ScrollEdgesOptions, GlassScrollTarget } from "./progressive.js";
 import { crossedSides, edgeTiles, filterBounds, tilesFor } from "./filter-bounds.js";
 import { blurOutsets, filterBudgetFactor, filterGraphOutsets, outsetBudget, webkit } from "./filter-budget.js";
-import { padRepaintReach, repaintReach } from "./filter-reach.js";
+import { padRepaintReach, repaintReach, tiledReach } from "./filter-reach.js";
+import { filterPixelRatio, pageZoom, untiledOutsets } from "./page-zoom.js";
 import { clusterFilterBranches, mapBoxesOverlap } from "./filter-groups.js";
 import { compoundFieldImage, compoundSources, fieldTouches } from "./compound-field.js";
 import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds.js";
@@ -237,6 +238,7 @@ export function createGlassScene(
     : undefined;
   let surfaceFilters = "";
   let progressiveOutsets = 0;
+  let composedZoom = `${pageZoom()} ${devicePixelRatio}`;
   /** Gecko draws each surface's glass in a layer of its own. */
   const layers = gecko ? createLensLayers(root) : undefined;
   let contentRect = { left: 0, top: 0, width: 0, height: 0 };
@@ -391,7 +393,7 @@ export function createGlassScene(
       unit.push(l);
     }
     const materialGroupOf = new Map(units.flatMap((unit) => unit.map((l) => [l, unit] as const)));
-    const scale = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
+    const scale = filterPixelRatio();
     const outsetsOf = new Map(drawn.map((l) => {
       const spec = l.options.appearance === "dark" ? materials.regular.dark : materials.regular.light;
       const blur = l.options.material === "regular" ? blurOutsets(materials.regular.blur) + blurOutsets(spec.fillSigma) : 0;
@@ -632,9 +634,13 @@ export function createGlassScene(
           (_, before: string, value: string, after: string) => before + value.split(" ").map((part) => Number(part) * factor).join(" ") + after);
         // Chained filters add their outsets, so the progressive blur's count
         // toward the reach a repaint needs.
-        const needed = repaintReach(primitives, width, height, progressive.regions()) - progressiveOutsets;
-        const pad = Math.min(needed, outsetBudget(width * scale, height * scale) / scale - progressiveOutsets);
-        if (pad > own * factor) primitives = padRepaintReach(primitives, Math.floor(pad), width, height);
+        const needed = repaintReach(primitives, width, height, progressive.regions());
+        // Padding must not split a layer that would otherwise stay whole; one
+        // that is split anyway needs the full reach in every tile.
+        // Leave room for rounding and for layer bounds wider than the content.
+        const tiled = own * factor + progressiveOutsets > untiledOutsets(width, height);
+        const pad = Math.min(tiled ? tiledReach * needed : needed, outsetBudget(width * scale, height * scale) / scale, tiled ? Infinity : untiledOutsets(width, height, 0.85)) - progressiveOutsets;
+        if (pad > own * factor) primitives = padRepaintReach(primitives, Math.floor(pad), width, height, tiled);
       }
       const filterId = `${id}-scene`;
       filters.push(`<filter id="${filterId}" x="${bounds.x / width}" y="${bounds.y / height}" width="${bounds.width / width}" height="${bounds.height / height}" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${primitives}</filter>`);
@@ -965,6 +971,9 @@ export function createGlassScene(
     }
     const nextOutsets = progressive.outsets();
     if (nextOutsets !== progressiveOutsets) { progressiveOutsets = nextOutsets; dirty = true; }
+    // Filters are written in the zoom they were composed for.
+    const zoom = `${pageZoom()} ${devicePixelRatio}`;
+    if (zoom !== composedZoom) { composedZoom = zoom; dirty = true; }
     const changed = dirty;
     const moving = busy && now - composedAt < 15;
     const rebuild = dirty && !holding && !moving;

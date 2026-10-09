@@ -9,7 +9,8 @@ import type {
   ProgressiveBlurOptions,
 } from "../core/progressive.js";
 import { filterBudgetFactor, filterGraphOutsets, outsetBudget } from "./filter-budget.js";
-import { padRepaintReach, repaintReach } from "./filter-reach.js";
+import { padRepaintReach, repaintReach, tiledReach } from "./filter-reach.js";
+import { filterPixelRatio, pageZoom, untiledOutsets } from "./page-zoom.js";
 import { filterPrimitiveCount } from "./filter-stages.js";
 import { gecko, webkit } from "./engine.js";
 import { acquireFilterPaintRoot } from "./filter-paint-root.js";
@@ -238,6 +239,7 @@ export function createProgressiveLayer(
     releasePaint?: () => void;
   };
   let currentOutsets = 0;
+  let markupZoom = 1;
   let scrollsContent = false;
   let budgetKey = "", budgetOutsets = 0;
   const viewports = new Map<HTMLElement, ViewportLayer>();
@@ -458,7 +460,7 @@ export function createProgressiveLayer(
       }
       // The whole branched graph counts, including repeated inputs from an
       // earlier edge. Cache this across scrolling that only moves regions.
-      const scale = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
+      const scale = filterPixelRatio();
       if (webkit) {
         const nextBudgetKey = JSON.stringify([width, height, ...regions.map((r) => [r.edge, r.width, r.height, r.blur, r.refraction])]);
         if (nextBudgetKey !== budgetKey) {
@@ -474,11 +476,14 @@ export function createProgressiveLayer(
       if (webkit) {
         // Blur bands sit at the edges; a repaint across the element must reach
         // them. Leave half the budget to glass chained on the same element.
-        const pad = Math.min(repaintReach(next, width, height), outsetBudget(width * scale, height * scale) / scale / 2);
-        if (pad > currentOutsets) { next = padRepaintReach(next, Math.floor(pad), width, height); currentOutsets = Math.floor(pad); }
+        const tiled = currentOutsets > untiledOutsets(width, height) / 2;
+        const pad = Math.min((tiled ? tiledReach : 1) * repaintReach(next, width, height), outsetBudget(width * scale, height * scale) / scale / 2, tiled ? Infinity : untiledOutsets(width, height, 0.85) / 2);
+        if (pad > currentOutsets) { next = padRepaintReach(next, Math.floor(pad), width, height, tiled); currentOutsets = Math.floor(pad); }
       }
-      if (next !== markup) {
+      const zoom = pageZoom();
+      if (next !== markup || zoom !== markupZoom) {
         markup = next;
+        markupZoom = zoom;
         regionCount = regions.length;
         graphOperations = gecko ? filterPrimitiveCount(next) : 0;
         graphError = graphOperations > 64 ? new RangeError(`Progressive blur requires ${graphOperations} filter operations; this browser supports 64 per element.`) : undefined;

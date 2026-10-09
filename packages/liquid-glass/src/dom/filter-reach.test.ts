@@ -24,3 +24,11 @@ test("padding joins the final merge and stays within half the element", () => {
   // As merge siblings the offsets raise the outsets, rather than adding to the lens.
   expect(filterGraphOutsets(padded)).toBe(Math.max(192, filterGraphOutsets(graph)));
 });
+
+test("tiled padding blurs a transparent flood instead of moving it", () => {
+  const padded = padRepaintReach(graph, 1200, 216, 400, true);
+  expect(padded).not.toContain("feOffset");
+  // WebKit caps one blur's kernel, so long reaches chain blurs that add up.
+  expect(padded.match(/result="reach-\d+"/g)!.length).toBe(2);
+  expect(filterGraphOutsets(padded)).toBeGreaterThanOrEqual(1200);
+});

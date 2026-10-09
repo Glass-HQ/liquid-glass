@@ -1,4 +1,5 @@
 import { chromium } from "./engine.js";
+import { pageZoom, zoomFilterMarkup } from "./page-zoom.js";
 
 /** A filter is library-generated SVG: elements and double-quoted attributes,
  * without text nodes. Keep its description outside the DOM so animation
@@ -27,7 +28,9 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
   const remaining = new Set(live.keys());
   const ids = new Map<string, string>();
   const links: Element[] = [];
-  for (const source of markup) {
+  const zoom = pageZoom();
+  for (const original of markup) {
+    const source = zoomFilterMarkup(original, zoom);
     const base = /\bid="([^"]+)"/.exec(source)?.[1];
     if (!base) throw new Error("A glass filter must have an id.");
     remaining.delete(base);
