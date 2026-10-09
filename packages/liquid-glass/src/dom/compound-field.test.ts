@@ -91,34 +91,29 @@ function pixels(markup: string, images: Record<string, Pixel>): Map<string, Pixe
   }
   return values;
 }
-const planes: MapPlane[] = ["displacement", "mask", "outline", "highlight"];
-function field(weight: number, coverage: [number, number], mapAlpha = 1) {
+const planes: MapPlane[] = ["field", "overlay"];
+function field(weight: number, coverage: [number, number]) {
   const source = { serial: 1, opacity: weight, baseOpacity: 1 }, popup = { serial: 2, opacity: 1 };
   const images: Record<string, Pixel> = {
-    "1-displacement": [.6, .4, .5, 1], "2-displacement": [.2, .8, .5, mapAlpha],
-    "1-mask": [1, 1, 1, coverage[0]], "2-mask": [1, 1, 1, coverage[1]],
-    "1-outline": [0, 0, 0, .5], "2-outline": [0, 0, 0, .2],
-    "1-highlight": [1, 1, 1, .5], "2-highlight": [1, 1, 1, .2],
+    "1-field": [.6, .4, .5, coverage[0]], "2-field": [.2, .8, .5, coverage[1]],
+    "1-overlay": [1, 1, 1, .5], "2-overlay": [1, 1, 1, .2],
   };
   const markup = planes.map((plane) => compoundFieldImage(source, popup, plane, plane, { x: 0, y: 0, width: 200, height: 100 },
     (member, selected, result) => `<feImage href="${member.serial}-${selected}" result="${result}"/>`)).join("");
   return { markup, values: pixels(markup, images) };
 }
 
-test("field maps use actual masks and preserve coverage through absorption and antialiased edges", () => {
-  for (const [weight, sourceCoverage, popupCoverage, mapAlpha] of [
-    [0, 1, .6, 1], [1, 1, 0, 0], [1, 0, 1, 1], [1, 0, 0, 0], [.7, 1, .3, .3], [.7, .6, .25, .4],
+test("compound fields merge coverage and displacement through absorption and antialiased edges", () => {
+  for (const [weight, sourceCoverage, popupCoverage] of [
+    [0, 1, .6], [1, 1, 0], [1, 0, 1], [1, 0, 0], [.7, 1, .3], [.7, .6, .25],
   ] as const) {
-    const { values, markup } = field(weight, [sourceCoverage, popupCoverage], mapAlpha);
-    expect(markup).toContain('href="1-mask" result="s1mask"');
-    expect(markup).toContain('href="2-mask" result="s2mask"');
+    const { values } = field(weight, [sourceCoverage, popupCoverage]);
     const expected = popupCoverage + sourceCoverage * weight * (1 - popupCoverage);
-    const map = values.get("displacement")!, mask = values.get("mask")!;
-    expect(mask[3]).toBeCloseTo(expected, 10);
+    const map = values.get("field")!;
     expect(map[3]).toBeCloseTo(expected, 10);
     if (expected) {
-      // Neutral blue stays neutral after unpremultiplication, including
-      // where the popup's raw map alpha differs from its shape coverage.
+      // Neutral blue stays neutral after unpremultiplication, and each
+      // member's displacement contributes in proportion to its coverage.
       expect(map[2] / map[3]).toBeCloseTo(.5, 10);
       expect(map[0] / map[3]).toBeCloseTo((.2 * popupCoverage + .6 * sourceCoverage * weight * (1 - popupCoverage)) / expected, 10);
     } else expect(map).toEqual([0, 0, 0, 0]);
@@ -128,6 +123,5 @@ test("field maps use actual masks and preserve coverage through absorption and a
 test("source rim and light retain their old attenuation below popup material", () => {
   const { values } = field(.6, [1, .4]);
   const expected = .2 + .5 * .6 * (1 - .4) * (1 - .2);
-  expect(values.get("outline")![3]).toBeCloseTo(expected, 10);
-  expect(values.get("highlight")![3]).toBeCloseTo(expected, 10);
+  expect(values.get("overlay")![3]).toBeCloseTo(expected, 10);
 });

@@ -100,7 +100,7 @@ test("adding and reordering branches preserves existing images and merge nodes",
 
 test("absorbing a group member and splitting the survivors retains every unchanged map image", () => {
   const { defs, apply } = scene();
-  const planes: MapPlane[] = ["displacement", "mask", "highlight", "outline"];
+  const planes: MapPlane[] = ["field", "overlay"];
   const maps = new Map([1, 2, 3].map((serial) => [serial, {
     ...Object.fromEntries(planes.map((plane) => [plane, `${serial}-${plane}`])),
     // Include a sliced capsule: all three feImages and its merge must survive.
@@ -130,9 +130,9 @@ test("absorbing a group member and splitting the survivors retains every unchang
 test("removing a leading image or replacing capsule slices never moves the surviving image", () => {
   const { defs, apply } = scene();
   const output = (inputs: string[]) => `<feMerge result="output">${inputs.map((input) => `<feMergeNode in="${input}"/>`).join("")}</feMerge>`;
-  const plain = { displacement: "plain" } as MaterialMaps;
-  const capsule = { displacement: "capsule", capsule: { cap: 8, height: 20, planes: { displacement: ["left", "middle", "right"] } } } as unknown as MaterialMaps;
-  const moving = (maps: MaterialMaps) => mapImage(maps, "displacement", "a", 0, 0, 80, 20);
+  const plain = { field: "plain" } as MaterialMaps;
+  const capsule = { field: "capsule", capsule: { cap: 8, height: 20, planes: { field: ["left", "middle", "right"] } } } as unknown as MaterialMaps;
+  const moving = (maps: MaterialMaps) => mapImage(maps, "field", "a", 0, 0, 80, 20);
   apply([filter(moving(capsule) + image("z", "unchanged") + output(["a", "z"]))]);
   const survivor = defs.find("z")!;
   for (const maps of [plain, capsule, undefined, plain]) {

@@ -164,13 +164,11 @@ export function GlassContent({
   ref,
   ...props
 }: GlassContentProps) {
-  const { controller, maxSurfaces } = useScene();
+  const { controller } = useScene();
   const isolateScroll = useSyncExternalStore(subscribeEngine, clientWebKit, serverWebKit) && layout === "scroll";
   const attach = useCallback(
     (element: HTMLDivElement | null) => {
-      const hosts: HTMLElement[] = [];
-      for (let parent = element?.parentElement; parent?.hasAttribute("data-glass-filter-host"); parent = parent.parentElement) hosts.push(parent);
-      controller.setContent(element, hosts);
+      controller.setContent(element);
       return () => {
         controller.setContent(null);
       };
@@ -181,11 +179,6 @@ export function GlassContent({
     ref: [attach, ref ?? null],
     props: { ...props, "data-layout": layout, className: `lg-content ${className}` },
   });
-  // A fixed tree preserves child state and refs when a menu changes the
-  // number of optical passes. Keeping the structure on every engine also
-  // keeps server rendering and hydration identical.
-  for (let index = 0; index <= maxSurfaces; index++)
-    rendered = <div key={index} data-glass-filter-host="" data-layout={layout}>{rendered}</div>;
   // WebKit otherwise translates the entire cached reference-filter image
   // during asynchronous overflow scrolling, including stationary glass and
   // blur masks. A foreignObject keeps this live DOM scrollport and its filter

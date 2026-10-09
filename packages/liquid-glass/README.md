@@ -214,7 +214,7 @@ scene.dispose();
 
 Use the positioned scene/content/surface structure from the React example. `scene.addForeground(element)` registers foreground content and returns a cleanup function. `scene.addAnimator(animator)` updates custom animation before scene measurements.
 
-For complex scenes in Firefox, pass nested transparent hosts to `scene.setContent(content, hosts)`, ordered from the innermost ancestor to the outermost. Give each host `data-glass-filter-host=""` and the content's `data-layout` value so the library stylesheet sizes it correctly. Allocate one host per surface capacity plus an outer host for progressive blur. Create these containers before mounting stateful content. React's `GlassContent` supplies them automatically. Each stage filters the preceding stage's live DOM output; no background is duplicated. Missing hosts or an oversized individual branch are reported through `onDiagnostic`.
+In Firefox, each surface draws its own glass: the scene adds an `aria-hidden` layer as the surface's last child, beneath its other children, which paints a live `-moz-element()` view of the content and refracts it. The content layer itself is not filtered there. Firefox otherwise repaints a filtered content layer in software on every frame anything on the page animates. If the content element has no `id`, the scene gives it one while it is attached. Surfaces should not rely on `:last-child` styling of their own children.
 
 The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, and controller APIs for custom integrations. Type declarations describe their options.
 
@@ -224,7 +224,7 @@ The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, 
 - SVG filter performance varies between browser engines. Safari can spend substantially longer filtering large content layers than Chromium, even when material maps are cached. Keep scenes close to the content they need to refract, and test animated menus on the devices you support. Chromium, Firefox, Safari, and Electron are acceptance targets; they do not have identical performance.
 - For consistent refraction in Safari, give `GlassContent` an opaque background. Transparent source pixels can leave the original content visible beneath its refracted image.
 - Use bounded scenes with explicit content layers. Arbitrary page-backdrop sampling, native video composition, rotated/transformed ancestors, and native ports are outside the supported scope. Cross-origin image policies apply.
-- `GlassScene.maxSurfaces` defaults to 16 and accepts at most 64. Use `onDiagnostic` for map readiness, construction timing, filter graph limits, and GPU errors. Firefox limits each element's filter chain to 64 operations; `GlassContent` distributes complex scenes across its stable filter hosts.
+- `GlassScene.maxSurfaces` defaults to 16 and accepts at most 64. Use `onDiagnostic` for map readiness, construction timing, filter graph limits, and GPU errors.
 - NodeNext TypeScript consumers currently need `skipLibCheck: true` for upstream vgpu declarations.
 
 ## How it works

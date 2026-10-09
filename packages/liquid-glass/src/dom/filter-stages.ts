@@ -5,22 +5,4 @@ export function filterPrimitiveCount(markup: string): number {
   return [...markup.matchAll(/<fe(?!Func[RGBA]\b|MergeNode\b)[A-Z][\w]*\b/g)].length;
 }
 
-export interface FilterStage<T> { groups: T[]; markup: string; primitives: number }
-/** Each stage must be assigned to a distinct nested DOM element. Multiple
- * url() references on one element still share Gecko's 64-operation cap. */
-export function partitionFilterStages<T>(groups: readonly T[], render: (groups: readonly T[]) => string, limit = 64): FilterStage<T>[] {
-  const stages: FilterStage<T>[] = [];
-  let stage: FilterStage<T> | undefined;
-  for (const group of groups) {
-    const candidate = [...(stage?.groups ?? []), group];
-    const markup = render(candidate), primitives = filterPrimitiveCount(markup);
-    if (primitives <= limit) { stage = { groups: candidate, markup, primitives }; continue; }
-    if (stage) stages.push(stage);
-    const own = render([group]), count = filterPrimitiveCount(own);
-    if (count > limit) throw new RangeError(`One glass branch requires ${count} filter operations; this browser supports ${limit} per element.`);
-    stage = { groups: [group], markup: own, primitives: count };
-  }
-  if (stage) stages.push(stage);
-  return stages;
-}
 export { gecko } from "./engine.js";

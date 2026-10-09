@@ -5,6 +5,8 @@ import type { GlassRadius } from "../core/shape.js";
 import { effect, frame, init, target } from "vgpu";
 import type { Effect, Gpu, Target, ShaderSource } from "vgpu";
 import source from "./maps.wgsl";
+import { mapPlanes } from "./planes.js";
+export { mapPlanes } from "./planes.js";
 export interface MapGeometry {
   /** Resolved convex outline for container-relative glass, in local CSS pixels. */
   outline?: ShapePoint[];
@@ -20,7 +22,7 @@ export interface MapPixels {
   pixels: Uint8Array;
   duration: number;
 }
-/** A validated request, laid out in an atlas band of four planes. */
+/** A validated request, laid out in an atlas band of its planes. */
 interface Shape {
   geometry: MapGeometry;
   columns: number;
@@ -40,7 +42,7 @@ const maxAtlasRows = 8192;
  * lower ratio instead of failing. */
 export function mapScale(g: MapGeometry): number {
   const dpr = Math.max(1, Math.min(g.dpr ?? 1, 2));
-  const fit = Math.min(1, 4096 / ((g.width + 4) * dpr), (maxAtlasRows / 4) / ((g.height + 4) * dpr));
+  const fit = Math.min(1, 4096 / ((g.width + 4) * dpr), (maxAtlasRows / mapPlanes) / ((g.height + 4) * dpr));
   return fit < 1 ? Math.max(0.25, dpr * fit) : dpr;
 }
 /** Measure a request and tessellate its outline; invalid geometry throws here,
@@ -50,8 +52,8 @@ function measure(g: MapGeometry): Omit<Shape, "resolve" | "reject" | "started"> 
     throw new RangeError("Glass geometry must have positive, finite dimensions.");
   const dpr = mapScale(g);
   const columns = Math.ceil((g.width + 4) * dpr), rows = Math.ceil((g.height + 4) * dpr);
-  if (columns > 4096 || rows * 4 > maxAtlasRows)
-    throw new RangeError("Glass map exceeds the 4096 × 2048 pixel surface limit.");
+  if (columns > 4096 || rows * mapPlanes > maxAtlasRows)
+    throw new RangeError("Glass map exceeds the 4096 × 4096 pixel surface limit.");
   const { segments } = g.outline ? outlineSegments(g.outline) : shapeSegments(g.width, g.height, g.radius);
   return { geometry: g, columns, rows, dpr, segments };
 }
@@ -105,7 +107,7 @@ export class MaterialRenderer {
     let batch: Shape[] = [], segments = 0, rows = 0;
     const batches: Shape[][] = [];
     for (const shape of shapes) {
-      const band = shape.rows * 4 + (shape.rows * 4) % 2;
+      const band = shape.rows * mapPlanes + (shape.rows * mapPlanes) % 2;
       if (batch.length && (batch.length === maxShapes || segments + shape.segments.length > maxSegments || rows + band > maxAtlasRows)) {
         batches.push(batch); batch = []; segments = 0; rows = 0;
       }
@@ -142,7 +144,7 @@ export class MaterialRenderer {
           start, count: s.segments.length, pad: [0, 0],
         };
         // Bands start on even rows so derivative quads never straddle two shapes.
-        row += s.rows * 4 + (s.rows * 4) % 2;
+        row += s.rows * mapPlanes + (s.rows * mapPlanes) % 2;
         return entry;
       });
       const height = row;
@@ -157,7 +159,7 @@ export class MaterialRenderer {
         const atlas = await slot.target.color.read({ mipLevel: 0, region: "all" });
         const now = performance.now();
         shapes.forEach((s, i) => {
-          const planeRows = s.rows * 4;
+          const planeRows = s.rows * mapPlanes;
           const pixels = new Uint8Array(s.columns * planeRows * 4);
           for (let y = 0; y < planeRows; y++) {
             const from = ((bands[i]! + y) * width) * 4;

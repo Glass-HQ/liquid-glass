@@ -45,6 +45,14 @@ export function composeSparseLayers(units: readonly SparseCompositionUnit[], res
   });
   const parts: string[] = [], areas: string[] = [], outputs: string[] = [];
   groups.forEach((group, index) => {
+    if (group.members.length === 1) {
+      // Nothing else draws in this rectangle. The surface's own coverage
+      // cuts the source, and its layers go straight into the final merge.
+      const unit = units[group.members[0]!]!;
+      areas.push(unit.mask);
+      outputs.push(...unit.layers);
+      return;
+    }
     const p = `${result}-group${index}`, box = region(group.bounds);
     const area = `${p}-area`;
     parts.push(`<feFlood flood-color="white" ${box} result="${area}"/>`);
@@ -59,9 +67,12 @@ export function composeSparseLayers(units: readonly SparseCompositionUnit[], res
     }
     outputs.push(input);
   });
-  const allBounds = unionSamplingBounds(groups.map((group) => group.bounds));
-  parts.push(merge(areas, `${result}-areas`, allBounds));
-  parts.push(`<feComposite in="${source}" in2="${result}-areas" operator="out" result="${result}-outside"/>`);
+  let cut = areas[0]!;
+  if (areas.length > 1) {
+    parts.push(merge(areas, `${result}-areas`, unionSamplingBounds(groups.map((group) => group.bounds))));
+    cut = `${result}-areas`;
+  }
+  parts.push(`<feComposite in="${source}" in2="${cut}" operator="out" result="${result}-outside"/>`);
   // The regions are disjoint from the retained source, so drawing them over it
   // is exact. Software filters draw a merge with the platform's blitter; an
   // arithmetic sum would convert and clamp every pixel of the scene.

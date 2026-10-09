@@ -20,22 +20,20 @@ function renderContent(capacity: number | undefined, surfaces: number, layout: "
   return html.slice(0, html.indexOf(marker));
 }
 
-test("content has a fixed filter-host path while scene surfaces enter and leave", () => {
+test("content keeps one fixed element while scene surfaces enter and leave", () => {
   // Identical ancestry is required for React to preserve the content DOM,
-  // including live form values and caller refs, as optical passes change.
+  // including live form values and caller refs, as surfaces come and go.
   for (const capacity of [1, undefined, 64]) for (const layout of ["overlay", "flow", "scroll"] as const) {
     const count = capacity ?? 16;
     const empty = renderContent(capacity, 0, layout);
-    // One host per possible glass pass, plus the progressive-blur pass.
-    expect(empty.match(/data-glass-filter-host=""/g)?.length).toBe(count + 1);
+    expect(empty).not.toContain("data-glass-filter-host");
     expect(empty.match(/id="source"/g)?.length).toBe(1);
     expect(empty.match(/name="draft"/g)?.length).toBe(1);
     expect(empty).toContain('class="lg-content author-content"');
     expect(empty).toContain('aria-label="Backdrop"');
     expect(empty).toContain('style="width:240px;min-height:160px;filter:grayscale(1)"');
     expect(empty).toContain('value="Keep this value"');
-    // The source and every host carry the same flow/overlay contract.
-    expect(empty.match(new RegExp(`data-layout="${layout}"`, "g"))?.length).toBe(count + 2);
+    expect(empty.match(new RegExp(`data-layout="${layout}"`, "g"))?.length).toBe(1);
     for (const surfaces of [1, count]) expect(renderContent(capacity, surfaces, layout)).toBe(empty);
   }
 });
@@ -67,6 +65,6 @@ test("server and browser user agents render identical content ancestry", () => {
     expect(result.exitCode).toBe(0);
     return result.stdout.toString().trim();
   });
-  expect(html[0]!.match(/data-glass-filter-host=""/g)?.length).toBe(5);
+  expect(html[0]).toContain('id="source"');
   for (const browser of html.slice(1)) expect(browser).toBe(html[0]!);
 });

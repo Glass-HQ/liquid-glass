@@ -47,30 +47,20 @@ export function compoundSources<T extends FieldSurface>(ordered: readonly T[], c
 }
 
 interface FieldMember { serial: number; opacity: number; baseOpacity?: number }
-/** Draw one plane of a compound field. Displacement emits the real mask
- * images first, so its coverage and the subsequent mask plane share them. */
+/** Draw one plane of a compound field: the source's glass, faded as the
+ * popup absorbs it, under the popup's. A field's alpha is its coverage, so
+ * fading and merging fields also merges the shapes the material fills. */
 export function compoundFieldImage<T extends FieldMember>(source: T, popup: T, plane: MapPlane, result: string, box: FilterBounds,
   image: (member: T, plane: MapPlane, result: string) => string): string {
   const region = `x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}"`;
   const a = surfaceMapResult(source.serial, plane), b = surfaceMapResult(popup.serial, plane);
-  const sourceMask = `${surfaceMapResult(source.serial, "mask")}field`, popupMask = surfaceMapResult(popup.serial, "mask");
   const weight = Math.max(0, Math.min(1, source.opacity / (source.baseOpacity || 1)));
   const merge = (first: string, second: string) => `<feMerge result="${result}" ${region}><feMergeNode in="${first}"/><feMergeNode in="${second}"/></feMerge>`;
-  if (plane === "mask") return merge(sourceMask, popupMask);
-  const raw = image(source, plane, a) + image(popup, plane, b);
-  if (plane === "displacement") {
-    const mask = surfaceMapResult(source.serial, "mask");
-    const masks = image(source, "mask", mask) + image(popup, "mask", popupMask)
-      + `<feComponentTransfer in="${mask}" result="${sourceMask}" ${region}><feFuncA type="linear" slope="${weight}"/></feComponentTransfer>`;
-    // The map's crossfade already changes alpha where only one rectangle
-    // covers a pixel. Normalize before applying shape coverage; multiplying
-    // those two alphas would square the handoff and change the displacement.
-    return masks + raw + [a, b].map((name, index) => `<feComponentTransfer in="${name}" result="${name}opaque" ${region}><feFuncA type="linear" slope="0" intercept="1"/></feComponentTransfer><feComposite in="${name}opaque" in2="${index ? popupMask : sourceMask}" operator="in" result="${name}field" ${region}/>`).join("")
-      + merge(`${a}field`, `${b}field`);
-  }
-  // The source's edges used to sit below the popup's material. Preserve
-  // that occlusion even though both now share a single material pass.
-  return raw + `<feComponentTransfer in="${a}" result="${a}faded" ${region}><feFuncA type="linear" slope="${weight}"/></feComponentTransfer>`
-    + `<feComposite in="${a}faded" in2="${popupMask}" operator="out" result="${a}field" ${region}/>`
-    + merge(`${a}field`, b);
+  const faded = `<feComponentTransfer in="${a}" result="${a}faded" ${region}><feFuncA type="linear" slope="${weight}"/></feComponentTransfer>`;
+  const raw = image(source, plane, a) + image(popup, plane, b) + faded;
+  if (plane === "field") return raw + merge(`${a}faded`, b);
+  // The source's rim and light used to sit below the popup's material.
+  // Preserve that occlusion even though both now share a single material pass.
+  return raw + `<feComposite in="${a}faded" in2="${surfaceMapResult(popup.serial, "field")}" operator="out" result="${a}under" ${region}/>`
+    + merge(`${a}under`, b);
 }

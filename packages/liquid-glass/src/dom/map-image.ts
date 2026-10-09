@@ -2,8 +2,8 @@ import type { MapGeometry } from "../gpu/index.js";
 import type { MaterialMaps } from "./maps.js";
 import { touchMaps } from "./maps.js";
 
-export type MapPlane = "displacement" | "mask" | "highlight" | "outline";
-const resultSuffix: Record<MapPlane, string> = { displacement: "map", mask: "mask", highlight: "light", outline: "outline" };
+export type MapPlane = "field" | "overlay";
+const resultSuffix: Record<MapPlane, string> = { field: "field", overlay: "overlay" };
 /** Map resources belong to a surface, even when its material branch is
  * regrouped as another surface enters, moves nearby, or is absorbed. */
 export const surfaceMapResult = (serial: number, plane: MapPlane): string => `s${serial}${resultSuffix[plane]}`;

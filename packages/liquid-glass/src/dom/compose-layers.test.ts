@@ -123,15 +123,20 @@ test("bounds culling preserves paint order and alpha across disconnected and tra
   // Only the source cut-out covers the scene; the final merge draws over it.
   expect(fullComposites).toHaveLength(1);
   expect(markup).not.toContain('operator="arithmetic"');
-  expect(markup.match(/<feFlood/g)).toHaveLength(3);
+  // Only the overlapping trio needs a rectangle of its own; isolated
+  // surfaces cut the source by their own coverage.
+  expect(markup.match(/<feFlood/g)).toHaveLength(1);
   expect(markup).toContain('result="scene-group0-area"');
+  expect(markup).not.toContain("scene-far-output");
+  expect(markup).not.toContain("scene-touching-output");
 
 });
 
-test("a shared unit retains its full union bounds, including distant member pixels", () => {
+test("a shared unit keeps distant member pixels", () => {
   const shared = unit("shared", { x: -2, y: -2, width: 104, height: 24 });
   const markup = composeSparseLayers([shared]);
-  expect(markup).toContain('<feMerge result="scene-shared-output" x="-2" y="-2" width="104" height="24">');
+  // An isolated unit is never clipped to a rectangle at all.
+  expect(markup).not.toMatch(/<feMerge[^>]*\sx="/);
   const inputs = pixels([shared], .5, 2);
   close(evaluate(markup, inputs, 99), sequential([shared], inputs, 99));
 });

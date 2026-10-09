@@ -28,11 +28,14 @@ import { clusterFilterBranches, mapBoxesOverlap } from "./filter-groups.js";
 import { compoundFieldImage, compoundSources, fieldTouches } from "./compound-field.js";
 import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds.js";
 import { sharedBackdropMaterials } from "./shared-backdrop.js";
-import { filterPrimitiveCount, gecko, partitionFilterStages } from "./filter-stages.js";
+import { gecko } from "./filter-stages.js";
+import { createLensLayers } from "./lens-layers.js";
+import type { LayerFrame, LayerLens } from "./lens-layers.js";
 import { composeSparseLayers } from "./compose-layers.js";
 import { acquireFilterPaintRoot, acquireSceneCompositingLayer } from "./filter-paint-root.js";
 import type { FilterBounds } from "./filter-bounds.js";
 import { materials } from "../core/materials.js";
+import { frostMarkup, overlayTintMarkup, tintChannels, tintMarkup, toneMarkup } from "./material-graph.js";
 import type { MaterialOptions } from "../core/materials.js";
 import { getMaterialMaps, getSurfaceMaterialMaps, peekMaterialMaps, peekSurfaceMaterialMaps } from "./maps.js";
 import { getMaterialRenderer } from "../gpu/index.js";
@@ -81,7 +84,7 @@ export interface GlassSceneController {
   /** Optional transparent, nested filter hosts in inner-to-outer order.
    * Gecko uses separate hosts for graphs exceeding its operation limit;
    * reserve the final host for progressive blur. */
-  setContent(element: HTMLElement | null, filterHosts?: readonly HTMLElement[]): void;
+  setContent(element: HTMLElement | null): void;
   addSurface(element: HTMLElement, options?: SurfaceOptions): () => void;
   /** Live DOM above the backdrop that must pass through overlapping glass. */
   addForeground(element: HTMLElement): () => void;
@@ -114,6 +117,8 @@ interface Lens {
   place?: { a: Placed; b: Placed; mix: number; stretched: boolean };
   /** When the layout size last changed. */
   resized?: number;
+  /** Where the surface's own glass layer is drawn, in Gecko. */
+  frame?: LayerFrame;
   preparing: Set<string>;
   shown?: MapGeometry;
   geometryKey?: string;
@@ -177,7 +182,6 @@ export function createGlassScene(
   let notified = "";
   let filterError: Error | undefined;
   let progressiveFilterError: Error | undefined;
-  let contentChainError: Error | undefined;
   let content: HTMLElement | null = null,
     disposed = false,
     dirty = true,
@@ -198,7 +202,7 @@ export function createGlassScene(
    * 60 Hz lands every frame on time instead of alternating one and two. */
   let composedAt = 0;
   const notify = (error?: Error) => {
-    error ??= filterError ?? progressiveFilterError ?? contentChainError ?? [...lenses].find((l) => l.error)?.error;
+    error ??= filterError ?? progressiveFilterError ?? [...lenses].find((l) => l.error)?.error;
     const ready = [...lenses].filter((l) => l.maps);
     const readyValue = String(ready.length === lenses.size && !error);
     if (root.dataset.glassReady !== readyValue) root.dataset.glassReady = readyValue;
@@ -232,11 +236,9 @@ export function createGlassScene(
     : undefined;
   let surfaceFilters = "";
   let progressiveOutsets = 0;
-  let surfaceOperations = 0;
-  let filterHosts: HTMLElement[] = [];
-  const hostStyles = new Map<HTMLElement, FilterStyle>();
-  const hostFilters = new Map<HTMLElement, string>();
-  const hostGeometry = new Map<HTMLElement, { x: number; y: number; width: number; height: number }>();
+  /** Gecko draws each surface's glass in a layer of its own. */
+  const layers = gecko ? createLensLayers(root) : undefined;
+  let contentRect = { left: 0, top: 0, width: 0, height: 0 };
   let lastPaintOrder = "";
   interface FilterStyle { original: string; base: string; priority: string; applied?: string; releasePaint?: () => void }
   const retainFilter = (element: HTMLElement): FilterStyle => {
@@ -266,11 +268,6 @@ export function createGlassScene(
   const releaseContent = (element: HTMLElement) => {
     if (contentStyle) releaseFilter(element, contentStyle);
     contentStyle = undefined;
-    for (const [host, style] of hostStyles) releaseFilter(host, style);
-    hostStyles.clear();
-    hostFilters.clear();
-    hostGeometry.clear();
-    filterHosts = [];
   };
   const restoreForeground = (element: HTMLElement) => {
     const original = foregroundStyles.get(element);
@@ -367,28 +364,24 @@ export function createGlassScene(
     // surface drawn as its own branch costs a full lens of outsets there, so
     // opaque surfaces of one material that neither touch nor neighbor
     // other glass share a branch: their maps and masks merge into one set of
-    // images, which a single material pass refracts. Gecko also needs shared
-    // branches to stay below its filter-graph operation limit.
+    // images, which a single material pass refracts. Elsewhere a shared
+    // branch only spreads its passes over the empty space between surfaces.
     const branchKey = (l: Lens) => `${l.options.material ?? "clear"},${l.options.appearance ?? "light"},${l.options.tint ?? ""},${wanted.get(l)}`;
-    const independent = (l: Lens) => (webkit || gecko) && l.opacity >= 0.999 && !parents.get(l)!.length;
+    const independent = (l: Lens) => webkit && l.opacity >= 0.999 && !parents.get(l)!.length;
     // Neighbors drawn in the same pass need no finished glass of each other.
     const shareable = (l: Lens) => independent(l) && !drawn.some((other) =>
       other !== l && near(l, other) && (!independent(other) || branchKey(other) !== branchKey(l) || mapBoxesOverlap(l, other)));
     let units: Lens[][] = [];
     const sharedUnits = new Map<string, Lens[]>();
-    let adjacent: { key: string; unit: Lens[] } | undefined;
     for (const l of drawn) {
       if (pairedSources.has(l)) continue;
       const source = paired.get(l);
-      if (source) { units.push([source, l]); adjacent = undefined; continue; }
-      if (!shareable(l)) { units.push([l]); adjacent = undefined; continue; }
+      if (source) { units.push([source, l]); continue; }
+      if (!shareable(l)) { units.push([l]); continue; }
       const key = branchKey(l);
-      // Gecko draws units in sequence, including through separate filter
-      // hosts. Group only consecutive units so paint order never changes.
-      let unit = gecko ? adjacent?.key === key ? adjacent.unit : undefined : sharedUnits.get(key);
+      let unit = sharedUnits.get(key);
       if (!unit) { unit = []; sharedUnits.set(key, unit); units.push(unit); }
       unit.push(l);
-      adjacent = { key, unit };
     }
     const materialGroupOf = new Map(units.flatMap((unit) => unit.map((l) => [l, unit] as const)));
     const scale = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
@@ -447,12 +440,12 @@ export function createGlassScene(
     // software buffer even though the visible surface stays inside.
     const buildStage = (stageUnits: readonly Lens[][]) => {
       const unitOf = new Map(stageUnits.flatMap((unit) => unit.map((l) => [l, unit] as const)));
-      const tiles = stageUnits.length && !gecko ? edgeTiles(width, height, bounds, "scene", crossedSides(width, height, stageUnits.flat().map((l) => webkit ? { x: l.x, y: l.y, width: l.w, height: l.h } : cropOf(l)))) : { markup: "", names: {} };
+      const tiles = stageUnits.length ? edgeTiles(width, height, bounds, "scene", crossedSides(width, height, stageUnits.flat().map((l) => webkit ? { x: l.x, y: l.y, width: l.w, height: l.h } : cropOf(l)))) : { markup: "", names: {} };
       const parts: string[] = [tiles.markup];
-      let source = "SourceGraphic";
+      const source = "SourceGraphic";
       const beneathOf = new Map(stageUnits.map((unit, index) => {
         const lens = compoundOf(unit)?.popup ?? unit[0]!;
-        const beneath = gecko || unit.length > 1 && !compoundOf(unit) ? [] : stageUnits.slice(0, index).flat().filter((earlier) =>
+        const beneath = unit.length > 1 && !compoundOf(unit) ? [] : stageUnits.slice(0, index).flat().filter((earlier) =>
           materialGroupOf.get(earlier) !== materialGroupOf.get(lens) &&
           unit.some((member) => fieldTouches(earlier, member, reach(lens))));
         return [unit, beneath] as const;
@@ -468,10 +461,7 @@ export function createGlassScene(
       // evaluated again from its blurs up, so glass merely near another
       // surface takes only that surface's rim and light images instead.
       const layersOf = new Map<Lens[], string[]>();
-      const composite = (unit: Lens[], input: string) => {
-        const p = unitName(unit);
-        return `<feComposite in="${input}" in2="${p}mask" operator="out" result="${p}outside"/><feMerge result="${p}composite"><feMergeNode in="${p}outside"/>${layersOf.get(unit)!.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`;
-      };
+      const maskOf = new Map<Lens[], string>();
       stageUnits
         .forEach((unit) => {
           // The first surface of a shared branch stands for all: they share
@@ -482,8 +472,7 @@ export function createGlassScene(
             // Names follow the surface, not its position, so primitives persist
             // as other surfaces enter and leave the scene. A shared identity
             // comes directly from its unique members, without retaining old groups.
-            p = unitName(unit),
-            dark = o.appearance === "dark";
+            p = unitName(unit);
           const box = unionOf(unit.map((member) => ({ x: member.x - 2, y: member.y - 2, width: member.w + 4, height: member.h + 4 })));
           const x = box.x,
             y = box.y,
@@ -510,17 +499,14 @@ export function createGlassScene(
               + `<feMerge result="${result}" ${region(box)}>${unit.map((member) => `<feMergeNode in="${surfaceMapResult(member.serial, plane)}"/>`).join("")}</feMerge>`;
           };
           const opaque = unit.length > 1 || l.opacity >= 0.999;
-          // Extending each unit's finished input also keeps edge sampling
-          // identical when a unit moves to another filter host.
-          const inputTiles = gecko ? edgeTiles(width, height, bounds, p, crossedSides(width, height, unit.map(cropOf)), source) : tiles;
-          if (gecko) parts.push(inputTiles.markup);
           const first = parts.length;
+          // The field displaces with its red and green channels and covers
+          // the shape with its alpha, which a fading surface scales.
           parts.push(
-            // Displacement outside the shape is masked away, so the map needs no neutral fill.
-            image("displacement", `${p}map`),
-            image("mask", opaque ? `${p}mask` : `${p}rawmask`),
-            ...(opaque ? [] : [`<feComponentTransfer in="${p}rawmask" result="${p}mask"><feFuncA type="linear" slope="${l.opacity}"/></feComponentTransfer>`]),
+            image("field", `${p}field`),
+            ...(opaque ? [] : [`<feComponentTransfer in="${p}field" result="${p}mask"><feFuncA type="linear" slope="${l.opacity}"/></feComponentTransfer>`]),
           );
+          const mask = opaque ? `${p}field` : `${p}mask`;
           const nested = parents.get(l)!;
           // Keep blur intermediates local to the lens, including its sampling
           // margin. Full-scene intermediates exceed WebKit's filter budget.
@@ -533,92 +519,51 @@ export function createGlassScene(
             if (touching) inputs.push(...layersOf.get(unitOf.get(earlier)!)!);
             else {
               const q = `s${earlier.serial}`;
-              parts.push(mapImage(earlier.maps!, "outline", `${p}by${q}rim`, earlier.x - 2, earlier.y - 2, earlier.w + 4, earlier.h + 4),
-                mapImage(earlier.maps!, "highlight", `${p}by${q}light`, earlier.x - 2, earlier.y - 2, earlier.w + 4, earlier.h + 4));
-              inputs.push(`${p}by${q}rim`, `${p}by${q}light`);
+              parts.push(mapImage(earlier.maps!, "overlay", `${p}by${q}overlay`, earlier.x - 2, earlier.y - 2, earlier.w + 4, earlier.h + 4));
+              inputs.push(`${p}by${q}overlay`);
             }
           }
-          const edges = tilesFor(width, height, crop).map((key) => inputTiles.names[key]).filter((name): name is string => Boolean(name));
-          // Always a merge, so the primitive keeps its identity as edge tiles
-          // and neighbors come and go; a one-input merge is a plain copy.
-          parts.push(`<feMerge result="${p}crop" ${region(crop)}>${edges.map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/>${inputs.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`);
-          const cropped = `${p}crop`;
+          const edges = tilesFor(width, height, crop).map((key) => tiles.names[key]).filter((name): name is string => Boolean(name));
+          // Glass well inside its content reads the source directly. Only a
+          // surface past the content's edge or above other glass gathers its
+          // backdrop into a cropped merge, which software filters pay for.
+          if (edges.length || inputs.length)
+            parts.push(`<feMerge result="${p}crop" ${region(crop)}>${edges.map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/>${inputs.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`);
+          const cropped = edges.length || inputs.length ? `${p}crop` : source;
           let base = cropped;
-          let tone: string;
           if (o.material === "regular") {
-            const spec = dark ? materials.regular.dark : materials.regular.light;
             const backdrop = shared?.get(unit);
             if (backdrop) {
               if (!emitted.has(backdrop.result)) { parts.push(backdrop.markup); emitted.add(backdrop.result); }
               base = backdrop.result;
             } else {
-              parts.push(
-                `<feGaussianBlur in="${cropped}" stdDeviation="${materials.regular.blur * soften}" result="${p}frost"/><feGaussianBlur in="${cropped}" stdDeviation="${spec.fillSigma * soften}" result="${p}fill"/><feBlend in="${p}frost" in2="${p}fill" mode="${dark ? "darken" : "lighten"}" result="${p}blend"/><feComposite in="${p}blend" in2="${p}frost" operator="arithmetic" k2="${spec.fillOpacity}" k3="${1 - spec.fillOpacity}" result="${p}mix"/>`,
-              );
-              base = `${p}mix`;
+              const frost = frostMarkup(p, cropped, o, soften);
+              parts.push(frost.markup);
+              base = frost.result;
             }
-            // SVG's per-channel transfer is a calibrated tone curve, then a chroma matrix.
-            const [a, b, q, chroma] = spec.tone;
-            const table = Array.from({ length: 33 }, (_, n) => {
-              const v = n / 32;
-              const toned = a + b * v + q * v * v;
-              const toneWeight = dark ? 0.90 : 0.80;
-              return toneWeight * toned + (1 - toneWeight) * v;
-            }).join(" ");
-            tone = `<feComponentTransfer in="${p}refracted" result="${p}tone"><feFuncR type="table" tableValues="${table}"/><feFuncG type="table" tableValues="${table}"/><feFuncB type="table" tableValues="${table}"/></feComponentTransfer><feColorMatrix in="${p}tone" type="saturate" values="${chroma}" result="${p}color"/>`;
-          } else {
-            const spec = dark ? materials.clear.dark : materials.clear.light;
-            // A second dark layer needs a distinct light response, rather than
-            // converging on the same tone as the containing surface.
-            const table = Array.from({ length: 33 }, (_, n) => {
-              const v = n / 32;
-              const tone = v + spec.shadowLift * (1 - v) ** 3
-                - spec.highlightRolloff * v ** 3;
-              // Keep a subtle broad tint, with less veil in light appearance
-              // and a slightly stronger pale response in dark appearance.
-              const tinted = dark ? 0.38 * v + 0.20 : 0.78 * v + 0.26;
-              const tintWeight = dark ? 0.14 : 0.06;
-              const layerLight = dark && nested.length ? 0.08 * (1 - v) : 0;
-              return Math.max(0, Math.min(1, (1 - tintWeight) * tone + tintWeight * tinted + layerLight));
-            }).join(" ");
-            tone = `<feComponentTransfer in="${p}refracted" result="${p}color"><feFuncR type="table" tableValues="${table}"/><feFuncG type="table" tableValues="${table}"/><feFuncB type="table" tableValues="${table}"/></feComponentTransfer>`;
           }
           const amount = amounts.get(l)!;
           // Blur needs the sampling neighborhood, while pointwise tone and
           // chroma only need the pixels that refraction delivers to the lens.
           parts.push(
-            `<feDisplacementMap in="${base}" in2="${p}map" scale="${amount * 2}" xChannelSelector="R" yChannelSelector="G" result="${p}refracted"/>`,
-            tone,
+            `<feDisplacementMap in="${base}" in2="${p}field" scale="${amount * 2}" xChannelSelector="R" yChannelSelector="G" result="${p}refracted"/>`,
+            toneMarkup(p, o, nested.length > 0),
           );
           let color = `${p}color`;
-          let highlight = `${p}light`;
-          const tint = o.tint && /^#[\da-f]{6}$/i.test(o.tint)
-            ? [1, 3, 5].map((offset) => parseInt(o.tint!.slice(offset, offset + 2), 16) / 255)
-            : undefined;
+          let overlay = `${p}overlay`;
+          const tint = tintChannels(o);
           if (tint) {
-            // Colored glass transmits luminance, rather than mixing neutral
-            // backdrop RGB into a weak overlay. A pale backdrop can brighten
-            // the pigment without removing its chroma; dark detail stays visible.
-            const body = o.material === "regular" ? 0.78 : 0.68;
-            const channels = ["R", "G", "B"];
-            parts.push(
-              `<feColorMatrix in="${color}" type="saturate" values="0" result="${p}luminance"/>`,
-              `<feComponentTransfer in="${p}luminance" result="${p}tinted">${channels.map((channel, index) => `<feFunc${channel} type="linear" slope="${tint[index]! * (1 - body)}" intercept="${tint[index]! * body}"/>`).join("")}<feFuncA type="linear" slope="${1 - body}" intercept="${body}"/></feComponentTransfer>`,
-            );
-            color = `${p}tinted`;
-            highlight = `${p}tintLight`;
+            const tinted = tintMarkup(p, o, tint);
+            parts.push(tinted.markup);
+            color = tinted.color;
+            overlay = `${p}tintOverlay`;
           }
           parts.push(
-            `<feComposite in="${color}" in2="${p}mask" operator="in" result="${p}inside"/>`,
-            image("outline", `${p}outline`),
-            image("highlight", `${p}light`),
-            // Preserve the WGSL highlight coverage while coloring its radiance.
-            ...(tint ? [`<feComponentTransfer in="${p}light" result="${highlight}">${["R", "G", "B"].map((channel, index) => `<feFunc${channel} type="linear" slope="0" intercept="${0.45 + 0.55 * tint[index]!}"/>`).join("")}</feComponentTransfer>`] : []),
+            `<feComposite in="${color}" in2="${mask}" operator="in" result="${p}inside"/>`,
+            image("overlay", `${p}overlay`),
+            ...(tint ? [overlayTintMarkup(`${p}overlay`, overlay, o, tint)] : []),
             // Fully opaque glass needs no opacity pass over its rim and light.
-            ...(opaque ? [] : [
-              `<feComponentTransfer in="${p}outline" result="${p}fadedOutline"><feFuncA type="linear" slope="${l.opacity}"/></feComponentTransfer>`,
-              `<feComponentTransfer in="${highlight}" result="${p}fadedLight"><feFuncA type="linear" slope="${l.opacity}"/></feComponentTransfer>`,
-            ]),
+            ...(opaque ? [] : [`<feComponentTransfer in="${overlay}" result="${p}fadedOverlay"><feFuncA type="linear" slope="${l.opacity}"/></feComponentTransfer>`]),
           );
           // Without a subregion every primitive covers the whole filter region,
           // the scene plus padding. Only the surface's box matters, plus the
@@ -632,86 +577,60 @@ export function createGlassScene(
                 const region = sampledStages.has(/result="([^"]+)"/.exec(attributes)?.[1] ?? "") ? reachBox : { x, y, width: w, height: h };
                 return `<${name}${attributes} x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}"${close}>`;
               });
-          const layer = [`${p}inside`, opaque ? `${p}outline` : `${p}fadedOutline`, opaque ? highlight : `${p}fadedLight`];
+          const layer = [`${p}inside`, opaque ? overlay : `${p}fadedOverlay`];
           layersOf.set(unit, layer);
-          if (gecko) {
-            // Every unit sees the finished output below it. A stage boundary
-            // replaces this result with the next host's SourceGraphic, so
-            // transparent content has the same composition on either side.
-            parts.push(composite(unit, source));
-            source = `${p}composite`;
-          }
+          maskOf.set(unit, mask);
         });
       // Replace covered input, rather than painting a sparse refracted copy
-      // over its sharp original. Each pass also replaces lower glass.
+      // over its sharp original. Remove covered source pixels even when the
+      // DOM backdrop is transparent. Sparse contributions preserve alpha and
+      // paint order with one full-scene pass, however many surfaces there are.
       if (stageUnits.length) {
-        // Remove covered source pixels even when the DOM backdrop is
-        // transparent. Sparse contributions preserve alpha and paint order
-        // without a full-scene replacement pass for every WebKit surface.
-        if (webkit) {
-          parts.push(composeSparseLayers(stageUnits.map((unit) => ({
-            id: unitName(unit), mask: `${unitName(unit)}mask`, layers: layersOf.get(unit)!,
-            bounds: unionSamplingBounds(unit.map((l) => ({ x: l.x - 2, y: l.y - 2, width: l.w + 4, height: l.h + 4 }))),
-          }))));
-        } else if (!gecko) {
-          let input = "SourceGraphic";
-          for (const unit of stageUnits) { parts.push(composite(unit, input)); input = `${unitName(unit)}composite`; }
-        }
+        parts.push(composeSparseLayers(stageUnits.map((unit) => ({
+          id: unitName(unit), mask: maskOf.get(unit)!, layers: layersOf.get(unit)!,
+          bounds: unionSamplingBounds(unit.map((l) => ({ x: l.x - 2, y: l.y - 2, width: l.w + 4, height: l.h + 4 }))),
+        }))));
       }
       return parts.join("");
     };
     filterError = undefined;
-    surfaceOperations = 0;
-    hostFilters.clear();
-    if (drawn.length) {
-      let stages = [buildStage(units)];
-      if (gecko) {
-        try {
-          // A large shared branch may itself exceed the cap while its maps
-          // crossfade. Split its independent members before packing stages.
-          const bounded: Lens[][] = [];
-          const divide = (unit: Lens[]) => {
-            if (filterPrimitiveCount(buildStage([unit])) <= 64 || unit.length === 1) { bounded.push(unit); return; }
-            const middle = Math.ceil(unit.length / 2);
-            divide(unit.slice(0, middle));
-            divide(unit.slice(middle));
-          };
-          units.forEach(divide);
-          stages = partitionFilterStages(bounded, buildStage).map((stage) => stage.markup);
-          const capacity = filterHosts.length ? filterHosts.length - 1 : 1;
-          if (stages.length > capacity) throw new RangeError(`Glass needs ${stages.length} separate filter hosts in this browser. Pass nested hosts to setContent or use GlassContent.`);
-        } catch (error) {
-          filterError = error instanceof Error ? error : new Error(String(error));
-          stages = [buildStage(units)];
+    if (layers) {
+      // Every surface draws its own glass; the content keeps only passes
+      // Gecko renders on the GPU.
+      const layered = new Map(drawn.filter((l) => l.frame).map((l) => [l, {
+        serial: l.serial, element: l.element, options: l.options, maps: l.maps!, place: l.place,
+        x: l.x, y: l.y, w: l.w, h: l.h, opacity: l.opacity, refraction: wanted.get(l)!, frame: l.frame!,
+        parents: [] as LayerLens[], beneath: [] as LayerLens[],
+      } satisfies LayerLens] as const));
+      for (const [l, layer] of layered) {
+        layer.parents.push(...parents.get(l)!.map((parent) => layered.get(parent)).filter((parent) => parent !== undefined));
+        for (const earlier of drawn) {
+          if (earlier === l) break;
+          const below = layered.get(earlier);
+          if (below && !layer.parents.includes(below) && !l.element.contains(earlier.element) && fieldTouches(earlier, l, reach(l))) layer.beneath.push(below);
         }
       }
-      stages.forEach((primitives, index) => {
-        if (webkit) {
-          const own = filterGraphOutsets(primitives);
-          const total = own + progressiveOutsets;
-          const budget = filterBudgetFactor(width * scale, height * scale, total * scale);
-          const factor = own ? Math.max(0, Math.min(1, (total * budget - progressiveOutsets) / own)) : 1;
-          if (factor < 1) primitives = primitives.replace(/(<fe(?:GaussianBlur|DisplacementMap)\b[^>]*?\s(?:stdDeviation|scale)=")([^"]+)(")/g,
-            (_, before: string, value: string, after: string) => before + value.split(" ").map((part) => Number(part) * factor).join(" ") + after);
-        }
-        const target = gecko && filterHosts.length ? filterHosts[index] : undefined;
-        const frame = target ? hostGeometry.get(target) : undefined;
-        const dx = frame?.x ?? 0, dy = frame?.y ?? 0;
-        const filterId = `${id}-scene${index ? `-${index}` : ""}`;
-        // A host can differ from its source's origin or size. Every stage
-        // still draws in the original content's coordinate system.
-        const translated = dx || dy ? primitives.replace(/\s([xy])="(-?[\d.eE+-]+)"/g,
-          (_, axis: string, value: string) => ` ${axis}="${Number(value) + (axis === "x" ? dx : dy)}"`) : primitives;
-        filters.push(`<filter id="${filterId}" x="${(bounds.x + dx) / (frame?.width || width)}" y="${(bounds.y + dy) / (frame?.height || height)}" width="${bounds.width / (frame?.width || width)}" height="${bounds.height / (frame?.height || height)}" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${translated}</filter>`);
-        if (target) hostFilters.set(target, filterId);
-        else { applied.push(filterId); if (gecko) surfaceOperations += filterPrimitiveCount(primitives); }
-      });
+      layers.update([...layered.values()], content, contentRect);
+    } else if (drawn.length) {
+      let primitives = buildStage(units);
+      if (webkit) {
+        const own = filterGraphOutsets(primitives);
+        const total = own + progressiveOutsets;
+        const budget = filterBudgetFactor(width * scale, height * scale, total * scale);
+        const factor = own ? Math.max(0, Math.min(1, (total * budget - progressiveOutsets) / own)) : 1;
+        if (factor < 1) primitives = primitives.replace(/(<fe(?:GaussianBlur|DisplacementMap)\b[^>]*?\s(?:stdDeviation|scale)=")([^"]+)(")/g,
+          (_, before: string, value: string, after: string) => before + value.split(" ").map((part) => Number(part) * factor).join(" ") + after);
+      }
+      const filterId = `${id}-scene`;
+      filters.push(`<filter id="${filterId}" x="${bounds.x / width}" y="${bounds.y / height}" width="${bounds.width / width}" height="${bounds.height / height}" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${primitives}</filter>`);
+      applied.push(filterId);
     }
     const foregroundTargets = new Map<HTMLElement, string>();
     const filteredAncestors = new Map<ForegroundLens, Lens[]>();
     const targets = orderForeground();
     const rank = new Map(targets.map((target, index) => [target, index]));
-    targets.forEach((target) => {
+    // Gecko's layers already refract the glass beneath them.
+    if (!layers) targets.forEach((target) => {
       // An invisible surface, such as a trigger that became its menu, has no
       // content to refract.
       if (!target.w || !target.h || target.opacity < 0.001) return;
@@ -723,12 +642,7 @@ export function createGlassScene(
       );
       if (!overlays.length) return;
       const filterId = `${id}-f${target.serial}`;
-      const markup = foregroundFilter(filterId, target, overlays);
-      if (gecko) {
-        const count = filterPrimitiveCount(markup);
-        if (count > 64) filterError ??= new RangeError(`Overlapping glass requires ${count} foreground filter operations; this browser supports 64 per element.`);
-      }
-      filters.push(markup);
+      filters.push(foregroundFilter(filterId, target, overlays));
       foregroundTargets.set(target.element, filterId);
       filteredAncestors.set(target, overlays);
     });
@@ -741,7 +655,6 @@ export function createGlassScene(
     // A chain keeps every pass in the same CSS reference box. Nested filtered
     // elements change WebKit's reference bounds as preceding lenses overflow.
     surfaceFilters = applied.map((id) => `url("#${liveId(id)}")`).join(" ");
-    for (const [host, filterId] of hostFilters) hostFilters.set(host, `url("#${liveId(filterId)}")`);
     notify();
   }
   /** Prepare maps for a shape an animation will pass through. Only resting
@@ -837,15 +750,7 @@ export function createGlassScene(
     const r = (content ?? root).getBoundingClientRect();
     const contentWidth = content ? content.offsetWidth : root.clientWidth;
     const contentHeight = content ? content.offsetHeight : root.clientHeight;
-    if (gecko) for (const host of filterHosts) {
-      const box = host.getBoundingClientRect();
-      const next = { x: r.left - box.left, y: r.top - box.top, width: host.offsetWidth, height: host.offsetHeight };
-      const previous = hostGeometry.get(host);
-      if (!previous || Object.entries(next).some(([key, value]) => value !== previous[key as keyof typeof next])) {
-        hostGeometry.set(host, next);
-        dirty = true;
-      }
-    }
+    contentRect = { left: 0, top: 0, width: r.width, height: r.height };
     const size = `${contentWidth},${contentHeight}`;
     if (size !== lastSize) {
       dirty = true;
@@ -916,6 +821,15 @@ export function createGlassScene(
     lenses.forEach((l) => {
       const animated = l.outline?.geometry();
       const place = l.place;
+      if (layers) {
+        // The surface's screen box and the scale its transforms apply, so its
+        // glass layer can draw the content under it in its own space.
+        const box = l.element.getBoundingClientRect();
+        // Positions are relative to the content, so page scrolling changes nothing.
+        const frame = { left: box.left - r.left, top: box.top - r.top, sx: box.width / (l.element.offsetWidth || box.width || 1), sy: box.height / (l.element.offsetHeight || box.height || 1), clientLeft: l.element.clientLeft, clientTop: l.element.clientTop };
+        if (!l.frame || Object.entries(frame).some(([key, value]) => Math.abs(value - l.frame![key as keyof LayerFrame]) > 0.01)) dirty = true;
+        l.frame = frame;
+      }
       // In motion the lens covers whatever it draws this frame.
       const rect = place
         ? { left: Math.min(place.a.x, place.b.x) + r.left, top: Math.min(place.a.y, place.b.y) + r.top,
@@ -1023,8 +937,7 @@ export function createGlassScene(
     // CSS stacking can change without geometry changing, but only with the DOM.
     const paintOrder = orderForeground().map((target) => target.serial).join(",");
     if (paintOrder !== lastPaintOrder) { dirty = true; lastPaintOrder = paintOrder; }
-    const blurTarget = gecko && filterHosts.length ? filterHosts[filterHosts.length - 1]! : content;
-    const blur = content ? progressive.update(blurTarget) : "";
+    const blur = content ? progressive.update(content) : "";
     const nextOutsets = progressive.outsets();
     if (nextOutsets !== progressiveOutsets) { progressiveOutsets = nextOutsets; dirty = true; }
     const changed = dirty;
@@ -1038,43 +951,29 @@ export function createGlassScene(
     progressiveFilterError = nextProgressiveError;
     writes.push(() => {
       if (rebuild) compose(contentWidth, contentHeight);
-      const operations = gecko && !filterHosts.length ? surfaceOperations + progressive.operations() : 0;
-      const nextChainError = operations > 64 ? new RangeError(`Glass and progressive blur require ${operations} filter operations on one element; this browser supports 64. Supply separate filter hosts to setContent.`) : undefined;
-      const chainErrorChanged = contentChainError?.message !== nextChainError?.message;
-      contentChainError = nextChainError;
-      if (content && gecko && filterHosts.length) {
-        for (const host of filterHosts) {
-          const filters = [hostFilters.get(host), host === blurTarget ? blur : ""].filter(Boolean).join(" ");
-          const style = hostStyles.get(host);
-          if (style) applyFilter(host, style, filters);
-        }
-      } else if (content) {
+      if (content) {
         const filters = (progressive.scrollsContent() ? [blur, surfaceFilters] : [surfaceFilters, blur]).filter(Boolean).join(" ");
         if (contentStyle) applyFilter(content, contentStyle, filters);
       }
-      if (progressiveErrorChanged || chainErrorChanged) notify();
+      if (progressiveErrorChanged) notify();
     });
     return { active: busy || changed || pending > 0, write: () => { for (const write of writes) write(); } };
   }
   const ticker = createTicker(tick, {
     root,
     // The filters and the warmer are this scene's own output.
-    ignore: (target) => svg.contains(target) || warmer.owns(target) || hostStyles.has(target as HTMLElement),
+    ignore: (target) => svg.contains(target) || warmer.owns(target) || Boolean(layers?.owns(target)),
     onMutation: () => { structure++; },
   });
   return {
-    setContent(element, hosts = []) {
+    setContent(element) {
       if (content) releaseContent(content);
       if (content) ticker.unobserve(content);
       content = element;
-      filterHosts = element && gecko ? [...hosts] : [];
-      if (new Set(filterHosts).size !== filterHosts.length || filterHosts.some((host, index) => !host.contains(index ? filterHosts[index - 1]! : element!)))
-        throw new TypeError("Glass filter hosts must be distinct nested ancestors, ordered from inner to outer.");
       // WebKit applies a reference filter again whenever the element paints,
       // which a popup, caret or highlight above it causes. A layer of its own
       // keeps the filtered result until the filter or the content changes.
       if (element) contentStyle = retainFilter(element);
-      for (const host of filterHosts) hostStyles.set(host, retainFilter(host));
       if (element) ticker.observe(element);
       dirty = true;
       ticker.wake();
@@ -1159,6 +1058,7 @@ export function createGlassScene(
     dispose() {
       clearTimeout(warmRenderer);
       progressive.dispose();
+      layers?.dispose();
       warmer.dispose();
       animators.forEach((animator) => animator.dispose());
       animators.clear();

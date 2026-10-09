@@ -84,7 +84,7 @@ export function createMapWarmer(root: HTMLElement) {
         for (const { filter } of probes) filter.setAttribute("x", filter.getAttribute("x") === "0" ? "0.000001" : "0");
     }, delay));
   };
-  const urls = (maps: MaterialMaps) => [maps.displacement, maps.mask, maps.highlight, maps.outline, ...Object.values(maps.capsule?.planes ?? {}).flat()];
+  const urls = (maps: MaterialMaps) => [maps.field, maps.overlay, ...Object.values(maps.capsule?.planes ?? {}).flat()];
   const completePreparations = () => {
     const now = performance.now();
     for (const [maps, ready] of pending) if (ready <= now) {

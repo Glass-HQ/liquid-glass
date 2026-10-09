@@ -9,25 +9,15 @@
   width: 100%;
   height: 100%;
 }
-:where([data-glass-filter-host]) { display: contents; }
 :where(.lg-content[data-layout="scroll"]) { overflow: auto; }
 :where(.lg-scroll-paint-root) { position: absolute; inset: 0; overflow: visible; }
 :where(.lg-scroll-paint-root > foreignObject) { overflow: visible; }
-/* Separate rendered elements keep complex Gecko filter graphs within its
-   per-element operation limit. Other engines need no additional boxes. */
-@supports (-moz-appearance: none) {
-  :where([data-glass-filter-host]) {
-    display: block;
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-  }
-  :where([data-glass-filter-host][data-layout="flow"]) {
-    position: relative;
-    inset: auto;
-    height: auto;
-  }
+/* Gecko draws each surface's glass in a layer beneath its children. */
+.lg-glass-layer {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  background-repeat: no-repeat;
 }
 :where(.lg-surface) {
   position: relative;

@@ -5,9 +5,9 @@ const gpu = await init();
 const renderer = new MaterialRenderer(gpu);
 let inwardPixels = 0;
 // Sampling bounds depend on this optical invariant, not on the precise SDF:
-// symmetric maps point toward each image axis. Check the whole opaque map,
-// including its transparent-mask corners, because another map can reveal
-// those pixels when two shapes crossfade in the same image rectangle.
+// symmetric maps point toward each image axis. Check every pixel of the field,
+// including its uncovered corners, because another map can reveal those
+// pixels when two shapes crossfade in the same image rectangle.
 function assertInwardField(map) {
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
@@ -15,8 +15,7 @@ function assertInwardField(map) {
       const r = map.pixels[offset], g = map.pixels[offset + 1];
       // 127 and 128 straddle exact neutral in an eight-bit map. This is the
       // only outward bias allowed by the source-sampling bound.
-      if (map.pixels[offset + 3] !== 255 ||
-          (x + 0.5 < map.width / 2 && r < 127) ||
+      if ((x + 0.5 < map.width / 2 && r < 127) ||
           (x + 0.5 > map.width / 2 && r > 128) ||
           (y + 0.5 < map.height / 2 && g < 127) ||
           (y + 0.5 > map.height / 2 && g > 128)) {
@@ -43,14 +42,14 @@ try {
   console.log({
     size: [map.width, map.height],
     time: map.duration,
-    center: pixel(1, 52, 32),
-    corner: pixel(1, 0, 0),
+    center: pixel(0, 52, 32),
+    corner: pixel(0, 0, 0),
     leftDisplacement: pixel(0, 3, 32),
     rightDisplacement: pixel(0, 100, 32),
   });
   if (
-    pixel(1, 52, 32)[3] !== 255 ||
-    pixel(1, 0, 0)[3] !== 0 ||
+    pixel(0, 52, 32)[3] !== 255 ||
+    pixel(0, 0, 0)[3] !== 0 ||
     pixel(0, 3, 32)[0] <= 128 ||
     pixel(0, 100, 32)[0] >= 128
   )
@@ -63,12 +62,14 @@ try {
     let highlight = 0, sideHighlight = 0, outline = 0;
     for (let y = 0; y < capsule.height; y++) {
       for (let x = 0; x < capsule.width; x++) {
-        const alpha = capsule.pixels[((2 * capsule.height + y) * capsule.width + x) * 4 + 3];
+        // The overlay is white light over a black rim: its color carries the light.
+        const offset = ((capsule.height + y) * capsule.width + x) * 4;
+        const alpha = capsule.pixels[offset + 3] * capsule.pixels[offset] / 255;
         highlight += alpha;
         // The corner transition shares light and outline; the middle of each
         // side remains free of the top/bottom highlight.
         if (y / dpr >= 40 && y / dpr <= 76) sideHighlight += alpha;
-        outline += capsule.pixels[((3 * capsule.height + y) * capsule.width + x) * 4 + 3];
+        outline += capsule.pixels[offset + 3] * (255 - capsule.pixels[offset]) / 255;
       }
     }
     console.log({ dpr, highlight, sideHighlight, outline });
@@ -76,7 +77,7 @@ try {
       throw new Error("Capsule highlight overlaps the side outline");
   }
   // Fixed end caps plus a stretched straight middle must reproduce the GPU
-  // fields of the actual narrow/wide tabs, for all four optical planes.
+  // fields of the actual narrow/wide tabs, for both optical planes.
   for (const dpr of [1, 2]) {
     const baked = await renderer.render({ width: 90, height: 30, radius: "capsule", dpr });
     assertInwardField(baked);
@@ -84,12 +85,15 @@ try {
     for (const width of [75, 100, 118]) {
       const actual = await renderer.render({ width, height: 30, radius: "capsule", dpr });
       let maxError = 0;
-      for (let plane = 0; plane < 4; plane++) for (let y = 0; y < actual.height; y++) for (let x = 0; x < actual.width; x++) {
+      for (let plane = 0; plane < 2; plane++) for (let y = 0; y < actual.height; y++) for (let x = 0; x < actual.width; x++) {
         const sx = x < cap ? x : x >= actual.width - cap ? baked.width - (actual.width - x) :
           cap + Math.floor((x - cap + 0.5) * (baked.width - 2 * cap) / (actual.width - 2 * cap));
+        const ai = ((plane * actual.height + y) * actual.width + x) * 4, bi = ((plane * baked.height + y) * baked.width + sx) * 4;
         for (let channel = 0; channel < 4; channel++) {
-          const a = actual.pixels[((plane * actual.height + y) * actual.width + x) * 4 + channel];
-          const b = baked.pixels[((plane * baked.height + y) * baked.width + sx) * 4 + channel];
+          // Compare what draws: overlay color is premultiplied by its coverage.
+          const weight = (pixels, i) => plane === 1 && channel < 3 ? pixels[i + 3] / 255 : 1;
+          const a = actual.pixels[ai + channel] * weight(actual.pixels, ai);
+          const b = baked.pixels[bi + channel] * weight(baked.pixels, bi);
           maxError = Math.max(maxError, Math.abs(a - b));
         }
       }
@@ -109,7 +113,7 @@ try {
   ]) {
     const map = await renderer.render(geometry);
     assertInwardField(map);
-    const alpha = (x, y) => map.pixels[((map.height + y) * map.width + x) * 4 + 3];
+    const alpha = (x, y) => map.pixels[(y * map.width + x) * 4 + 3];
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         if (Math.abs(alpha(x,y)-alpha(map.width-1-x,y)) > 2 ||
@@ -137,7 +141,7 @@ try {
         distance=Math.min(distance,Math.hypot(px-a[0]-t*dx,py-a[1]-t*dy));
       }
       if(distance<2) continue;
-      const alpha=map.pixels[((map.height+y)*map.width+x)*4+3];
+      const alpha=map.pixels[(y*map.width+x)*4+3];
       if(alpha!==(inside?255:0)) throw new Error(`Concentric GPU coverage disagrees with contour at ${px},${py}`);
       checked++;
     }
@@ -158,7 +162,7 @@ try {
       throw new Error(`Concurrent map ${i} differs from its sequential pixels`);
   });
   console.log({ concurrentMaps: concurrent.length, pixels: "identical to sequential rendering" });
-  console.log({ inwardPixels, displacement: "opaque symmetric fields point inward within RGBA8 neutral quantization" });
+  console.log({ inwardPixels, displacement: "symmetric fields point inward within RGBA8 neutral quantization" });
 } finally {
   renderer.dispose();
 }

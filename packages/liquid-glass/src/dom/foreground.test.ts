@@ -7,21 +7,23 @@ test("foreground optics use local coordinates and preserve transparent input out
   const target = { x: 100, y: 200, w: 200, h: 100 } as ForegroundLens;
   const overlay = { x: 150, y: 220, w: 80, h: 60, opacity: .5,
     options: { material: "regular", refraction: 8 },
-    maps: { mask: "mask.png", displacement: "map.png" } as MaterialMaps,
+    maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
   const filter = foregroundFilter("test", target, [overlay]);
   expect(filter).toContain('x="48" y="18"');
   expect(filter).toContain('scale="16"');
   expect(filter).toContain('primitiveUnits="userSpaceOnUse"');
   expect(filter).toContain('slope="0.5"');
+  // A half-transparent lens fades the coverage the field carries in its alpha.
   expect(filter).toContain('in="SourceGraphic" in2="f0mask" operator="out"');
+  expect(filter).toContain('<feComponentTransfer in="f0raw"');
   expect(filter).not.toContain("feTile");
   expect(filter).not.toContain("outline");
   expect(filter).not.toContain("tableValues");
   expect(filter).not.toContain("feFlood");
   // Refraction is restricted to the map; blur retains the full 3-sigma
   // sampling neighborhood plus the largest possible displacement.
-  expect(filter).toContain('in2="f0map" x="48" y="18" width="84" height="64"');
+  expect(filter).toContain('in2="f0raw" x="48" y="18" width="84" height="64"');
   const blur = /<feGaussianBlur[^>]+>/.exec(filter)![0];
   expect(blur).toContain('width="');
   expect(overlaps(target, overlay)).toBe(true);
@@ -31,7 +33,7 @@ test("foreground optics use local coordinates and preserve transparent input out
 test("foreground refraction keeps the same pixel displacement across target aspect ratios", () => {
   const overlay = { x: 50, y: 20, w: 80, h: 60, opacity: 1,
     options: { material: "clear", refraction: 8 },
-    maps: { mask: "mask.png", displacement: "map.png" } as MaterialMaps,
+    maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
   for (const [w, h] of [[200, 100], [100, 200], [400, 50]]) {
     const target = { x: 0, y: 0, w, h } as ForegroundLens;
@@ -44,7 +46,7 @@ test("foreground refraction keeps the same pixel displacement across target aspe
 
 test("upper lenses process the result of preceding foreground passes", () => {
   const target = { x: 0, y: 0, w: 200, h: 100 } as ForegroundLens;
-  const overlay = { ...target, opacity: 1, options: { material: "clear" }, maps: { mask: "mask", displacement: "map" } } as ForegroundLens;
+  const overlay = { ...target, opacity: 1, options: { material: "clear" }, maps: { field: "field" } } as ForegroundLens;
   const filter = foregroundFilter("test", target, [overlay, overlay]);
   expect(filter).toContain('<feDisplacementMap in="f0result"');
   expect(filter).not.toContain("feGaussianBlur");
@@ -55,20 +57,20 @@ test("scaled foreground targets keep the glass in the same viewport location", (
   const target = { x: 0, y: 0, w: 200, h: 100, element: { offsetWidth: 100, offsetHeight: 50 } } as ForegroundLens;
   const overlay = { x: 50, y: 20, w: 80, h: 60, opacity: 1,
     options: { material: "regular", refraction: 8 },
-    maps: { mask: "mask.png", displacement: "map.png" } as MaterialMaps,
+    maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
   const markup = foregroundFilter("scaled", target, [overlay]);
   expect(markup).toContain('x="24" y="9" width="42" height="32"');
   expect(markup).toContain('scale="8"');
   expect(markup).toContain('stdDeviation="3.665 3.665"');
-  expect(markup).not.toContain('result="f0rawmap"');
+  expect(markup).not.toContain('result="f0map"');
 });
 
 test("unequal target scales preserve displacement on each viewport axis without clipping channels", () => {
   const target = { x: 0, y: 0, w: 200, h: 50, element: { offsetWidth: 100, offsetHeight: 100 } } as ForegroundLens;
   const overlay = { x: 50, y: 20, w: 80, h: 60, opacity: 1,
     options: { material: "regular", refraction: 8 },
-    maps: { mask: "mask.png", displacement: "map.png" } as MaterialMaps,
+    maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
   const markup = foregroundFilter("stretched", target, [overlay]);
   expect(markup).toContain('x="24" y="36" width="42" height="128"');
