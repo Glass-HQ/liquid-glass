@@ -16,8 +16,12 @@ const limit = 4096 * 4096 * 0.9;
  * accumulated outsets stays inside WebKit's buffer clamp. 1 when it already fits. */
 export function filterBudgetFactor(width: number, height: number, outsets: number): number {
   if (!webkit || outsets <= 0 || (width + 2 * outsets) * (height + 2 * outsets) <= limit) return 1;
-  const fit = (-(width + height) + Math.sqrt((width + height) ** 2 - 4 * (width * height - limit))) / 4;
-  return Math.max(0.1, Math.min(1, fit / outsets));
+  return Math.max(0.1, Math.min(1, outsetBudget(width, height) / outsets));
+}
+
+/** Largest outsets, in device pixels, a `width` × `height` device-pixel box can take before the clamp. */
+export function outsetBudget(width: number, height: number): number {
+  return Math.max(0, (-(width + height) + Math.sqrt((width + height) ** 2 - 4 * (width * height - limit))) / 4);
 }
 
 /** Mirror WebKit's depth-first outset fold. Shared inputs are visited again
@@ -35,7 +39,8 @@ export function filterGraphOutsets(markup: string, width = 1, height = width): n
     const sigma = Math.max(deviation[0]! * width, (deviation[1] ?? deviation[0]!) * height);
     const outset = tag === "feGaussianBlur" && sigma > 0
       ? Math.floor(3 * Math.min(500, Math.max(2, Math.floor(sigma * .75 * Math.sqrt(2 * Math.PI) + .5))) / 2)
-      : tag === "feDisplacementMap" ? Math.ceil(Math.abs(Number(attributes.scale ?? 0)) * Math.max(width, height) / 2) : 0;
+      : tag === "feDisplacementMap" ? Math.ceil(Math.abs(Number(attributes.scale ?? 0)) * Math.max(width, height) / 2)
+      : tag === "feOffset" ? Math.ceil(Math.max(Math.abs(Number(attributes.dx ?? 0)) * width, Math.abs(Number(attributes.dy ?? 0)) * height)) : 0;
     last = { inputs, outset };
     if (attributes.result) nodes.set(attributes.result, last);
   }

@@ -23,7 +23,8 @@ import type { ScrollEdgesOptions } from "./progressive.js";
 import type { ProgressiveBlurOptions } from "../core/progressive.js";
 export type { ScrollEdgesOptions, GlassScrollTarget } from "./progressive.js";
 import { crossedSides, edgeTiles, filterBounds, tilesFor } from "./filter-bounds.js";
-import { blurOutsets, filterBudgetFactor, filterGraphOutsets, webkit } from "./filter-budget.js";
+import { blurOutsets, filterBudgetFactor, filterGraphOutsets, outsetBudget, webkit } from "./filter-budget.js";
+import { padRepaintReach, repaintReach } from "./filter-reach.js";
 import { clusterFilterBranches, mapBoxesOverlap } from "./filter-groups.js";
 import { compoundFieldImage, compoundSources, fieldTouches } from "./compound-field.js";
 import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds.js";
@@ -629,6 +630,11 @@ export function createGlassScene(
         const factor = own ? Math.max(0, Math.min(1, (total * budget - progressiveOutsets) / own)) : 1;
         if (factor < 1) primitives = primitives.replace(/(<fe(?:GaussianBlur|DisplacementMap)\b[^>]*?\s(?:stdDeviation|scale)=")([^"]+)(")/g,
           (_, before: string, value: string, after: string) => before + value.split(" ").map((part) => Number(part) * factor).join(" ") + after);
+        // Chained filters add their outsets, so the progressive blur's count
+        // toward the reach a repaint needs.
+        const needed = repaintReach(primitives, width, height, progressive.regions()) - progressiveOutsets;
+        const pad = Math.min(needed, outsetBudget(width * scale, height * scale) / scale - progressiveOutsets);
+        if (pad > own * factor) primitives = padRepaintReach(primitives, Math.floor(pad), width, height);
       }
       const filterId = `${id}-scene`;
       filters.push(`<filter id="${filterId}" x="${bounds.x / width}" y="${bounds.y / height}" width="${bounds.width / width}" height="${bounds.height / height}" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${primitives}</filter>`);

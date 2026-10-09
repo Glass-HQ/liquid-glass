@@ -8,7 +8,8 @@ import type {
   PhysicalEdge,
   ProgressiveBlurOptions,
 } from "../core/progressive.js";
-import { filterBudgetFactor, filterGraphOutsets } from "./filter-budget.js";
+import { filterBudgetFactor, filterGraphOutsets, outsetBudget } from "./filter-budget.js";
+import { padRepaintReach, repaintReach } from "./filter-reach.js";
 import { filterPrimitiveCount } from "./filter-stages.js";
 import { gecko, webkit } from "./engine.js";
 import { acquireFilterPaintRoot } from "./filter-paint-root.js";
@@ -469,7 +470,13 @@ export function createProgressiveLayer(
         currentOutsets = outsets * soften / scale;
         if (soften < 1) for (const r of regions) { r.blur *= soften; r.refraction *= soften; }
       }
-      const next = progressiveGraph(id, regions, width, height);
+      let next = progressiveGraph(id, regions, width, height);
+      if (webkit) {
+        // Blur bands sit at the edges; a repaint across the element must reach
+        // them. Leave half the budget to glass chained on the same element.
+        const pad = Math.min(repaintReach(next, width, height), outsetBudget(width * scale, height * scale) / scale / 2);
+        if (pad > currentOutsets) { next = padRepaintReach(next, Math.floor(pad), width, height); currentOutsets = Math.floor(pad); }
+      }
       if (next !== markup) {
         markup = next;
         regionCount = regions.length;
