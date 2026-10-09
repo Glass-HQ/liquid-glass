@@ -2,7 +2,7 @@
 
 - Use Bun workspaces and TypeScript. Keep the root `bun.lock` authoritative.
 - Use vgpu and WGSL for production GPU rendering. At setup or upgrade time, use the latest released vgpu and read its bundled documentation. For shader development, use the official vgpu skill and project-local tools: docs, examples, doctor, required WGSL validation, and real GPU readbacks.
-- Use normal SVG filters on explicit DOM content layers for refraction. Do not introduce WebGL/GLSL, HTML-in-Canvas, DOM screenshots, CSS material approximations, or SVG backdrop filters as fallback renderers.
+- Everything must work by default for every user of the target browsers: no browser flags, origin trials, or opt-in APIs such as HTML-in-Canvas. Glass must look the same in each engine. Engine-specific render paths are welcome when they keep that look and are measured and verified in each engine. Refract live DOM with SVG filters; do not use DOM screenshots, WebGL/GLSL, or CSS approximations of the material.
 - Chromium, Safari, Firefox, and Electron are release acceptance targets. Verify visuals with the Codex browser or computer use; do not add Playwright or another browser automation suite. A result in one browser does not prove parity.
 - Use shadcn/ui Mira components installed through its CLI for site controls, and Hugeicons for icons.
 - Keep the public site to one library, a short introduction, interactive examples, and usage. Do not add pricing, accounts, status chips, decorative feature grids, or a separate showcase renderer. Examples must use the library's public exports.
