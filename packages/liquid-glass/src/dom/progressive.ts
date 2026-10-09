@@ -170,8 +170,12 @@ export function progressiveGraph(id: string, regions: ProgressiveRegion[], width
   const parts: string[] = [];
   const merge = (inputs: string[], result: string, box?: Box) =>
     `<feMerge result="${result}"${box ? ` ${attributes(box)}` : ""}>${inputs.map((input) => `<feMergeNode in="${input}"/>`).join("")}</feMerge>`;
-  const add = (a: string, b: string, result: string, box?: Box) =>
-    `<feComposite in="${a}" in2="${b}" operator="arithmetic" k2="1" k3="1"${box ? ` ${attributes(box)}` : ""} result="${result}"/>`;
+  // A sum. Software filters draw "lighter" as a plus-lighter blend; an
+  // arithmetic composite converts and clamps every pixel. Gecko keeps the
+  // arithmetic form, which WebRender renders natively on the GPU.
+  const add = (a: string, b: string, result: string, box?: Box) => target === "gecko"
+    ? `<feComposite in="${a}" in2="${b}" operator="arithmetic" k2="1" k3="1"${box ? ` ${attributes(box)}` : ""} result="${result}"/>`
+    : `<feComposite in="${a}" in2="${b}" operator="lighter"${box ? ` ${attributes(box)}` : ""} result="${result}"/>`;
   if (target === "gecko") {
     // Gecko renders this on the GPU, where a full-size pass is cheap and a
     // primitive is not: its limit is 64 for every filter on the element.
