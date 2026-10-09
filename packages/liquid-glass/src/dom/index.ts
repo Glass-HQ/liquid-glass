@@ -575,7 +575,10 @@ export function createGlassScene(
           // the scene plus padding. Only the surface's box matters, plus the
           // reach of its displacement for the material it samples.
           const reachBox = unionSamplingBounds(unit.map((member) => sampling.get(member)!));
-          const sampledStages = new Set(["frost", "fill", "blend", "mix"].map((name) => `${p}${name}`));
+          // WebKit's displacement reads its input only inside its own
+          // subregion and writes transparent pixels for any sample beyond it,
+          // so it must cover every pixel it reaches; the mask clips it after.
+          const sampledStages = new Set([...["frost", "fill", "blend", "mix"], ...(webkit ? ["refracted"] : [])].map((name) => `${p}${name}`));
           for (let index = first; index < parts.length; index++)
             parts[index] = parts[index]!.replace(/<(feFlood|feComposite|feDisplacementMap|feColorMatrix|feComponentTransfer|feGaussianBlur|feBlend)\b([^>]*?)(\/?)>/g,
               (tag, name: string, attributes: string, close: string) => {
