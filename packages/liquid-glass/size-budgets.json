@@ -3,11 +3,11 @@
   "initialGzip": {
     "Surface": 47104,
     "Button": 48640,
-    "Toolbar": 60928,
+    "Toolbar": 61440,
     "Tabs": 67584,
     "Menu": 105472,
-    "Slider and switch": 71168,
-    "Progressive blur": 46592,
+    "Slider and switch": 71680,
+    "Progressive blur": 47104,
     "Everything": 126976
   },
   "lazyGzip": {

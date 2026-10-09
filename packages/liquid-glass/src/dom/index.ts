@@ -31,6 +31,7 @@ import { compoundFieldImage, compoundSources, fieldTouches } from "./compound-fi
 import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds.js";
 import { sharedBackdropMaterials } from "./shared-backdrop.js";
 import { gecko } from "./filter-stages.js";
+import { chromium } from "./engine.js";
 import { createLensLayers } from "./lens-layers.js";
 import type { LayerFrame, LayerLens } from "./lens-layers.js";
 import { composeSparseLayers } from "./compose-layers.js";
@@ -138,9 +139,21 @@ interface Lens {
   writtenClip?: string;
   writtenRadius?: string;
   writtenReady?: string;
+  /** When the surface's box last moved or changed size. */
+  movedAt?: number;
+  /** The inline will-change a moving surface had before Chromium gave it a layer. */
+  promoted?: { value: string; priority: string };
 }
 let serial = 0;
 let lensSerial = 0;
+const promotion = "transform";
+/** Return a moving surface's will-change to what it was before it moved. */
+function demote(l: Lens) {
+  const promoted = l.promoted;
+  l.promoted = undefined;
+  if (!promoted || promoted.value) return;
+  if (l.element.style.getPropertyValue("will-change") === promotion) l.element.style.removeProperty("will-change");
+}
 /** Shapes in motion use 1× maps: a quarter of the pixels to render, encode
  * and decode each frame. The resting shape returns to full density. */
 const motionDpr = 1;
@@ -768,6 +781,7 @@ export function createGlassScene(
     if (disposed) return false;
     const writes: (() => void)[] = [];
     let busy = updateControlMotion(root, now);
+    let lensMoved = false, settling = false;
     // Lenses are positioned in the content layer's space, which scrolls in flow layout.
     const r = (content ?? root).getBoundingClientRect();
     const contentWidth = content ? content.offsetWidth : root.clientWidth;
@@ -866,6 +880,10 @@ export function createGlassScene(
         [x - l.x, y - l.y, w - l.w, h - l.h].some((n) => Math.abs(n) > 0.05)
       ) {
         Object.assign(l, { x, y, w, h });
+        // A morphing outline repaints itself every frame anyway; only a
+        // surface moving as a whole gains from a layer of its own.
+        if (!animated) l.movedAt = now;
+        lensMoved = true;
         dirty = true;
       }
       l.baseOpacity = effectiveOpacity(l.element, root) * (l.outline?.opacity() ?? 1);
@@ -948,6 +966,21 @@ export function createGlassScene(
       if (resizing) busy = true;
       request(l, g, resizing);
     });
+    // Chromium repaints filtered content whenever anything painted into its
+    // layer changes, so a surface moving every frame would re-filter the whole
+    // content every frame. While it moves it gets a layer of its own, and the
+    // content is filtered again only when the glass is rebuilt.
+    if (chromium) lenses.forEach((l) => {
+      const moving = now - (l.movedAt ?? -Infinity) < 400;
+      if (moving) settling = true;
+      if (moving === Boolean(l.promoted)) return;
+      if (moving) {
+        l.promoted = { value: l.element.style.getPropertyValue("will-change"), priority: l.element.style.getPropertyPriority("will-change") };
+        if (!l.promoted.value) writes.push(() => l.element.style.setProperty("will-change", promotion));
+      } else {
+        writes.push(() => demote(l));
+      }
+    });
     foregrounds.forEach((target) => {
       const box = target.element.getBoundingClientRect();
       const next = { x: box.left - r.left, y: box.top - r.top, w: box.width, h: box.height };
@@ -976,7 +1009,7 @@ export function createGlassScene(
     const zoom = `${pageZoom()} ${devicePixelRatio}`;
     if (zoom !== composedZoom) { composedZoom = zoom; dirty = true; }
     const changed = dirty;
-    const moving = busy && now - composedAt < 15;
+    const moving = (busy || lensMoved) && now - composedAt < 15;
     const rebuild = dirty && !holding && !moving;
     if (rebuild) composedAt = now;
     if (!holding && !moving) dirty = false;
@@ -993,7 +1026,7 @@ export function createGlassScene(
       }
       if (progressiveErrorChanged) notify();
     });
-    return { active: busy || changed || pending > 0, write: () => { for (const write of writes) write(); } };
+    return { active: busy || changed || settling || pending > 0, write: () => { for (const write of writes) write(); } };
   }
   const ticker = createTicker(tick, {
     root,
@@ -1063,6 +1096,7 @@ export function createGlassScene(
         element.style.clipPath = lens.clip;
         element.style.borderRadius = lens.borderRadius;
         element.style.removeProperty("--lg-radius");
+        demote(lens);
         lenses.delete(lens);
         structure++;
         ticker.unobserve(element);
@@ -1109,7 +1143,7 @@ export function createGlassScene(
       for (const element of foregroundStyles.keys()) restoreForeground(element);
       svg.remove();
       releaseSceneLayer?.();
-      lenses.forEach((lens) => { lens.animators.forEach((animator) => animator.dispose()); setResolvedShape(lens.element); lens.releaseShape(); lens.element.style.clipPath = lens.clip; lens.element.style.borderRadius = lens.borderRadius; lens.element.style.removeProperty("--lg-radius"); });
+      lenses.forEach((lens) => { lens.animators.forEach((animator) => animator.dispose()); setResolvedShape(lens.element); lens.releaseShape(); lens.element.style.clipPath = lens.clip; lens.element.style.borderRadius = lens.borderRadius; lens.element.style.removeProperty("--lg-radius"); demote(lens); });
       lenses.clear();
       foregrounds.clear();
     },
