@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react"
 import { nowPlaying } from "./music"
 import type { FormEvent, ReactNode, RefObject } from "react"
 import {
-  GlassScene,
   GlassShape,
   GlassContent,
   GlassSurface,
@@ -49,11 +48,11 @@ export const defaultProgressiveOptions: ProgressiveOptions = { mode: "library", 
 type BlurProps = { blur: number; refraction: number; disabled: boolean }
 const Icon = ({ icon }: { icon: typeof PlayIcon }) => <HugeiconsIcon icon={icon} size={18} strokeWidth={1.8} />
 
-/** One nested scene per mode; every mode uses the public package exports only. */
+/** The preview and its controls share the surrounding public GlassScene. */
 export function ProgressiveScene({ options, appearance }: { options: ProgressiveOptions; appearance: GlassAppearance }) {
   const blur = { blur: progressiveBlurLevels[options.blur] || 20, refraction: options.refraction ? 6 : 0, disabled: options.blur === "off" }
   const className = `progressive-scene is-${options.mode} ${appearance === "dark" ? "glass-dark" : ""}`
-  return <GlassScene key={options.mode} appearance={appearance} material="regular" maxSurfaces={8} className={className}>
+  return <div key={options.mode} className={className}>
     {options.mode === "messages" ? <MessagesScene blur={blur} />
       : options.mode === "article" ? <ArticleScene blur={blur} appearance={appearance} />
       : options.mode === "library" ? <LibraryScene blur={blur} appearance={appearance} />
@@ -62,25 +61,22 @@ export function ProgressiveScene({ options, appearance }: { options: Progressive
         <GlassProgressiveBlur edge={options.edge} size={260} {...blur} />
         <p className={`progressive-caption is-${options.edge}`}>A little further away.</p>
       </>}
-  </GlassScene>
+  </div>
 }
 
-// GlassScrollEdges filters the scroller's still parent inside GlassContent, so
-// glass chrome refracts the already-blurred edge and stays sharp above it.
+// The public scroll layout keeps native scrolling and stationary optical
+// layers in the same paint pass on Safari.
 function ScrollFrame({ scroller, label, className, onScroll, children }: {
-  scroller: RefObject<HTMLElement | null>
+  scroller: RefObject<HTMLDivElement | null>
   label: string
   className: string
   onScroll?: () => void
   children: ReactNode
 }) {
-  return <GlassContent>
-    <div className="progressive-frame">
-      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Native keyboard scrolling. */}
-      <section ref={scroller} tabIndex={0} aria-label={label} className={`progressive-viewport ${className}`} onScroll={onScroll}>
-        {children}
-      </section>
-    </div>
+  // GlassContent owns the filtered div and its scene registration.
+  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+  return <GlassContent layout="scroll" ref={scroller} role="region" tabIndex={0} aria-label={label} className={`progressive-viewport ${className}`} onScroll={onScroll}>
+    {children}
   </GlassContent>
 }
 
@@ -108,7 +104,7 @@ const albums = [
 ]
 const libraryEdges: Record<"grid" | "row", GlassBlurEdge[]> = { grid: ["top", "bottom"], row: ["inline-start", "inline-end"] }
 function LibraryScene({ blur, appearance }: { blur: BlurProps; appearance: GlassAppearance }) {
-  const scroller = useRef<HTMLElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   const [layout, setLayout] = useState<"grid" | "row">("grid")
   const [playing, setPlaying] = useState(false)
   return <>
@@ -150,7 +146,7 @@ const opening: Message[] = [
   { id: 10, from: "them", text: "Okay that's unreal. Bring the warm jacket, it gets cold fast." },
 ]
 function MessagesScene({ blur }: { blur: BlurProps }) {
-  const scroller = useRef<HTMLElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   const [messages, setMessages] = useState(opening)
   const [draft, setDraft] = useState("")
   useEffect(() => {
@@ -192,7 +188,7 @@ function MessagesScene({ blur }: { blur: BlurProps }) {
 }
 
 function ArticleScene({ blur, appearance }: { blur: BlurProps; appearance: GlassAppearance }) {
-  const scroller = useRef<HTMLElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   const bar = useRef<HTMLDivElement>(null)
   // A CSS variable keeps the collapsing title off React's render path while scrolling.
   const collapse = () => {

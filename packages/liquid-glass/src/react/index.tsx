@@ -1,4 +1,6 @@
 import { shapeContainerAttributes } from "../dom/shape-layout.js";
+import { webkit } from "../dom/filter-budget.js";
+import { prepareSubmenuHandoff } from "../dom/morph.js";
 import { GlassShape } from "./shape.js";
 export { GlassShape, GlassShapeContainer, GlassCorner } from "./shape.js";
 export type { GlassShapeProps, GlassCornerProps } from "./shape.js";
@@ -15,6 +17,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useMergedRef } from "./merged-ref.js";
 import type {
@@ -149,9 +152,12 @@ export function GlassScene({
   });
 }
 export interface GlassContentProps extends ComponentPropsWithRef<"div"> {
-  /** Flow content determines scene height; overlay is the default for backdrops. */
-  layout?: "overlay" | "flow";
+  /** Flow determines scene height; scroll is a native scrollport filling the scene. */
+  layout?: "overlay" | "flow" | "scroll";
 }
+const subscribeEngine = () => () => {};
+const clientWebKit = () => webkit;
+const serverWebKit = () => false;
 export function GlassContent({
   layout = "overlay",
   className = "",
@@ -159,6 +165,7 @@ export function GlassContent({
   ...props
 }: GlassContentProps) {
   const { controller, maxSurfaces } = useScene();
+  const isolateScroll = useSyncExternalStore(subscribeEngine, clientWebKit, serverWebKit) && layout === "scroll";
   const attach = useCallback(
     (element: HTMLDivElement | null) => {
       const hosts: HTMLElement[] = [];
@@ -179,6 +186,13 @@ export function GlassContent({
   // keeps server rendering and hydration identical.
   for (let index = 0; index <= maxSurfaces; index++)
     rendered = <div key={index} data-glass-filter-host="" data-layout={layout}>{rendered}</div>;
+  // WebKit otherwise translates the entire cached reference-filter image
+  // during asynchronous overflow scrolling, including stationary glass and
+  // blur masks. A foreignObject keeps this live DOM scrollport and its filter
+  // in the same paint pass. Input, selection and scrolling remain native.
+  if (isolateScroll) rendered = <svg className="lg-scroll-paint-root" width="100%" height="100%">
+    <foreignObject width="100%" height="100%">{rendered}</foreignObject>
+  </svg>;
   return rendered;
 }
 /** How a glass surface moves. Every option is available to any surface. */
@@ -732,11 +746,23 @@ export function GlassMenuSubmenu(props: Menu.SubmenuRoot.Props) {
   return <MenuTriggersContext.Provider value={triggers}><Menu.SubmenuRoot {...props} /></MenuTriggersContext.Provider>;
 }
 
-export function GlassMenuSubmenuTrigger({ ref, delay = 40, ...props }: ComponentPropsWithRef<typeof Menu.SubmenuTrigger>) {
+export function GlassMenuSubmenuTrigger({ ref, delay = 40, onPointerEnter, onPointerLeave, onFocus, onBlur, ...props }: ComponentPropsWithRef<typeof Menu.SubmenuTrigger>) {
   const attach = useRegisterTrigger(() => null);
+  const release = useRef<(() => void) | undefined>(undefined);
+  const reserve = (element: HTMLElement) => {
+    release.current?.();
+    release.current = prepareSubmenuHandoff(element);
+  };
+  const clear = () => { release.current?.(); release.current = undefined; };
+  useEffect(() => clear, []);
   // A submenu should be there the moment the pointer rests on its item; Base
   // UI's safe polygon still lets the pointer cross to it diagonally.
-  return <GlassShape ref={useMergedRef(attach, ref)} concentric={{ contentPadding: 8 }} render={<Menu.SubmenuTrigger delay={delay} {...props} />} />;
+  return <GlassShape ref={useMergedRef(attach, ref)} concentric={{ contentPadding: 8 }} render={<Menu.SubmenuTrigger delay={delay} {...props}
+    onPointerEnter={(event) => { onPointerEnter?.(event); if (!event.defaultPrevented && !props.disabled) reserve(event.currentTarget); }}
+    onPointerLeave={(event) => { onPointerLeave?.(event); clear(); }}
+    onFocus={(event) => { onFocus?.(event); if (!event.defaultPrevented && !props.disabled) reserve(event.currentTarget); }}
+    onBlur={(event) => { onBlur?.(event); clear(); }}
+  />} />;
 }
 export const GlassMenuGroup = Menu.Group;
 export function GlassMenuGroupLabel(props: ComponentPropsWithRef<typeof Menu.GroupLabel>) {
@@ -848,12 +874,10 @@ export function GlassMenuItem(props: ComponentPropsWithRef<typeof Menu.Item>) {
   return <GlassShape concentric={{ contentPadding: 8 }} render={<Menu.Item {...props} />} />;
 }
 
-/** A submenu uses the same glass surface and positioning as a root menu. It
- * grows out of its item as a plain shape: a neck to the parent menu would
- * cost a traced union per frame of the path, for a shape that is meant to
- * appear the moment the pointer rests on its item. */
+/** Submenus fade beside their parent. Moving between siblings morphs the
+ * existing panel into the next panel's position and size. */
 export function GlassMenuSubmenuContent(props: GlassMenuContentProps) {
-  return <GlassMenuContent neck={0} {...props} side={props.side ?? props.positionerProps?.side ?? "inline-end"} align={props.align ?? props.positionerProps?.align ?? "start"} />;
+  return <GlassMenuContent neck={0} {...props} data-glass-submenu="" side={props.side ?? props.positionerProps?.side ?? "inline-end"} align={props.align ?? props.positionerProps?.align ?? "start"} />;
 }
 
 export interface GlassProgressiveBlurProps extends ProgressiveBlurOptions,

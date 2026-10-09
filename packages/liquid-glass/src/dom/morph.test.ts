@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { attachGeometryMotion } from "./morph.js";
+import { attachGeometryMotion, prepareSubmenuHandoff } from "./morph.js";
 import { retainLatestExit } from "./exit-handoff.js";
 
 type PopupConfig = {
-  glass?: boolean; neck?: number; parentMenu?: Element;
+  glass?: boolean; neck?: number; parentMenu?: Element; submenu?: boolean;
   morph?: "become" | "detach";
   initiallyClosed?: boolean;
   width?: number; height?: number; scale?: number; starting?: boolean; motion?: "full" | "none";
@@ -71,15 +71,17 @@ function popup(prepared: () => boolean, mutate: () => void, setClock: (at: numbe
   } as unknown as Element;
   Object.setPrototypeOf(source, HTMLElement.prototype);
   const element = {
+    isConnected: true,
+    getAttribute: () => "28",
     dataset: {},
     style: { width: `${width}px`, height: `${height}px`, setProperty() {}, removeProperty() {} },
     hasAttribute: (name: string) => name === "data-ending-style" ? ending : name === "data-closed" ? closed : name === "data-starting-style" && Boolean(config.starting),
     getBoundingClientRect: () => ({ left: 20, top: 60, width: width * scale, height: height * scale }),
     offsetWidth: Math.round(width), offsetHeight: Math.round(height),
-    animate: (_frames: unknown, options: { duration: number }) => { hold = options.duration; return { cancel() {}, finish() { finished = true; } }; },
+    animate: (_frames: unknown, options: { duration: number }) => { hold = options.duration; return { cancel() {}, pause() {}, play() {}, finish() { finished = true; } }; },
     dispatchEvent: (event: Event) => { if (event.type === "glass:exited") exited = true; return true; },
   } as unknown as HTMLElement;
-  const attached = attachGeometryMotion(element, { from: () => source, morph: config.morph ?? "detach", neck: config.neck ?? 0, radius: 28, motion: () => config.motion ?? "full", prepared });
+  const attached = attachGeometryMotion(element, { submenu: config.submenu, from: () => source, morph: config.morph ?? "detach", neck: config.neck ?? 0, radius: 28, motion: () => config.motion ?? "full", prepared });
   const animator = { ...attached, frame(at: number) { setClock(at); return attached.frame(at); } };
   return {
     source,
@@ -365,5 +367,127 @@ test("a delayed first exit frame includes the time since closing began", () => {
     animator.frame(5000 + hold() - 1);
     expect(exited()).toBe(true);
     expect(animator.opacity()).toBe(0);
+  });
+});
+
+
+test("a submenu fades in place and never morphs from or back into its row", () => {
+  withPopup(({ animator, place, exit }) => {
+    place();
+    expect(animator.waypoints()).toHaveLength(0);
+    expect(animator.geometry()).toBeUndefined();
+    animator.frame(200);
+    expect(animator.opacity()).toBeGreaterThan(0);
+    animator.frame(1000);
+    exit(1010);
+    animator.frame(1080);
+    expect(animator.waypoints()).toHaveLength(0);
+    expect(animator.geometry()).toBeUndefined();
+    expect(animator.opacity()).toBeLessThan(1);
+    animator.frame(2000);
+    expect(animator.opacity()).toBe(0);
+  }, () => true, { submenu: true, parentMenu: {} as Element });
+});
+
+test("sibling submenus morph from the outgoing panel size, not the row", () => {
+  withPopups((create) => {
+    const parentMenu = {} as Element;
+    const first = create(undefined, { submenu: true, parentMenu, height: 80 });
+    first.place(); first.animator.frame(1000);
+    first.exit(1010);
+    const next = create(undefined, { submenu: true, parentMenu, height: 160 });
+    next.place(1010);
+    expect(next.animator.waypoints()[0]!.height).toBe(80);
+    expect(next.animator.waypoints().at(-1)!.height).toBe(160);
+    expect(first.finished()).toBe(true);
+    expect(first.animator.opacity()).toBe(0);
+    next.animator.frame(1080);
+    expect(next.animator.geometry()!.height).toBeGreaterThan(80);
+    expect(next.animator.geometry()!.width).toBe(180);
+    next.exit(1090); next.animator.frame(1130);
+    expect(next.animator.geometry()).toBeUndefined();
+    expect(next.animator.waypoints()).toHaveLength(0);
+    next.reopen(1140); next.animator.frame(1500);
+    expect(next.animator.opacity()).toBe(1);
+    expect(next.animator.waypoints()).toHaveLength(0);
+  });
+});
+
+test("submenu slots do not cross parents or survive disposal", () => {
+  withPopups((create) => {
+    const parentMenu = {} as Element;
+    const first = create(undefined, { submenu: true, parentMenu });
+    first.place(); first.animator.frame(1000);
+    const nested = create(undefined, { submenu: true, parentMenu: {} as Element });
+    nested.place(1000);
+    expect(nested.animator.waypoints()).toHaveLength(0);
+    first.animator.dispose();
+    const next = create(undefined, { submenu: true, parentMenu });
+    next.place(1000);
+    expect(next.animator.waypoints()).toHaveLength(0);
+  });
+});
+
+
+test("a sibling holds the outgoing panel through placement and cold maps", () => {
+  withPopups((create) => {
+    const parentMenu = {} as Element;
+    const first = create(undefined, { submenu: true, parentMenu, height: 80 });
+    first.place(); first.animator.frame(1132); first.exit(1200);
+    const next = create(() => false, { submenu: true, parentMenu, height: 160 });
+    const opacity = first.animator.opacity();
+    first.animator.frame(1240);
+    expect(first.animator.opacity()).toBe(opacity);
+    next.place(1250);
+    first.animator.frame(1350);
+    expect(first.animator.opacity()).toBe(opacity);
+    expect(first.exited()).toBe(false);
+    next.animator.frame(1500);
+    expect(first.exited()).toBe(true);
+    expect(next.animator.geometry()!.height).toBe(80);
+  });
+});
+
+test("aborting a replacement releases the outgoing submenu to finish closing", () => {
+  withPopups((create) => {
+    const parentMenu = {} as Element;
+    const first = create(undefined, { submenu: true, parentMenu });
+    first.place(); first.animator.frame(1132); first.exit(1200);
+    const next = create(undefined, { submenu: true, parentMenu });
+    next.animator.dispose();
+    first.animator.frame(1600);
+    expect(first.exited()).toBe(true);
+  });
+});
+
+
+test("hover intent holds the visible panel before a sibling mounts", () => {
+  withPopups((create) => {
+    const parentMenu = {} as Element;
+    const first = create(undefined, { submenu: true, parentMenu, height: 80 });
+    first.place(); first.animator.frame(1132);
+    const trigger = { parentElement: { closest: () => parentMenu } } as unknown as HTMLElement;
+    const release = prepareSubmenuHandoff(trigger);
+    first.exit(1200); first.animator.frame(1330);
+    expect(first.animator.opacity()).toBe(1);
+    const next = create(undefined, { submenu: true, parentMenu, height: 160 });
+    next.place(1340);
+    release();
+    expect(first.exited()).toBe(true);
+    expect(next.animator.geometry()!.height).toBe(80);
+  });
+});
+
+test("leaving a pending sibling resumes the existing panel's exit", () => {
+  withPopups((create) => {
+    const parentMenu = {} as Element;
+    const first = create(undefined, { submenu: true, parentMenu });
+    first.place(); first.animator.frame(1132);
+    const trigger = { parentElement: { closest: () => parentMenu } } as unknown as HTMLElement;
+    const release = prepareSubmenuHandoff(trigger);
+    first.exit(1200); first.animator.frame(1250);
+    release(); release();
+    first.animator.frame(1600);
+    expect(first.exited()).toBe(true);
   });
 });

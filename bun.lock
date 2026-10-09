@@ -25,7 +25,6 @@
         "@tailwindcss/vite": "^4.3.3",
         "class-variance-authority": "^0.7.1",
         "cn": "^0.4.0",
-        "pasito": "^0.1.3",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
         "shadcn": "^4.21.2",
@@ -1102,8 +1101,6 @@
     "parse-ms": ["parse-ms@4.0.0", "", {}, "sha512-TXfryirbmq34y8QBwgqCVLi+8oA3oWx2eAnSn62ITyEhEYaWRlVZ2DvMM9eZbMs/RfxPu/PK/aBLyGj4IrqMHw=="],
 
     "parseurl": ["parseurl@1.3.3", "", {}, "sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ=="],
-
-    "pasito": ["pasito@0.1.3", "", { "peerDependencies": { "react": ">=18", "react-dom": ">=18", "vue": ">=3" }, "optionalPeers": ["react", "react-dom", "vue"] }, "sha512-fPR9Fs22RWJN7CR7bBrcNv6bfYTd57qLRTrQVLpyDXhCLVmFb8F6YLGzmrmW21+XOhupxrPvUVle77YzJg/ILQ=="],
 
     "path-browserify": ["path-browserify@1.0.1", "", {}, "sha512-b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g=="],
 

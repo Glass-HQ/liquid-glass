@@ -9,15 +9,9 @@ import type {
   ProgressiveBlurOptions,
 } from "../core/progressive.js";
 import { getProgressiveMaps } from "./progressive-maps.js";
-import { blurOutsets, filterBudgetFactor, webkit } from "./filter-budget.js";
+import { filterBudgetFactor, filterGraphOutsets, webkit } from "./filter-budget.js";
 import { filterPrimitiveCount, gecko } from "./filter-stages.js";
-/** The scroller's parent when it is a clipping wrapper holding nothing else. */
-function stillFrame(scroller: HTMLElement): HTMLElement | undefined {
-  const parent = scroller.parentElement;
-  if (!parent || parent.childElementCount !== 1 || parent.classList.contains("lg-content")) return;
-  const overflow = getComputedStyle(parent).overflow;
-  return /hidden|clip/.test(overflow) ? parent : undefined;
-}
+import { acquireFilterPaintRoot } from "./filter-paint-root.js";
 import type { ProgressiveMaps } from "./progressive-maps.js";
 export type GlassScrollTarget =
   HTMLElement | (() => HTMLElement | null);
@@ -102,6 +96,7 @@ export function createProgressiveLayer(
   root: HTMLElement,
   onError: (error: Error) => void,
   viewportMode = false,
+  invalidate: () => void = () => {},
 ) {
   const svg = document.createElementNS(ns, "svg");
   svg.setAttribute("aria-hidden", "true");
@@ -111,6 +106,8 @@ export function createProgressiveLayer(
   // Definitions must live outside the filtered wrapper to avoid a filter dependency cycle.
   root.ownerDocument.body.append(svg);
   const id = `lg-progressive-${++serial}`;
+  let revision = 0;
+  let paintId = id;
   const registrations = new Set<Registration>();
   const scrollRegistrations = new Set<ScrollEdgesOptions>();
   type ViewportLayer = {
@@ -119,22 +116,26 @@ export function createProgressiveLayer(
     remove: (() => void)[];
     original: string;
     applied: string;
+    releasePaint?: () => void;
   };
+  let currentOutsets = 0;
+  let scrollsContent = false;
+  let budgetKey = "", budgetOutsets = 0;
   const viewports = new Map<HTMLElement, ViewportLayer>();
   function releaseViewport(element: HTMLElement, state: ViewportLayer) {
     if (element.style.filter === state.applied) element.style.filter = state.original;
     state.layer.dispose();
+    state.releasePaint?.();
     viewports.delete(element);
   }
-  function updateViewports() {
+  function updateViewports(content: HTMLElement | null) {
     const groups = new Map<HTMLElement, ScrollEdgesOptions[]>();
     for (const options of scrollRegistrations) {
       const scroller = typeof options.target === "function" ? options.target() : options.target;
-      // The scrollport is stationary even while its contents scroll. Filtering
-      // its parent would also blur sibling toolbars and floating navigation.
-      // WebKit paints nothing for a reference filter on a scroller itself, so
-      // there a frame that holds only the scroller takes the filter instead.
-      const element = scroller && webkit ? stillFrame(scroller) ?? scroller : scroller;
+      if (scroller === content) continue;
+      // Filter the scrollport itself. Safari's accelerated scrolling content
+      // bypasses a reference filter applied to a separate ancestor.
+      const element = scroller;
       if (!element) continue;
       const group = groups.get(element) ?? [];
       group.push(options);
@@ -147,7 +148,7 @@ export function createProgressiveLayer(
     for (const [element, options] of groups) {
       let state = viewports.get(element);
       if (!state) {
-        state = { layer: createProgressiveLayer(root, onError, true), options: [], remove: [], original: element.style.filter, applied: element.style.filter };
+        state = { layer: createProgressiveLayer(root, onError, true, invalidate), options: [], remove: [], original: element.style.filter, releasePaint: webkit ? acquireFilterPaintRoot(element) : undefined, applied: element.style.filter };
         viewports.set(element, state);
       }
       if (options.length !== state.options.length || options.some((o, i) => o !== state.options[i])) {
@@ -156,8 +157,6 @@ export function createProgressiveLayer(
         state.options = options;
       }
       const effect = state.layer.update(element);
-      // Filter only the stationary scrollport, never its parent or translated content.
-      // Native asynchronous scrolling can now run without JS moving the mask.
       const next = [state.original, effect].filter(Boolean).join(" ");
       if (element.style.filter !== next) element.style.filter = next;
       state.applied = next;
@@ -227,17 +226,24 @@ export function createProgressiveLayer(
     },
     count(): number { return nodes.filter((node) => node.localName === "feFlood").length; },
     operations(): number { return graphOperations; },
+    outsets(): number { return currentOutsets; },
+    scrollsContent(): boolean { return scrollsContent; },
     error(): Error | undefined {
       return graphError ?? [...viewports.values()].map((state) => state.layer.error()).find(Boolean);
     },
     update(content: HTMLElement | null): string {
-      const viewportCount = viewportMode ? 0 : updateViewports();
+      currentOutsets = 0;
+      const viewportCount = viewportMode ? 0 : updateViewports(content);
       if (!viewportMode) setEdges(String(viewportCount));
+      const direct = [...scrollRegistrations].filter((o) => (typeof o.target === "function" ? o.target() : o.target) === content)
+        .flatMap((o) => [...new Set(o.edges ?? (["top", "bottom"] as const))].map((edge) => ({ options: { ...o, edge }, target: o.target }) as Registration));
+      scrollsContent = direct.length > 0;
+      const active = [...registrations, ...direct];
       if (
         !content ||
         reduced.matches ||
         contrast.matches ||
-        !registrations.size
+        !active.length
       ) {
         if (previous || filter) clear();
         if (!viewportMode) setEdges(String(viewportCount));
@@ -253,7 +259,7 @@ export function createProgressiveLayer(
       const sx = width / c.width,
         sy = height / c.height;
       const regions: Region[] = [];
-      for (const { element, options: o, target } of registrations) {
+      for (const { element, options: o, target } of active) {
         if (
           o.disabled ||
           !(o.size ?? 80) ||
@@ -311,15 +317,19 @@ export function createProgressiveLayer(
             pending.add(edge);
             getProgressiveMaps(edge)
               .then((value) => {
-                if (!disposed) maps.set(edge, value);
+                pending.delete(edge);
+                if (disposed) return;
+                maps.set(edge, value);
+                invalidate();
               })
               .catch((error) => {
                 pending.delete(edge);
+                if (disposed) return;
                 failed.add(edge);
-                if (!disposed)
-                  onError(
-                    error instanceof Error ? error : new Error(String(error)),
-                  );
+                onError(
+                  error instanceof Error ? error : new Error(String(error)),
+                );
+                invalidate();
               });
           }
           continue;
@@ -349,12 +359,17 @@ export function createProgressiveLayer(
           maps: m,
         });
       }
-      // Six blur levels and a displacement per edge all count against
-      // WebKit's one buffer budget for the filtered element.
+      // The whole branched graph counts, including repeated inputs from an
+      // earlier edge. Cache this across scrolling that only moves regions.
       const scale = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
-      const levels = [1, 2, 3, 4, 5, 6].reduce((sum, i) => sum + (i / 6) ** 2, 0);
-      const outsets = regions.reduce((sum, r) => sum + scale * (blurOutsets(r.blur) * levels + r.refraction), 0);
+      const nextBudgetKey = JSON.stringify([width, height, ...regions.map((r) => [r.blur, r.refraction])]);
+      if (webkit && nextBudgetKey !== budgetKey) {
+        budgetKey = nextBudgetKey;
+        budgetOutsets = filterGraphOutsets(graph(id, regions, width, height), width, height);
+      }
+      const outsets = budgetOutsets * scale;
       const soften = filterBudgetFactor(width * scale, height * scale, outsets);
+      currentOutsets = outsets * soften / scale;
       if (soften < 1) for (const r of regions) { r.blur *= soften; r.refraction *= soften; }
       const key = JSON.stringify([
         width,
@@ -372,6 +387,13 @@ export function createProgressiveLayer(
           graphOperations = gecko ? filterPrimitiveCount(markup) : 0;
           graphError = graphOperations > 64 ? new RangeError(`Progressive blur requires ${graphOperations} filter operations; this browser supports 64 per element.`) : undefined;
           svg.innerHTML = markup ? `<defs>${markup}</defs>` : "";
+          // WebKit retains a CSS reference filter's old topology when the
+          // definition is replaced under the same id. Rebind only when edges
+          // enter/leave; ordinary scrolling retains its graph and resources.
+          if (webkit && markup) {
+            paintId = `${id}-${++revision}`;
+            svg.querySelector("filter")!.id = paintId;
+          }
           nodes = [...svg.querySelectorAll<SVGElement>("[data-region]")];
         } else {
           // Keep feImage resources and the filter graph alive while scrolling.
@@ -400,9 +422,9 @@ export function createProgressiveLayer(
               node.setAttribute("scale", String((r.refraction * 2) / width));
           }
         }
-        filter = regions.length ? `url("#${id}")` : "";
-        if (!viewportMode) setEdges(String(viewportCount + regions.length));
+        filter = regions.length ? `url("#${paintId}")` : "";
       }
+      if (!viewportMode) setEdges(String(viewportCount + regions.length));
       return filter;
     },
     dispose() {

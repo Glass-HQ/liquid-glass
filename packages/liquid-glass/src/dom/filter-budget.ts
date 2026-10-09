@@ -23,3 +23,40 @@ export function filterBudgetFactor(width: number, height: number, outsets: numbe
   const fit = (-(width + height) + Math.sqrt((width + height) ** 2 - 4 * (width * height - limit))) / 4;
   return Math.max(0.1, Math.min(1, fit / outsets));
 }
+
+/** Mirror WebKit's depth-first outset fold. Shared inputs are visited again
+ * at each use, so counting each blur once underestimates branched graphs. */
+export function filterGraphOutsets(markup: string, width = 1, height = width): number {
+  type Node = { inputs: string[]; outset: number };
+  const nodes = new Map<string, Node>();
+  let last: Node | undefined;
+  for (const match of markup.matchAll(/<(fe\w+)\b([^>]*?)(?:\/>|>(.*?)<\/\1>)/gs)) {
+    const [, tag, attrs = "", children = ""] = match;
+    const attributes = Object.fromEntries([...attrs.matchAll(/([\w-]+)="([^"]*)"/g)].map((a) => [a[1]!, a[2]!]));
+    const inputs = tag === "feMerge" ? [...children.matchAll(/in="([^"]+)"/g)].map((a) => a[1]!)
+      : [attributes.in, attributes.in2].filter((name): name is string => Boolean(name));
+    const deviation = (attributes.stdDeviation ?? "0").split(" ").map(Number);
+    const sigma = Math.max(deviation[0]! * width, (deviation[1] ?? deviation[0]!) * height);
+    const outset = tag === "feGaussianBlur" && sigma > 0
+      ? Math.floor(3 * Math.min(500, Math.max(2, Math.floor(sigma * .75 * Math.sqrt(2 * Math.PI) + .5))) / 2)
+      : tag === "feDisplacementMap" ? Math.ceil(Math.abs(Number(attributes.scale ?? 0)) * Math.max(width, height) / 2) : 0;
+    last = { inputs, outset };
+    if (attributes.result) nodes.set(attributes.result, last);
+  }
+  if (!last) return 0;
+  const stack: { outset: number; depth: number }[] = [];
+  const fold = () => {
+    const depth = stack.at(-1)!.depth;
+    let outset = 0;
+    while (stack.length && stack.at(-1)!.depth === depth) outset = Math.max(outset, stack.pop()!.outset);
+    return outset;
+  };
+  const visit = (node: Node, depth: number) => {
+    if (stack.length && depth < stack.at(-1)!.depth) { const children = fold(); stack.at(-1)!.outset += children; }
+    stack.push({ outset: node.outset, depth });
+    for (const name of node.inputs) { const child = nodes.get(name); if (child) visit(child, depth + 1); }
+  };
+  visit(last, 0);
+  while (stack.length > 1) { const children = fold(); stack.at(-1)!.outset += children; }
+  return stack[0]!.outset;
+}

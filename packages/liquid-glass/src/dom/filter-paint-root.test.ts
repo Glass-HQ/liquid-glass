@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { acquireFilterPaintRoot } from "./filter-paint-root.js";
+import { acquireFilterPaintRoot, acquireSceneCompositingLayer } from "./filter-paint-root.js";
 
 function target(inline = "", priority = "", computed = inline || "auto") {
   const declarations = new Map<string, [string, string]>([["transform", ["rotate(7deg) scale(.8)", ""]]]);
@@ -63,4 +63,42 @@ test("replacing a target and acquiring it again starts with fresh ownership", ()
   const releaseAgain = acquireFilterPaintRoot(next);
   releaseAgain();
   expect(next.style.getPropertyValue("will-change")).toBe("");
+});
+
+test("scene compositing preserves transforms and releases mixed claims independently", () => {
+  for (const sceneFirst of [true, false]) {
+    const element = target("scroll-position", "important");
+    const releaseScene = acquireSceneCompositingLayer(element);
+    expect(element.style.getPropertyValue("will-change")).toBe("scroll-position, opacity");
+    expect(element.style.getPropertyValue("transform")).toBe("rotate(7deg) scale(.8)");
+    // DOM callers can filter the scene root itself.
+    const releaseContent = acquireFilterPaintRoot(element);
+    expect(element.style.getPropertyValue("will-change")).toBe("scroll-position, opacity, transform");
+    (sceneFirst ? releaseScene : releaseContent)();
+    expect(element.style.getPropertyValue("will-change")).toBe(`scroll-position, ${sceneFirst ? "transform" : "opacity"}`);
+    (sceneFirst ? releaseContent : releaseScene)();
+    expect(element.style.getPropertyValue("will-change")).toBe("scroll-position");
+    expect(element.style.getPropertyPriority("will-change")).toBe("important");
+  }
+});
+
+test("author edits survive releasing or adding mixed paint claims", () => {
+  const element = target();
+  const releaseScene = acquireSceneCompositingLayer(element);
+  element.style.setProperty("will-change", "contents");
+  const releaseContent = acquireFilterPaintRoot(element);
+  releaseScene();
+  releaseContent();
+  expect(element.style.getPropertyValue("will-change")).toBe("contents");
+  expect(element.style.getPropertyPriority("will-change")).toBe("");
+});
+
+test("authored opacity survives releasing a temporary transform claim", () => {
+  const element = target("", "", "opacity");
+  const releaseScene = acquireSceneCompositingLayer(element);
+  const releaseContent = acquireFilterPaintRoot(element);
+  releaseContent();
+  expect(element.style.getPropertyValue("will-change")).toBe("");
+  releaseScene();
+  expect(element.style.getPropertyValue("will-change")).toBe("");
 });

@@ -21,7 +21,6 @@
     "@tailwindcss/vite": "^4.3.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
-    "pasito": "^0.1.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "shadcn": "^4.21.2",

@@ -63,11 +63,29 @@ export interface GeometryMotionOptions {
   /** Grow out of the source when attached. `false` only runs the exit back
    * into it, for an element that was already in place. Default: true. */
   enter?: boolean;
+  /** Submenus fade in place and share the previous sibling's outline. */
+  submenu?: boolean;
 }
 /** Longest an entrance waits for the maps of its path. */
 const maxWait = 140;
 const frame = 1 / 60;
 const sourceCount = new WeakMap<Element, number>();
+interface SubmenuSlot {
+  element: HTMLElement;
+  visible: () => boolean;
+  trigger: () => Element | null | undefined;
+  snapshot: () => Box;
+  finish: () => void;
+  retain: () => () => void;
+}
+const submenuSlots = new WeakMap<Element, SubmenuSlot>();
+/** Keep the current panel while Base UI waits to open a hovered sibling. */
+export function prepareSubmenuHandoff(trigger: HTMLElement): () => void {
+  const parent = trigger.parentElement?.closest(".lg-menu");
+  const previous = parent ? submenuSlots.get(parent) : undefined;
+  return previous?.visible() && previous.trigger() !== trigger ? previous.retain() : () => {};
+}
+
 /** Mark glass whose material has become another surface; its content follows `--lg-morph-source`. */
 function hold(glass: Element): () => void {
   if (!(glass instanceof HTMLElement)) return () => {};
@@ -118,9 +136,11 @@ interface Plan {
 export function attachGeometryMotion(element: HTMLElement, options: GeometryMotionOptions): GeometryAnimator {
   // A slight bounce keeps the return from trailing off; the last percent is never shown.
   const settle: SpringOptions = { duration: 0.32, bounce: 0.1 };
+  const entrance = options.submenu ? { duration: 0.22, bounce: 0 } : springs.morph;
+  const fadeSpring = options.submenu ? { duration: 0.14, bounce: 0 } : springs.glow;
   const progress = new Spring(0, springs.morph);
   // Reduced motion materializes in place: only the content fades.
-  const fade = new Spring(1, springs.glow);
+  const fade = new Spring(1, fadeSpring);
   let source: Element | null = null, glass: Element | null = null, morph: GlassMorph = "become";
   let sourceRect: Box = { left: 0, top: 0, width: 0, height: 0 };
   let release: (() => void) | undefined;
@@ -136,13 +156,65 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
   // After an exit the popup waits, invisible at its source, to be unmounted.
   let closed = false;
   let box: { x: number; y: number; width: number; height: number } | undefined;
+  let sibling: SubmenuSlot | undefined;
+  let submenuParent: Element | null = null;
+  let releaseSibling: (() => void) | undefined;
+  let retainers = 0;
+  let exitStarts = 0;
+  const slot: SubmenuSlot = {
+    element,
+    visible: () => !closed,
+    trigger: () => options.from?.(),
+    retain: () => {
+      retainers++;
+      holding?.pause();
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        if (--retainers === 0 && !closed) {
+          previous = performance.now();
+          holding?.play();
+        }
+      };
+    },
+    snapshot: () => lastFrame ?? (waiting && sibling ? sibling.snapshot() : rectOf(element)),
+    finish: () => {
+      releaseExit?.(); releaseExit = undefined;
+      morphing = false; closed = true; waiting = 0;
+      progress.jump(0); fade.jump(0); lastFrame = undefined;
+      element.style.setProperty("--lg-morph", "0");
+      holding?.finish();
+      element.dispatchEvent(new CustomEvent("glass:exited"));
+    },
+  };
   const ownRadius = (width: number, height: number): number | "capsule" =>
     options.radius === "capsule" ? "capsule" : radiusPixels(options.radius, width, height);
   const dpr = () => Math.min(devicePixelRatio || 1, 2);
 
+  // Reserve the outgoing panel before placement or map preparation spends
+  // its exit. Keep its real glass visible until the replacement can draw.
+  const reserveSibling = () => {
+    if (!options.submenu || sibling) return;
+    submenuParent = options.from?.()?.parentElement?.closest(".lg-menu") ?? null;
+    const previous = submenuParent ? submenuSlots.get(submenuParent) : undefined;
+    if (previous !== slot && previous?.element.isConnected && previous.visible()) {
+      sibling = previous;
+      releaseSibling = previous.retain();
+    }
+  };
   /** Resolve the source, the glass it belongs to, and how this surface relates to it. */
   const resolve = () => {
     source = options.from?.() ?? null;
+    if (options.submenu) {
+      reserveSibling();
+      source = sibling?.element ?? null;
+      glass = null;
+      morph = "become";
+      if (sibling) sourceRect = { ...sibling.snapshot() };
+      materialize = !sibling;
+      return;
+    }
     const own = source?.classList.contains("lg-surface") ? source : null;
     const enclosing = source?.parentElement?.closest(".lg-surface") ?? null;
     morph = options.morph ?? (own ? "become" : "detach");
@@ -185,13 +257,14 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
     if (options.motion() === "none") return;
     releaseExit?.(); releaseExit = undefined;
     resolve();
+    if (submenuParent) submenuSlots.set(submenuParent, slot);
     handoffPending = true;
     if (morph === "become" && glass && !materialize) { release?.(); release = hold(glass); }
     morphing = true;
     exiting = false;
     closed = false;
     const still = materialize || options.motion() === "reduced";
-    progress.configure(springs.morph).jump(still ? 1 : 0);
+    progress.configure(entrance).jump(still ? 1 : 0);
     if (still) { plan = undefined; waiting = 0; }
     else { planEntry(); waiting = now || performance.now(); }
     fade.jump(still ? 0 : 1).target = 1;
@@ -201,9 +274,12 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
   function exit() {
     if (options.motion() === "none") return;
     handoffPending = false;
+    // A submenu disappears at its current location, including when its
+    // sibling handoff is interrupted. It never travels back to a menu row.
+    if (options.submenu) { plan = undefined; materialize = true; releaseSibling?.(); releaseSibling = undefined; sibling = undefined; }
     if (!morphing) {
       // Return to the shape it came from, even if the trigger lost its open state.
-      resolve();
+      if (!options.submenu) resolve();
       if (!materialize && options.motion() !== "reduced") {
         if (morph === "become" && glass) release ??= hold(glass);
         // The popup may have moved or resized while open; a source that only
@@ -222,14 +298,19 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
     fade.target = still ? 0 : 1;
     element.dataset.glassMorph = "exit";
     // Base UI keeps the popup mounted until its animations finish.
-    const seconds = still ? settleTime(springs.glow, fade.value, 0, fade.velocity)
+    const seconds = still ? settleTime(fadeSpring, fade.value, 0, fade.velocity)
       : settleTime(settle, progress.value, 0, progress.velocity, 0.01);
     holding?.cancel();
     // Start the spring and unmount hold on the same clock. After idle, the
     // first exit frame may itself be late and must include that elapsed time.
     previous = performance.now();
-    holding = element.animate([{}, {}], { duration: Math.max(16, seconds * 1000 + 40) });
-    const parentMenu = source?.parentElement?.closest(".lg-menu");
+    // Hover focus can arrive a frame after the outgoing item's close. Keep
+    // the panel whole across that intent window, then fade an actual exit.
+    const intentDelay = options.submenu ? 60 : 0;
+    exitStarts = previous + intentDelay;
+    holding = element.animate([{}, {}], { duration: Math.max(16, seconds * 1000 + 40 + intentDelay) });
+    if (retainers) holding.pause();
+    const parentMenu = options.submenu ? submenuParent : source?.parentElement?.closest(".lg-menu");
     if (parentMenu) releaseExit = retainLatestExit(parentMenu, () => {
       if (!exiting || closed) return;
       releaseExit?.(); releaseExit = undefined;
@@ -263,19 +344,21 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       entering = options.enter !== false && options.motion() !== "none";
       placement = undefined; waited = 0; settledFrames = 0;
       if (entering) {
+        reserveSibling();
         element.dataset.glassMorph = "enter";
         element.style.setProperty("--lg-morph", "0");
       }
     } else if (!ending && !element.hasAttribute("data-closed") && exiting) {
       releaseExit?.(); releaseExit = undefined;
       handoffPending = true;
+      if (submenuParent) submenuSlots.set(submenuParent, slot);
       // Reopened mid-exit: run the same path forward from here.
       if (closed) { closed = false; if (morph === "become" && glass) release ??= hold(glass); }
       holding?.cancel();
       holding = undefined;
       exiting = false;
       morphing = true;
-      progress.configure(springs.morph).target = 1;
+      progress.configure(entrance).target = 1;
       fade.target = 1;
       // Closing may interrupt the original map preparation. Reopening keeps
       // this outline in place until that path is ready, with a fresh bounded
@@ -294,6 +377,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
   if (options.from) observer.observe(element, { attributes: true, attributeFilter: ["data-ending-style", "data-closed"] });
   if (leaving && options.motion() !== "none") exit();
   if (entering) {
+    reserveSibling();
     element.dataset.glassMorph = "enter";
     element.style.setProperty("--lg-morph", "0");
   }
@@ -323,6 +407,8 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       let dt = previous ? Math.max(0, (at - previous) / 1000) : frame;
       previous = at;
       now = at;
+      if (retainers && exiting && !closed) return true;
+      if (exiting && options.submenu) dt = Math.min(dt, Math.max(0, (at - exitStarts) / 1000));
       if (entering) {
         // Placement can settle a frame after mount: plan from where it lands.
         // Base UI marks the popup until it has laid it out at its anchor;
@@ -370,7 +456,9 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
         // path leaves the previous return visible while preparing its maps;
         // reopening an existing popup performs the same handoff as mounting.
         handoffPending = false;
-        const parentMenu = source?.parentElement?.closest(".lg-menu");
+        sibling?.finish();
+        releaseSibling?.(); releaseSibling = undefined; sibling = undefined;
+        const parentMenu = options.submenu ? submenuParent : source?.parentElement?.closest(".lg-menu");
         if (parentMenu) finishRetainedExit(parentMenu);
       }
       progress.step(dt);
@@ -446,11 +534,14 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       if (!morphing) return 1;
       // Fading the glass itself redraws the scene every frame; on WebKit the
       // material arrives whole and leaves with the popup.
-      if (!plan) return webkit ? 1 : fade.value;
+      if (!plan) return webkit && !options.submenu ? 1 : fade.value;
+      if (options.submenu) return 1;
       // A bubble from a plain element condenses over its first moments instead of popping in.
       return plan.glass ? 1 : Math.min(1, Math.max(0, progress.value / 0.2));
     },
     dispose() {
+      releaseSibling?.(); releaseSibling = undefined;
+      if (submenuParent && submenuSlots.get(submenuParent) === slot) submenuSlots.delete(submenuParent);
       observer.disconnect();
       holding?.cancel();
       release?.();

@@ -108,7 +108,7 @@ const parts: Record<ExampleKind, readonly Part[]> = {
       ["target", 'RefObject<HTMLElement | null>', "Required. The element that actually scrolls, including a ScrollArea viewport."],
       ["edges", "GlassBlurEdge[]", "Default: top and bottom. Use inline-start and inline-end for a horizontal scroller."],
     ] },
-    { name: "GlassContent", rows: [["layout", '"overlay" | "flow"', "Use flow for normal content height inside a scroll viewport. Default: overlay."]] },
+    { name: "GlassContent", rows: [["layout", '"overlay" | "flow" | "scroll"', "Overlay fills the scene; flow determines its height; scroll creates a native viewport with stationary glass. Default: overlay."]] },
   ],
 }
 const motionFor: Partial<Record<ExampleKind, readonly Row[]>> = {

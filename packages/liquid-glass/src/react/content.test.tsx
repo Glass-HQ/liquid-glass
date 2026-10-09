@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { GlassContent, GlassScene, GlassSurface } from "./index.js";
 
 const marker = '<aside data-content-end=""';
-function renderContent(capacity: number | undefined, surfaces: number, layout: "overlay" | "flow") {
+function renderContent(capacity: number | undefined, surfaces: number, layout: "overlay" | "flow" | "scroll") {
   const html = renderToStaticMarkup(
     <GlassScene maxSurfaces={capacity}>
       <GlassContent id="source" ref={createRef<HTMLDivElement>()} layout={layout}
@@ -23,7 +23,7 @@ function renderContent(capacity: number | undefined, surfaces: number, layout: "
 test("content has a fixed filter-host path while scene surfaces enter and leave", () => {
   // Identical ancestry is required for React to preserve the content DOM,
   // including live form values and caller refs, as optical passes change.
-  for (const capacity of [1, undefined, 64]) for (const layout of ["overlay", "flow"] as const) {
+  for (const capacity of [1, undefined, 64]) for (const layout of ["overlay", "flow", "scroll"] as const) {
     const count = capacity ?? 16;
     const empty = renderContent(capacity, 0, layout);
     // One host per possible glass pass, plus the progressive-blur pass.
@@ -51,7 +51,7 @@ test("server and browser user agents render identical content ancestry", () => {
     const { renderToStaticMarkup } = await import("react-dom/server");
     const { GlassScene, GlassContent } = await import(${JSON.stringify(new URL("./index.tsx", import.meta.url).href)});
     console.log(renderToStaticMarkup(h(GlassScene, { maxSurfaces: 4 },
-      h(GlassContent, { layout: "flow", id: "source" }, h("input", { defaultValue: "Keep this value" }))
+      h(GlassContent, { layout: "scroll", id: "source" }, h("input", { defaultValue: "Keep this value" }))
     )));
   `;
   const agents = [

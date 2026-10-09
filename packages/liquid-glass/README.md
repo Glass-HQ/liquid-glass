@@ -154,16 +154,16 @@ Switches accept Base UI switch props, including `checked`, `defaultChecked`, `on
 </GlassScene>
 ```
 
-For scrolling content, pass the actual scroll viewport to `GlassScrollEdges`:
+For scrolling content, use `GlassContent layout="scroll"` as the viewport and pass its ref to `GlassScrollEdges`. This keeps the glass and blur stationary during Safari scrolling. Give the scene a bounded height, and place floating controls beside the content:
 
 ```tsx
 const viewport = useRef<HTMLDivElement>(null);
 
 <GlassScene style={{ height: 320, overflow: "hidden" }}>
-  <div ref={viewport} tabIndex={0} role="region" aria-label="Reading list"
-    style={{ height: "100%", overflow: "auto", scrollPaddingBlock: 80 }}>
-    <GlassContent layout="flow">{children}</GlassContent>
-  </div>
+  <GlassContent layout="scroll" ref={viewport} tabIndex={0} role="region"
+    aria-label="Reading list" style={{ scrollPaddingBlock: 80 }}>
+    {children}
+  </GlassContent>
   <GlassScrollEdges target={viewport} size={80} blur={20} />
 </GlassScene>
 ```

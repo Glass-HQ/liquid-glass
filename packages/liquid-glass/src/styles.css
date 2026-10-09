@@ -10,6 +10,9 @@
   height: 100%;
 }
 :where([data-glass-filter-host]) { display: contents; }
+:where(.lg-content[data-layout="scroll"]) { overflow: auto; }
+:where(.lg-scroll-paint-root) { position: absolute; inset: 0; overflow: visible; }
+:where(.lg-scroll-paint-root > foreignObject) { overflow: visible; }
 /* Separate rendered elements keep complex Gecko filter graphs within its
    per-element operation limit. Other engines need no additional boxes. */
 @supports (-moz-appearance: none) {
