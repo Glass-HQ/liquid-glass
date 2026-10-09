@@ -19,16 +19,21 @@
     "check:gpu": "bun run vgpu doctor",
     "native:build": "node scripts/build-native.mjs",
     "native": "bun run native:build && open \"apps/native-reference/build/Liquid Glass Reference.app\"",
-    "release:check": "bun run check:version && bun run typecheck && bun run lint && bun run test && bun run build && bun run check:package && bun run check:gpu && bun run check:shader && bun run test:gpu",
+    "release:check": "bun run check:version && bun run typecheck && bun run lint && bun run test && bun run build && bun run check:package && bun run check:publish && bun run check:size && bun run check:gpu && bun run check:shader && bun run test:gpu",
     "icons": "node scripts/site-icons.mjs",
     "check:package": "npm pack --workspace @glass-sdk/liquid-glass --dry-run",
+    "check:size": "node scripts/check-size.mjs",
+    "check:publish": "publint packages/liquid-glass && attw --pack packages/liquid-glass --profile esm-only",
     "check:version": "node packages/liquid-glass/scripts/check-version.mjs"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@types/bun": "^1.4.2",
     "@types/pngjs": "^6.0.5",
+    "esbuild": "^0.28.2",
     "oxlint": "^1.87.0",
     "pngjs": "^7.0.0",
+    "publint": "^0.3.25",
     "vercel": "^62.4.0"
   },
   "overrides": {

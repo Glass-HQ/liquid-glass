@@ -21,6 +21,8 @@ bun run lint
 bun run test
 bun run build
 bun run check:package
+bun run check:publish
+bun run check:size
 ```
 
 CI runs these checks and the version guard on pull requests. For rendering changes, also run:
