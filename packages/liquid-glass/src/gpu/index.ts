@@ -5,7 +5,6 @@ import type { GlassRadius } from "../core/shape.js";
 import { effect, frame, init, target } from "vgpu";
 import type { Effect, Gpu, Target, ShaderSource } from "vgpu";
 import source from "./maps.wgsl";
-import progressiveSource from "./progressive.wgsl";
 export interface MapGeometry {
   /** Resolved convex outline for container-relative glass, in local CSS pixels. */
   outline?: ShapePoint[];
@@ -67,9 +66,6 @@ export class MaterialRenderer {
   private readonly slots: Slot[] = [];
   private queue: Shape[] = [];
   private flushing = false;
-  private progressiveAtlas?: Target;
-  private progressiveEffect?: Effect;
-  private progressivePending: Promise<unknown> = Promise.resolve();
   /** Resolves once the device has completed its first submission. A fresh
    * device's first work is held back while the page keeps painting, so the
    * renderer warms itself up as soon as it exists rather than during a
@@ -175,23 +171,6 @@ export class MaterialRenderer {
     } catch (error) {
       for (const s of shapes) s.reject(error instanceof Error ? error : new Error(String(error)));
     }
-  }
-  /** Baked 256 × 8 profile atlas: seven weights and one displacement row. */
-  renderProgressive(axis: 0 | 1, reverse: boolean): Promise<MapPixels> {
-    const work = this.progressivePending.then(async () => {
-      const started = performance.now();
-      const atlas = this.progressiveAtlas ??= target(this.gpu, { size: [256, 8], label: "liquid-glass/progressive" });
-      const shader = this.progressiveEffect ??= effect(this.gpu, progressiveSource, {
-        set: { direction: { axis, reverse: reverse ? 1 : 0 } },
-      });
-      await shader.compile(atlas);
-      shader.set({ direction: { axis, reverse: reverse ? 1 : 0 } });
-      frame(this.gpu, (f) => f.pass(atlas, shader));
-      const pixels = await atlas.color.read({ mipLevel: 0, region: "all" });
-      return { width: 256, height: 8, pixels, duration: performance.now() - started };
-    });
-    this.progressivePending = work.catch(() => undefined);
-    return work;
   }
   dispose(): void {
     this.gpu.dispose();

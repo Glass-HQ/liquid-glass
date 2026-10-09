@@ -1,146 +1,61 @@
-import { expect, spyOn, test } from "bun:test";
-import { createProgressiveLayer } from "./progressive.js";
-import * as progressiveMaps from "./progressive-maps.js";
-import type { ProgressiveMaps } from "./progressive-maps.js";
+import { expect, test } from "bun:test";
+import { PNG } from "pngjs";
+import { maskUrl, progressiveGraph, rampTables } from "./progressive.js";
+import type { ProgressiveRegion } from "./progressive.js";
+import { filterPrimitiveCount } from "./filter-stages.js";
 
-function deferred() {
-  return Promise.withResolvers<ProgressiveMaps>();
-}
-const maps: ProgressiveMaps = { weights: Array(7).fill("data:image/png;base64,mask"), displacement: "data:image/png;base64,map" };
+const bottom: ProgressiveRegion = { edge: "bottom", x: 0, y: 300, width: 900, height: 100, blur: 20, refraction: 6 };
+const top: ProgressiveRegion = { ...bottom, edge: "top", y: 0 };
+const primitives = (markup: string) => new Set([...markup.matchAll(/<(fe\w+)/g)].map((match) => match[1]!));
+const boxes = (markup: string, tag: string) => [...markup.matchAll(new RegExp(`<${tag}\\b[^>]*?\\sy="([-\\d.]+)"[^>]*?\\sheight="([-\\d.]+)"`, "g"))]
+  .map((match) => ({ y: Number(match[1]), height: Number(match[2]) }));
 
-function environment() {
-  class Rect {
-    constructor(public x: number, public y: number, public width: number, public height: number) {}
-    get left() { return this.x; }
-    get right() { return this.x + this.width; }
-    get top() { return this.y; }
-    get bottom() { return this.y + this.height; }
-  }
-  const doc = {
-    body: { append() {} },
-    createElementNS: () => ({
-      style: {}, innerHTML: "", setAttribute() {}, replaceChildren() {}, remove() {}, querySelectorAll: () => [],
-    }),
-  };
-  const globals = {
-    document: doc,
-    matchMedia: () => ({ matches: false }),
-    getComputedStyle: () => ({ direction: "ltr", overflow: "visible" }),
-    innerWidth: 1000,
-    innerHeight: 1000,
-    DOMRect: Rect,
-  };
-  const previous = Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
-  for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
-  const root = { ownerDocument: doc, dataset: {} } as unknown as HTMLElement;
-  const content = {
-    parentElement: null,
-    style: { filter: "" },
-    offsetWidth: 300, offsetHeight: 200,
-    clientWidth: 300, clientHeight: 200, clientLeft: 0, clientTop: 0,
-    scrollWidth: 300, scrollHeight: 600, scrollLeft: 0, scrollTop: 0,
-    getBoundingClientRect: () => new Rect(0, 0, 300, 200),
-  } as unknown as HTMLElement;
-  const region = { getBoundingClientRect: () => new Rect(0, 120, 300, 80) } as unknown as HTMLElement;
-  return {
-    root, content, region,
-    restore: () => {
-      for (const [key, descriptor] of previous) {
-        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
-        else Reflect.deleteProperty(globalThis, key);
-      }
-    },
-  };
-}
-
-test("cold progressive maps wake an idle scene, including scroll viewport layers", async () => {
-  for (const scroll of [false, true]) {
-    const dom = environment();
-    const request = deferred();
-    const load = spyOn(progressiveMaps, "getProgressiveMaps").mockReturnValue(request.promise);
-    let wakes = 0;
-    let effect = "";
-    const layer = createProgressiveLayer(dom.root, (error) => { throw error; }, false, () => {
-      wakes++;
-      // Model the scene's next frame: no scroll or other DOM event wakes it.
-      effect = layer.update(dom.content);
-    });
-    try {
-      if (scroll) layer.addScroll({ target: dom.content, edges: ["bottom"] });
-      else layer.add(dom.region);
-      effect = layer.update(dom.content);
-      expect(effect).toBe("");
-      expect(dom.content.style.filter).toBe("");
-      expect(load).toHaveBeenCalledTimes(1);
-      request.resolve(maps);
-      await request.promise;
-      expect(wakes).toBe(1);
-      expect(effect).toMatch(/^url\("#lg-progressive-/);
-      expect(load).toHaveBeenCalledTimes(1);
-    } finally {
-      layer.dispose();
-      load.mockRestore();
-      dom.restore();
-    }
-  }
+test("ramp weights split every depth between the blur levels", () => {
+  const tables = rampTables.map((table) => table.split(" ").map(Number));
+  for (let n = 0; n < tables[0]!.length; n++)
+    expect(tables.reduce((sum, table) => sum + table[n]!, 0)).toBeCloseTo(1, 3);
 });
 
-test("failed map requests wake diagnostics and an explicit update can retry", async () => {
-  const dom = environment();
-  const first = deferred(), retry = deferred();
-  const load = spyOn(progressiveMaps, "getProgressiveMaps").mockReturnValueOnce(first.promise).mockReturnValueOnce(retry.promise);
-  const errors: Error[] = [];
-  let wakes = 0;
-  const layer = createProgressiveLayer(dom.root, (error) => errors.push(error), false, () => { wakes++; });
-  try {
-    const remove = layer.add(dom.region);
-    layer.update(dom.content);
-    first.reject("GPU unavailable");
-    await first.promise.catch(() => {});
-    await Promise.resolve();
-    expect(errors.map((error) => error.message)).toEqual(["GPU unavailable"]);
-    expect(wakes).toBe(1);
-    layer.update(dom.content);
-    expect(load).toHaveBeenCalledTimes(1);
-    remove();
-    layer.add(dom.region);
-    layer.update(dom.content);
-    expect(load).toHaveBeenCalledTimes(2);
-    retry.resolve(maps);
-    await retry.promise;
-    expect(wakes).toBe(2);
-    expect(layer.update(dom.content)).toMatch(/^url\("#lg-progressive-/);
-  } finally {
-    layer.dispose();
-    load.mockRestore();
-    dom.restore();
+test("WebKit band masks split every depth between the blur levels", () => {
+  // Each level's image spans only its band; together they cover the depth once.
+  const samples = 400;
+  const sums = new Float64Array(samples);
+  const markup = progressiveGraph("p", [bottom], 900, 400, "webkit");
+  for (const match of markup.matchAll(/<feImage data-map="(pg:bottom:\d)"[^>]*?\sy="([-\d.]+)"[^>]*?\sheight="([-\d.]+)"/g)) {
+    const png = PNG.sync.read(Buffer.from(maskUrl(match[1]!)!.split(",")[1]!, "base64"));
+    const y = Number(match[2]), height = Number(match[3]);
+    for (let i = 0; i < samples; i++) {
+      const depth = bottom.y + (i + 0.5) * bottom.height / samples;
+      if (depth < y || depth >= y + height) continue;
+      const row = Math.min(png.height - 1, Math.floor((depth - y) / height * png.height));
+      sums[i] += png.data[row * 4 + 3]! / 255;
+    }
   }
+  // Bands are rounded out to whole pixels, so the boundaries may overlap a little.
+  for (let i = 0; i < samples; i++) expect(Math.abs(sums[i]! - 1)).toBeLessThan(0.12);
 });
 
-test("disposed scroll layers ignore late map success and failure", async () => {
-  for (const rejected of [false, true]) {
-    const dom = environment();
-    const request = deferred();
-    const load = spyOn(progressiveMaps, "getProgressiveMaps").mockReturnValue(request.promise);
-    const errors: Error[] = [];
-    let wakes = 0;
-    const layer = createProgressiveLayer(dom.root, (error) => errors.push(error), false, () => { wakes++; });
-    try {
-      layer.addScroll({ target: dom.content, edges: ["bottom"] });
-      layer.update(dom.content);
-      expect(load).toHaveBeenCalledTimes(1);
-      layer.dispose();
-      if (rejected) request.reject(new Error("Late GPU error"));
-      else request.resolve(maps);
-      await request.promise.catch(() => {});
-      await Promise.resolve();
-      expect(wakes).toBe(0);
-      expect(errors).toEqual([]);
-      expect(dom.content.style.filter).toBe("");
-    } finally {
-      layer.dispose();
-      load.mockRestore();
-      dom.restore();
-    }
+test("Gecko graphs stay on WebRender's native primitives and below its operation limit", () => {
+  const markup = progressiveGraph("p", [bottom, top], 900, 400, "gecko");
+  for (const unsupported of ["feImage", "feDisplacementMap", "feTile", "feTurbulence"])
+    expect(primitives(markup).has(unsupported)).toBe(false);
+  expect(filterPrimitiveCount(markup)).toBeLessThanOrEqual(64);
+});
+
+test("Chromium needs no images and WebKit needs no ramp blur", () => {
+  expect(primitives(progressiveGraph("p", [bottom], 900, 400, "chromium")).has("feImage")).toBe(false);
+  const webkit = progressiveGraph("p", [bottom], 900, 400, "webkit");
+  expect(webkit).not.toContain("ramp");
+  expect(webkit).not.toContain('operator="arithmetic" k2="1" k3="1"/>');
+});
+
+test("software engines blur only a band of the region at each level", () => {
+  for (const target of ["webkit", "chromium"] as const) {
+    const blurs = boxes(progressiveGraph("p", [bottom], 900, 400, target), "feGaussianBlur")
+      .filter((box) => box.height < bottom.height);
+    expect(blurs.length).toBeGreaterThanOrEqual(6);
+    const total = blurs.reduce((sum, box) => sum + box.height, 0);
+    // Six full-region blurs would cover six depths; bands cover about two.
+    expect(total).toBeLessThan(bottom.height * 2.6);
   }
 });

@@ -221,7 +221,7 @@ export function createGlassScene(
       }),
     );
   };
-  const progressive = createProgressiveLayer(root, (error) => notify(error), false, () => ticker.wake());
+  const progressive = createProgressiveLayer(root, (error) => notify(error));
   const warmer = createMapWarmer(root);
   // Resting glass draws from stored maps without a GPU device. The device is
   // brought up shortly after, while the page is quiet: a device's first work

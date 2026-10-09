@@ -23,5 +23,4 @@ export function partitionFilterStages<T>(groups: readonly T[], render: (groups: 
   if (stage) stages.push(stage);
   return stages;
 }
-/** Gecko's filter description limit applies to the complete chain on one element. */
-export const gecko = typeof navigator !== "undefined" && /Gecko\//.test(navigator.userAgent) && !/like Gecko/.test(navigator.userAgent);
+export { gecko } from "./engine.js";

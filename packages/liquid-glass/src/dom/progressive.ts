@@ -8,11 +8,12 @@ import type {
   PhysicalEdge,
   ProgressiveBlurOptions,
 } from "../core/progressive.js";
-import { getProgressiveMaps } from "./progressive-maps.js";
-import { filterBudgetFactor, filterGraphOutsets, webkit } from "./filter-budget.js";
-import { filterPrimitiveCount, gecko } from "./filter-stages.js";
+import { filterBudgetFactor, filterGraphOutsets } from "./filter-budget.js";
+import { filterPrimitiveCount } from "./filter-stages.js";
+import { gecko, webkit } from "./engine.js";
 import { acquireFilterPaintRoot } from "./filter-paint-root.js";
-import type { ProgressiveMaps } from "./progressive-maps.js";
+import { patchFilters } from "./filter-patch.js";
+import { pngDataUrlSync } from "./png.js";
 export type GlassScrollTarget =
   HTMLElement | (() => HTMLElement | null);
 export interface ScrollEdgesOptions extends Omit<
@@ -28,86 +29,199 @@ type Registration = {
   options: ProgressiveBlurOptions;
   target?: GlassScrollTarget;
 };
-type Region = {
+interface Box { x: number; y: number; width: number; height: number }
+export type FilterEngine = "chromium" | "webkit" | "gecko";
+const engine: FilterEngine = webkit ? "webkit" : gecko ? "gecko" : "chromium";
+export interface ProgressiveRegion extends Box {
   edge: PhysicalEdge;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
   blur: number;
   refraction: number;
-  maps: ProgressiveMaps;
-};
+}
 let serial = 0;
 const ns = "http://www.w3.org/2000/svg";
-/** One filter graph, including sharp source, with bounded blur intermediates. */
-function graph(
-  id: string,
-  regions: Region[],
-  width: number,
-  height: number,
-): string {
-  const parts: string[] = [];
-  let source = "SourceGraphic";
-  const box = (x: number, y: number, w: number, h: number) =>
-    `x="${x / width}" y="${y / height}" width="${w / width}" height="${h / height}"`;
-  regions.forEach((r, index) => {
-    const p = `e${index}`;
-    const bounds = `${box(r.x, r.y, r.width, r.height)} data-region="${index}" data-box="bounds"`;
-    const margin = Math.ceil(3 * r.blur + r.refraction + 2);
-    const crop = `${box(r.x - margin, r.y - margin, r.width + margin * 2, r.height + margin * 2)} data-region="${index}" data-box="crop"`;
-    parts.push(
-      `<feFlood ${bounds} flood-color="white" result="${p}area"/>`,
-      `<feComposite in="${source}" in2="${p}area" operator="out" result="${p}outside"/>`,
+
+/** Blur levels between sharp and full strength. Level `i` blurs by
+ * `blur · (i / levels)²` and is weighted by a triangle over the eased depth,
+ * so neighboring levels cross-fade and every point sums to one. */
+const levels = 6;
+const ease = (u: number) => u * u * (3 - 2 * u);
+/** Inverse of `ease` on [0, 1]. */
+const unease = (d: number) => 0.5 - Math.sin(Math.asin(1 - 2 * Math.max(0, Math.min(1, d))) / 3);
+const weight = (level: number, u: number) => Math.max(0, 1 - Math.abs(levels * ease(Math.max(0, Math.min(1, u))) - level));
+/** The part of the depth, from the sharp side (0) to the edge (1), where a
+ * level contributes. Each level only blurs this band: a third of the depth. */
+const bands = Array.from({ length: levels + 1 }, (_, level) => [unease((level - 1) / levels), unease((level + 1) / levels)] as const);
+/** Optical travel of each level, pushing content away from the edge. */
+const travel = (level: number) => { const d = level / levels; return 0.98 * 4 * d * (1 - d); };
+
+/** Standard normal CDF, Abramowitz–Stegun 7.1.26. */
+function normal(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x / 2);
+  return x < 0 ? (1 - y) / 2 : (1 + y) / 2;
+}
+function inverseNormal(p: number): number {
+  let lo = -8, hi = 8;
+  for (let i = 0; i < 48; i++) { const mid = (lo + hi) / 2; if (normal(mid) < p) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+/** A flood over the edge half of a region, blurred along the depth with
+ * σ = depth / 6, rises as Φ(6u − 3) across it. These tables map that ramp
+ * to each level's weight. Floods, blurs, transfers and composites are the
+ * primitives Gecko renders on the GPU; an image anywhere in the graph sends
+ * the whole element to its software fallback. */
+export const rampTables = Array.from({ length: levels + 1 }, (_, level) => Array.from({ length: 65 }, (_, n) => {
+  const a = n / 64;
+  const u = a <= 0 ? 0 : a >= 1 ? 1 : 0.5 + inverseNormal(a) / 6;
+  return Number(weight(level, u).toFixed(4));
+}).join(" "));
+/** WebKit filters in software and charges a blur's outsets once for every
+ * consumer of its result, so a shared ramp would grow its buffer sevenfold.
+ * There each level's weight is a small image spanning only its band. */
+const maskSamples = 64;
+const masks = new Map<string, string>();
+export function maskUrl(token: string): string | undefined {
+  const cached = masks.get(token);
+  if (cached) return cached;
+  const [, edge, index] = token.split(":") as [string, PhysicalEdge, string];
+  const level = Number(index);
+  const [lo, hi] = bands[level]!;
+  const vertical = edge === "top" || edge === "bottom";
+  // Pixels run left to right and top to bottom; top and left edges are
+  // strongest at the start of the band.
+  const reverse = edge === "top" || edge === "left";
+  const pixels = new Uint8Array(maskSamples * 4);
+  for (let k = 0; k < maskSamples; k++) {
+    const f = (k + 0.5) / maskSamples;
+    const u = reverse ? hi - f * (hi - lo) : lo + f * (hi - lo);
+    pixels.set([255, 255, 255, Math.round(255 * weight(level, u))], k * 4);
+  }
+  const url = pngDataUrlSync(vertical ? 1 : maskSamples, vertical ? maskSamples : 1, pixels);
+  masks.set(token, url);
+  return url;
+}
+
+const round = (box: Box): Box => {
+  const x = Math.floor(box.x), y = Math.floor(box.y);
+  return { x, y, width: Math.ceil(box.x + box.width) - x, height: Math.ceil(box.y + box.height) - y };
+};
+const attributes = (box: Box) => `x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}"`;
+const grow = (box: Box, by: number): Box => ({ x: box.x - by, y: box.y - by, width: box.width + 2 * by, height: box.height + 2 * by });
+/** The part of a region between depths `from` and `to`, where 0 is the sharp
+ * side and 1 the edge. Depths past 1 continue beyond the edge. */
+function along(r: ProgressiveRegion, from: number, to: number): Box {
+  switch (r.edge) {
+    case "bottom": return round({ x: r.x, y: r.y + from * r.height, width: r.width, height: (to - from) * r.height });
+    case "top": return round({ x: r.x, y: r.y + (1 - to) * r.height, width: r.width, height: (to - from) * r.height });
+    case "right": return round({ x: r.x + from * r.width, y: r.y, width: (to - from) * r.width, height: r.height });
+    case "left": return round({ x: r.x + (1 - to) * r.width, y: r.y, width: (to - from) * r.width, height: r.height });
+  }
+}
+const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+/** The blurred, weighted levels of one region, whose sum is its result. */
+function levelParts(r: ProgressiveRegion, p: string, source: string, imageMasks: boolean, full?: Box): { markup: string[]; even: string[]; odd: string[] } {
+  const markup: string[] = [];
+  const vertical = r.edge === "top" || r.edge === "bottom";
+  const away = r.edge === "bottom" || r.edge === "right" ? -1 : 1;
+  const depth = vertical ? r.height : r.width;
+  if (!imageMasks) {
+    const sigma = depth / 6;
+    markup.push(
+      `<feFlood flood-color="#fff" ${attributes(along(r, 0.5, 1.5))} result="${p}step"/>`,
+      `<feGaussianBlur in="${p}step" stdDeviation="${vertical ? `0 ${sigma}` : `${sigma} 0`}" ${attributes(round(r))} result="${p}ramp"/>`,
     );
+  }
+  const even: string[] = [], odd: string[] = [];
+  for (let level = 0; level <= levels; level++) {
+    const band = along(r, bands[level]![0], bands[level]![1]);
+    // The sharp level can cover everything outside the region too, where its
+    // weight is one, instead of a separate pass that cuts the region out. It
+    // needs the full extent explicitly: by default a primitive covers only
+    // the union of its inputs, here the ramp's region.
+    const region = ` ${attributes(level === 0 && full ? full : band)}`;
+    const sigma = r.blur * (level / levels) ** 2;
     let input = source;
-    if (r.refraction > 0) {
-      parts.push(
-        `<feImage href="${r.maps.displacement}" ${bounds} preserveAspectRatio="none" result="${p}raw"/>`,
-        `<feFlood flood-color="rgb(128,128,128)" result="${p}neutral"/><feComposite in="${p}raw" in2="${p}neutral" operator="over" result="${p}filled"/><feComponentTransfer in="${p}filled" result="${p}map"><feFuncR type="linear" slope="1" intercept="${0.5 - 128 / 255}"/><feFuncG type="linear" slope="1" intercept="${0.5 - 128 / 255}"/></feComponentTransfer>`,
-        `<feDisplacementMap in="${source}" in2="${p}map" ${crop} scale="${(r.refraction * 2) / width}" xChannelSelector="R" yChannelSelector="G" result="${p}refracted"/>`,
-      );
-      input = `${p}refracted`;
+    const shift = r.refraction * travel(level);
+    if (shift > 0.01) {
+      const offset = (shift * away).toFixed(3);
+      markup.push(`<feOffset in="${source}" dx="${vertical ? 0 : offset}" dy="${vertical ? offset : 0}" ${attributes(grow(band, Math.ceil(3 * sigma) + 1))} result="${p}shift${level}"/>`);
+      input = `${p}shift${level}`;
     }
-    r.maps.weights.forEach((url, i) => {
-      const sigma = r.blur * (i / 6) ** 2;
-      if (i)
-        parts.push(
-          `<feGaussianBlur in="${input}" ${crop} data-level="${i}" stdDeviation="${sigma / width} ${sigma / height}" result="${p}blur${i}"/>`,
-        );
-      parts.push(
-        `<feImage href="${url}" ${bounds} preserveAspectRatio="none" result="${p}mask${i}"/>`,
-        `<feComposite in="${i ? `${p}blur${i}` : input}" in2="${p}mask${i}" operator="in" ${bounds} result="${p}part${i}"/>`,
-      );
-      if (i)
-        parts.push(
-          `<feComposite in="${i === 1 ? `${p}part0` : `${p}sum${i - 1}`}" in2="${p}part${i}" operator="arithmetic" k2="1" k3="1" ${bounds} result="${p}sum${i}"/>`,
-        );
+    if (level) {
+      markup.push(`<feGaussianBlur in="${input}" stdDeviation="${sigma}" ${attributes(band)} result="${p}blur${level}"/>`);
+      input = `${p}blur${level}`;
+    }
+    markup.push(imageMasks
+      ? `<feImage data-map="pg:${r.edge}:${level}" preserveAspectRatio="none" ${attributes(band)} result="${p}weight${level}"/>`
+      : `<feComponentTransfer in="${p}ramp"${region} result="${p}weight${level}"><feFuncA type="table" tableValues="${rampTables[level]}"/></feComponentTransfer>`);
+    markup.push(`<feComposite in="${input}" in2="${p}weight${level}" operator="in"${region} result="${p}part${level}"/>`);
+    // Alternate levels never overlap, so a merge adds them exactly.
+    (level % 2 ? odd : even).push(`${p}part${level}`);
+  }
+  return { markup, even, odd };
+}
+/** One filter graph that keeps the sharp source and blurs only near edges. */
+export function progressiveGraph(id: string, regions: ProgressiveRegion[], width: number, height: number, target: FilterEngine = engine): string {
+  // Preserve foreground overflow (focus rings, shadows, scene popups) and
+  // the ramp's flood, which extends half a depth past each edge.
+  const padding = Math.max(256, ...regions.map((r) => Math.ceil((r.edge === "top" || r.edge === "bottom" ? r.height : r.width) / 2 + 3 * r.blur + r.refraction + 8)));
+  const full = { x: -padding, y: -padding, width: width + 2 * padding, height: height + 2 * padding };
+  const parts: string[] = [];
+  const merge = (inputs: string[], result: string, box?: Box) =>
+    `<feMerge result="${result}"${box ? ` ${attributes(box)}` : ""}>${inputs.map((input) => `<feMergeNode in="${input}"/>`).join("")}</feMerge>`;
+  const add = (a: string, b: string, result: string, box?: Box) =>
+    `<feComposite in="${a}" in2="${b}" operator="arithmetic" k2="1" k3="1"${box ? ` ${attributes(box)}` : ""} result="${result}"/>`;
+  if (target === "gecko") {
+    // Gecko renders this on the GPU, where a full-size pass is cheap and a
+    // primitive is not: its limit is 64 for every filter on the element.
+    let source = "SourceGraphic";
+    regions.forEach((r, index) => {
+      const p = `e${index}`;
+      const { markup, even, odd } = levelParts(r, p, source, false, full);
+      parts.push(...markup, merge(even, `${p}even`, full), merge(odd, `${p}odd`, round(r)), add(`${p}even`, `${p}odd`, `${p}result`, full));
+      source = `${p}result`;
     });
-    parts.push(
-      `<feMerge result="${p}result"><feMergeNode in="${p}outside"/><feMergeNode in="${p}sum6"/></feMerge>`,
-    );
-    source = `${p}result`;
-  });
-  const padding = 256; // Preserve foreground overflow (focus rings, shadows, scene popups).
-  return `<filter id="${id}" x="${-padding / width}" y="${-padding / height}" width="${1 + (2 * padding) / width}" height="${1 + (2 * padding) / height}" filterUnits="objectBoundingBox" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB">${parts.join("")}</filter>`;
+  } else {
+    // Software filters pay for every pixel a primitive covers. Regions that
+    // do not overlap read the same source and replace it in one final pass.
+    const independent = regions.every((r, i) => regions.every((other, j) => i === j || !overlaps(round(r), round(other))));
+    const groups = independent ? [regions] : regions.map((r) => [r]);
+    let source = "SourceGraphic";
+    groups.forEach((group, g) => {
+      const results: string[] = [], areas: string[] = [];
+      group.forEach((r) => {
+        const index = regions.indexOf(r), p = `e${index}`;
+        const { markup, even, odd } = levelParts(r, p, source, target === "webkit");
+        parts.push(...markup, `<feFlood flood-color="#fff" ${attributes(round(r))} result="${p}area"/>`,
+          merge(even, `${p}even`, round(r)), merge(odd, `${p}odd`, round(r)), add(`${p}even`, `${p}odd`, `${p}result`, round(r)));
+        results.push(`${p}result`);
+        areas.push(`${p}area`);
+      });
+      const q = `g${g}`;
+      if (areas.length > 1) parts.push(merge(areas, `${q}areas`));
+      parts.push(`<feComposite in="${source}" in2="${areas.length > 1 ? `${q}areas` : areas[0]}" operator="out" result="${q}outside"/>`,
+        merge([`${q}outside`, ...results], `${q}result`));
+      source = `${q}result`;
+    });
+  }
+  return `<filter id="${id}" x="${-padding / width}" y="${-padding / height}" width="${1 + (2 * padding) / width}" height="${1 + (2 * padding) / height}" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${parts.join("")}</filter>`;
 }
 export function createProgressiveLayer(
   root: HTMLElement,
   onError: (error: Error) => void,
   viewportMode = false,
-  invalidate: () => void = () => {},
 ) {
   const svg = document.createElementNS(ns, "svg");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("width", "0");
   svg.setAttribute("height", "0");
   svg.style.cssText = "position:absolute;pointer-events:none;overflow:hidden";
+  const defs = document.createElementNS(ns, "defs");
+  svg.append(defs);
   // Definitions must live outside the filtered wrapper to avoid a filter dependency cycle.
   root.ownerDocument.body.append(svg);
   const id = `lg-progressive-${++serial}`;
-  let revision = 0;
-  let paintId = id;
   const registrations = new Set<Registration>();
   const scrollRegistrations = new Set<ScrollEdgesOptions>();
   type ViewportLayer = {
@@ -148,7 +262,7 @@ export function createProgressiveLayer(
     for (const [element, options] of groups) {
       let state = viewports.get(element);
       if (!state) {
-        state = { layer: createProgressiveLayer(root, onError, true, invalidate), options: [], remove: [], original: element.style.filter, releasePaint: webkit ? acquireFilterPaintRoot(element) : undefined, applied: element.style.filter };
+        state = { layer: createProgressiveLayer(root, onError, true), options: [], remove: [], original: element.style.filter, releasePaint: webkit ? acquireFilterPaintRoot(element) : undefined, applied: element.style.filter };
         viewports.set(element, state);
       }
       if (options.length !== state.options.length || options.some((o, i) => o !== state.options[i])) {
@@ -164,26 +278,18 @@ export function createProgressiveLayer(
     }
     return count;
   }
-  const maps = new Map<PhysicalEdge, ProgressiveMaps>();
-  const pending = new Set<PhysicalEdge>();
-  const failed = new Set<PhysicalEdge>();
   const reduced = matchMedia("(prefers-reduced-transparency: reduce)");
   const contrast = matchMedia("(forced-colors: active)");
-  let previous = "",
-    topology = "",
-    filter = "",
-    disposed = false;
-  let nodes: SVGElement[] = [];
+  let markup = "", filter = "", regionCount = 0;
   let graphError: Error | undefined;
   let graphOperations = 0;
   // Written every frame otherwise; an unchanged value must not restyle the scene.
   const setEdges = (value: string) => { if (root.dataset.glassBlurEdges !== value) root.dataset.glassBlurEdges = value; };
   function clear() {
-    svg.replaceChildren();
-    previous = "";
-    topology = "";
+    if (markup) patchFilters(defs, [], maskUrl);
+    markup = "";
     filter = "";
-    nodes = [];
+    regionCount = 0;
     graphError = undefined;
     graphOperations = 0;
     if (!viewportMode) setEdges("0");
@@ -197,7 +303,6 @@ export function createProgressiveLayer(
       throw new RangeError(
         "A GlassScene supports at most 64 progressive blur regions.",
       );
-    failed.clear(); // An explicit remount/update may retry a previously unavailable GPU.
     registrations.add(registration);
     return () => {
       registrations.delete(registration);
@@ -224,7 +329,7 @@ export function createProgressiveLayer(
       );
       return () => remove.forEach((cleanup) => cleanup());
     },
-    count(): number { return nodes.filter((node) => node.localName === "feFlood").length; },
+    count(): number { return regionCount; },
     operations(): number { return graphOperations; },
     outsets(): number { return currentOutsets; },
     scrollsContent(): boolean { return scrollsContent; },
@@ -245,7 +350,7 @@ export function createProgressiveLayer(
         contrast.matches ||
         !active.length
       ) {
-        if (previous || filter) clear();
+        if (markup || filter) clear();
         if (!viewportMode) setEdges(String(viewportCount));
         return "";
       }
@@ -258,7 +363,7 @@ export function createProgressiveLayer(
       }
       const sx = width / c.width,
         sy = height / c.height;
-      const regions: Region[] = [];
+      const regions: ProgressiveRegion[] = [];
       for (const { element, options: o, target } of active) {
         if (
           o.disabled ||
@@ -311,29 +416,6 @@ export function createProgressiveLayer(
           rect.left > innerWidth
         )
           continue;
-        const m = maps.get(edge);
-        if (!m) {
-          if (!pending.has(edge) && !failed.has(edge)) {
-            pending.add(edge);
-            getProgressiveMaps(edge)
-              .then((value) => {
-                pending.delete(edge);
-                if (disposed) return;
-                maps.set(edge, value);
-                invalidate();
-              })
-              .catch((error) => {
-                pending.delete(edge);
-                if (disposed) return;
-                failed.add(edge);
-                onError(
-                  error instanceof Error ? error : new Error(String(error)),
-                );
-                invalidate();
-              });
-          }
-          continue;
-        }
         // Clip only across the gradient, preserving its full depth/profile.
         const left = vertical ? Math.max(rect.left, c.left) : rect.left;
         const top = vertical ? rect.top : Math.max(rect.top, c.top);
@@ -356,79 +438,40 @@ export function createProgressiveLayer(
           height: (bottom - top) * sy,
           blur: (o.blur ?? 20) * strength,
           refraction: (o.refraction ?? 0) * strength,
-          maps: m,
         });
+      }
+      if (!regions.length) {
+        if (markup || filter) clear();
+        if (!viewportMode) setEdges(String(viewportCount));
+        return "";
       }
       // The whole branched graph counts, including repeated inputs from an
       // earlier edge. Cache this across scrolling that only moves regions.
       const scale = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
-      const nextBudgetKey = JSON.stringify([width, height, ...regions.map((r) => [r.blur, r.refraction])]);
-      if (webkit && nextBudgetKey !== budgetKey) {
-        budgetKey = nextBudgetKey;
-        budgetOutsets = filterGraphOutsets(graph(id, regions, width, height), width, height);
-      }
-      const outsets = budgetOutsets * scale;
-      const soften = filterBudgetFactor(width * scale, height * scale, outsets);
-      currentOutsets = outsets * soften / scale;
-      if (soften < 1) for (const r of regions) { r.blur *= soften; r.refraction *= soften; }
-      const key = JSON.stringify([
-        width,
-        height,
-        ...regions.map(({ maps: _maps, ...r }) => r),
-      ]);
-      if (key !== previous) {
-        previous = key;
-        const nextTopology =
-          `${width}:${height}:` +
-          regions.map((r) => `${r.edge}:${r.refraction > 0}`).join(",");
-        if (topology !== nextTopology) {
-          topology = nextTopology;
-          const markup = regions.length ? graph(id, regions, width, height) : "";
-          graphOperations = gecko ? filterPrimitiveCount(markup) : 0;
-          graphError = graphOperations > 64 ? new RangeError(`Progressive blur requires ${graphOperations} filter operations; this browser supports 64 per element.`) : undefined;
-          svg.innerHTML = markup ? `<defs>${markup}</defs>` : "";
-          // WebKit retains a CSS reference filter's old topology when the
-          // definition is replaced under the same id. Rebind only when edges
-          // enter/leave; ordinary scrolling retains its graph and resources.
-          if (webkit && markup) {
-            paintId = `${id}-${++revision}`;
-            svg.querySelector("filter")!.id = paintId;
-          }
-          nodes = [...svg.querySelectorAll<SVGElement>("[data-region]")];
-        } else {
-          // Keep feImage resources and the filter graph alive while scrolling.
-          for (const node of nodes) {
-            const r = regions[Number(node.dataset.region)]!;
-            const margin =
-              node.dataset.box === "crop"
-                ? Math.ceil(3 * r.blur + r.refraction + 2)
-                : 0;
-            const values = {
-              x: (r.x - margin) / width,
-              y: (r.y - margin) / height,
-              width: (r.width + 2 * margin) / width,
-              height: (r.height + 2 * margin) / height,
-            };
-            for (const [name, value] of Object.entries(values))
-              node.setAttribute(name, String(value));
-            if (node.dataset.level) {
-              const sigma = r.blur * (Number(node.dataset.level) / 6) ** 2;
-              node.setAttribute(
-                "stdDeviation",
-                `${sigma / width} ${sigma / height}`,
-              );
-            }
-            if (node.localName === "feDisplacementMap")
-              node.setAttribute("scale", String((r.refraction * 2) / width));
-          }
+      if (webkit) {
+        const nextBudgetKey = JSON.stringify([width, height, ...regions.map((r) => [r.edge, r.width, r.height, r.blur, r.refraction])]);
+        if (nextBudgetKey !== budgetKey) {
+          budgetKey = nextBudgetKey;
+          budgetOutsets = filterGraphOutsets(progressiveGraph(id, regions, width, height));
         }
-        filter = regions.length ? `url("#${paintId}")` : "";
+        const outsets = budgetOutsets * scale;
+        const soften = filterBudgetFactor(width * scale, height * scale, outsets);
+        currentOutsets = outsets * soften / scale;
+        if (soften < 1) for (const r of regions) { r.blur *= soften; r.refraction *= soften; }
+      }
+      const next = progressiveGraph(id, regions, width, height);
+      if (next !== markup) {
+        markup = next;
+        regionCount = regions.length;
+        graphOperations = gecko ? filterPrimitiveCount(next) : 0;
+        graphError = graphOperations > 64 ? new RangeError(`Progressive blur requires ${graphOperations} filter operations; this browser supports 64 per element.`) : undefined;
+        const live = patchFilters(defs, [next], maskUrl);
+        filter = `url("#${live(id)}")`;
       }
       if (!viewportMode) setEdges(String(viewportCount + regions.length));
       return filter;
     },
     dispose() {
-      disposed = true;
       registrations.clear();
       scrollRegistrations.clear();
       for (const [element, state] of viewports) releaseViewport(element, state);

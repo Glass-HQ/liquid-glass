@@ -1,4 +1,4 @@
-import { webkit } from "./filter-budget.js";
+import { chromium } from "./engine.js";
 
 /** A filter is library-generated SVG: elements and double-quoted attributes,
  * without text nodes. Keep its description outside the DOM so animation
@@ -39,7 +39,7 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
       const structural = reconcile(current, description, links);
       current.markup = source;
       // Chromium does not always repaint after graph structure changes.
-      if (structural && !webkit) current.element.setAttribute("x", description.attributes.x!);
+      if (structural && chromium) current.element.setAttribute("x", description.attributes.x!);
     } else {
       const id = `${base}-${++version}`;
       const retained = create(defs.ownerDocument, description, links);
@@ -62,7 +62,7 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
     linked = true;
   }
   // One settling sequence per graph update, not one for every map image.
-  if (linked && !webkit) settle(defs);
+  if (linked && chromium) settle(defs);
   return (id) => ids.get(id) ?? id;
 }
 

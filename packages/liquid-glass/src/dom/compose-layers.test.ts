@@ -120,7 +120,9 @@ test("bounds culling preserves paint order and alpha across disconnected and tra
   expect(markup).not.toContain('result="scene-far-occlusion"');
   expect(markup).not.toContain('result="scene-touching-occlusion"');
   const fullComposites = [...markup.matchAll(/<feComposite\b([^>]*)\/>/g)].filter((tag) => !/\sx="/.test(tag[1]!));
-  expect(fullComposites).toHaveLength(2);
+  // Only the source cut-out covers the scene; the final merge draws over it.
+  expect(fullComposites).toHaveLength(1);
+  expect(markup).not.toContain('operator="arithmetic"');
   expect(markup.match(/<feFlood/g)).toHaveLength(3);
   expect(markup).toContain('result="scene-group0-area"');
 

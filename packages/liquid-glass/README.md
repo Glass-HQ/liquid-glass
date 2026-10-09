@@ -220,7 +220,7 @@ The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, 
 
 ## Requirements and limitations
 
-- React 19+ for React components; HTTPS or localhost and an available WebGPU adapter for rendering.
+- React 19+ for React components; HTTPS or localhost and an available WebGPU adapter to render glass material maps. Progressive blur needs no WebGPU.
 - SVG filter performance varies between browser engines. Safari can spend substantially longer filtering large content layers than Chromium, even when material maps are cached. Keep scenes close to the content they need to refract, and test animated menus on the devices you support. Chromium, Firefox, Safari, and Electron are acceptance targets; they do not have identical performance.
 - For consistent refraction in Safari, give `GlassContent` an opaque background. Transparent source pixels can leave the original content visible beneath its refracted image.
 - Use bounded scenes with explicit content layers. Arbitrary page-backdrop sampling, native video composition, rotated/transformed ancestors, and native ports are outside the supported scope. Cross-origin image policies apply.

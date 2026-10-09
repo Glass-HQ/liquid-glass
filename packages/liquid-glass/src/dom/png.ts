@@ -59,9 +59,7 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   view.setUint32(8 + data.length, crc32(out, 4, 8 + data.length));
   return out;
 }
-/** Encode tightly packed RGBA pixels, `stride` bytes per row, as a PNG. The
- * "Sub" filter turns the maps' smooth gradients into runs zlib packs well. */
-export async function encodePng(width: number, height: number, rgba: Uint8Array, stride = width * 4): Promise<Uint8Array> {
+function rows(width: number, height: number, rgba: Uint8Array, stride: number): Uint8Array {
   const row = width * 4;
   const raw = new Uint8Array((row + 1) * height);
   for (let y = 0; y < height; y++) {
@@ -70,16 +68,23 @@ export async function encodePng(width: number, height: number, rgba: Uint8Array,
     for (let i = 0; i < 4; i++) raw[to + 1 + i] = rgba[from + i]!;
     for (let i = 4; i < row; i++) raw[to + 1 + i] = (rgba[from + i]! - rgba[from + i - 4]!) & 0xff;
   }
+  return raw;
+}
+function assemble(width: number, height: number, data: Uint8Array): Uint8Array {
   const header = new Uint8Array(13);
   const view = new DataView(header.buffer);
   view.setUint32(0, width); view.setUint32(4, height);
   header[8] = 8; header[9] = 6; header[10] = 0; header[11] = 0; header[12] = 0;
-  const data = await deflate(raw);
   const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", data), chunk("IEND", new Uint8Array(0))];
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let o = 0;
   for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
+}
+/** Encode tightly packed RGBA pixels, `stride` bytes per row, as a PNG. The
+ * "Sub" filter turns the maps' smooth gradients into runs zlib packs well. */
+export async function encodePng(width: number, height: number, rgba: Uint8Array, stride = width * 4): Promise<Uint8Array> {
+  return assemble(width, height, await deflate(rows(width, height, rgba, stride)));
 }
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 export function base64(bytes: Uint8Array): string {
@@ -102,4 +107,8 @@ export function base64(bytes: Uint8Array): string {
  * `blob:` URL would leave the material blank for a frame. */
 export async function pngDataUrl(width: number, height: number, rgba: Uint8Array, stride?: number): Promise<string> {
   return `data:image/png;base64,${base64(await encodePng(width, height, rgba, stride))}`;
+}
+/** An uncompressed PNG `data:` URL, available at once for tiny images. */
+export function pngDataUrlSync(width: number, height: number, rgba: Uint8Array): string {
+  return `data:image/png;base64,${base64(assemble(width, height, stored(rows(width, height, rgba, width * 4))))}`;
 }
