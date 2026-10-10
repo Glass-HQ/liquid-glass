@@ -3,7 +3,7 @@ import { progressiveBlurLevels, defaultProgressiveOptions } from "./ProgressiveS
 import type { ProgressiveOptions } from "./ProgressiveScenes"
 import type { GlassMaterial, GlassAppearance } from "@glass-sdk/liquid-glass"
 
-export const installCommand = "npm install @glass-sdk/liquid-glass@~0.0.1"
+export const installCommand = "npm install @glass-sdk/liquid-glass@~0.0.2"
 
 const imports = {
   slider: "GlassSlider",

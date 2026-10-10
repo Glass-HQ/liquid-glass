@@ -7,7 +7,7 @@ Glass surfaces and controls for React, the web, and Electron. Clear and Regular 
 ## Install
 
 ```sh
-npm install @glass-sdk/liquid-glass@~0.0.1
+npm install @glass-sdk/liquid-glass@~0.0.2
 ```
 
 ```tsx

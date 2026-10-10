@@ -5,7 +5,7 @@ on:
       version:
         description: Exact reviewed package version to publish
         required: true
-        default: '0.0.1'
+        default: '0.0.2'
 permissions:
   contents: read
   id-token: write
