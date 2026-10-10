@@ -125,9 +125,19 @@ export function attachInteraction(element: HTMLElement, motion: () => GlassMotio
       set(glow, hovering ? 0.35 : 0, springs.glow);
     }
   }
+  // Links and images are natively draggable; a browser drag would cancel the
+  // press with `pointercancel` and carry a ghost of the URL. Content the
+  // application marks `draggable="true"` keeps its drag.
+  function drag(event: DragEvent) {
+    if (!pointer) return;
+    const origin = event.target as Node | null;
+    const source = origin?.nodeType === 1 ? origin as Element : origin?.parentElement;
+    if (!source?.closest('[draggable="true"]')) event.preventDefault();
+  }
   const blur = () => { if (keyboard) { keyboard = false; set(press, 0, springs.release); set(glow, 0, springs.glow); } };
 
   element.addEventListener("pointerdown", down);
+  element.addEventListener("dragstart", drag);
   element.addEventListener("pointerenter", hover);
   element.addEventListener("pointermove", hover);
   element.addEventListener("pointerleave", hover);
@@ -201,6 +211,7 @@ export function attachInteraction(element: HTMLElement, motion: () => GlassMotio
     dispose() {
       release();
       element.removeEventListener("pointerdown", down);
+      element.removeEventListener("dragstart", drag);
       element.removeEventListener("pointerenter", hover);
       element.removeEventListener("pointermove", hover);
       element.removeEventListener("pointerleave", hover);
