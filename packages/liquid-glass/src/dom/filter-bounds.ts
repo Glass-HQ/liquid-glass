@@ -36,7 +36,7 @@ export function crossedSides(width: number, height: number, regions: readonly Fi
  * content needs none. Each tile is a named result a surface merges into its
  * own cropped backdrop, so no full-size extended copy of the source is ever
  * built or re-evaluated. */
-export function edgeTiles(width: number, height: number, bounds: FilterBounds, prefix: string, sides: EdgeSides): { markup: string; names: Record<string, string> } {
+export function edgeTiles(width: number, height: number, bounds: FilterBounds, prefix: string, sides: EdgeSides, source = "SourceGraphic"): { markup: string; names: Record<string, string> } {
   const pixel = Math.min(1, width, height);
   const xs = [
     { source: 0, size: pixel, target: bounds.x, extent: -bounds.x, needed: sides.left },
@@ -54,7 +54,14 @@ export function edgeTiles(width: number, height: number, bounds: FilterBounds, p
     if ((i === 1 && j === 1) || !x.needed || !y.needed || x.extent <= 0 || y.extent <= 0) return;
     if (i !== 1 && j !== 1 && !sides.corners.has(`${i}${j}`)) return;
     const id = `${prefix}edge${i}${j}`;
-    parts.push(`<feOffset in="SourceGraphic" dx="0" dy="0" x="${x.source}" y="${y.source}" width="${x.size}" height="${y.size}" result="${id}"/><feTile in="${id}" x="${x.target}" y="${y.target}" width="${x.extent}" height="${y.extent}" result="${id}tile"/>`);
+    parts.push(`<feOffset in="${source}" dx="0" dy="0" x="${x.source}" y="${y.source}" width="${x.size}" height="${y.size}" result="${id}"/>`);
+    const corner = i !== 1 && j !== 1;
+    // Gecko copies each repeated tile in software. Fill a corner one axis
+    // at a time so it copies rows instead of one tiny tile per output pixel.
+    // Keep the source row's y/height, and the output's x/width, so both
+    // repetitions retain exactly the original period and phase.
+    if (corner) parts.push(`<feTile in="${id}" x="${x.target}" y="${y.source}" width="${x.extent}" height="${y.size}" result="${id}row"/>`);
+    parts.push(`<feTile in="${corner ? `${id}row` : id}" x="${x.target}" y="${y.target}" width="${x.extent}" height="${y.extent}" result="${id}tile"/>`);
     names[`${i}${j}`] = `${id}tile`;
   }));
   return { markup: parts.join(""), names };

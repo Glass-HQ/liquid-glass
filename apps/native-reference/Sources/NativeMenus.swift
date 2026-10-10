@@ -1,17 +1,47 @@
 import SwiftUI
 
+struct NativeMenuOptions {
+    var submenu = false
+    var toolbar = false
+}
 struct NativeMenu: View {
-    let material: Glass
+    var options = NativeMenuOptions()
     var body: some View {
-        Menu {
-            ForEach(["Share", "Save to library", "Download"], id: \.self) { title in
-                Button(title) {}
-            }
-        } label: {
-            NativeIcon(kind: .more).frame(width: 52, height: 52)
-                .glassEffect(material.interactive(), in: .capsule)
+        NativeSwiftUIMenu(submenu: options.submenu)
+            .menuStyle(.automatic).controlSize(.large).fixedSize()
+    }
+}
+struct NativeSwiftUIMenu: View {
+    var submenu = false
+    var body: some View {
+        Menu("Options", systemImage: "ellipsis") {
+            Button("Save to library", systemImage: "heart") { }
+            if submenu {
+                Menu("Share") {
+                    Button("Copy link") { }
+                    Button("Email") { }
+                    Menu("More") {
+                        Button("Messages") { }
+                        Button("AirDrop") { }.disabled(true)
+                    }
+                }
+            } else { Button("Share", systemImage: "square.and.arrow.up") { } }
+            Button("Download", systemImage: "arrow.down.circle") { }
         }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-        .accessibilityLabel("Options")
+    }
+}
+struct NativeMenuControls: View {
+    @Binding var options: NativeMenuOptions
+    var showsTrigger: Bool
+    var body: some View {
+        HStack(spacing: 16) {
+            Toggle("With submenu", isOn: $options.submenu)
+            if showsTrigger {
+                Picker("Trigger", selection: $options.toolbar) {
+                    Text("Button").tag(false)
+                    Text("Window toolbar").tag(true)
+                }.fixedSize()
+            }
+        }.padding(.horizontal, 16)
     }
 }

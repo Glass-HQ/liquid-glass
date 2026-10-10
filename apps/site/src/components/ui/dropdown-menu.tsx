@@ -1,4 +1,4 @@
-import { GlassShape } from "@glass-sdk/liquid-glass"
+import { GlassMenuSubmenuTrigger, GlassShape } from "@glass-sdk/liquid-glass"
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { cn } from "cn"
@@ -111,7 +111,7 @@ function DropdownMenuSubTrigger({
   inset?: boolean
 }) {
   return (
-    <GlassShape concentric={{ contentPadding: 8 }} render={<MenuPrimitive.SubmenuTrigger
+    <GlassMenuSubmenuTrigger
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
@@ -126,7 +126,7 @@ function DropdownMenuSubTrigger({
         strokeWidth={2}
         className="ml-auto"
       />
-    </MenuPrimitive.SubmenuTrigger>} />
+    </GlassMenuSubmenuTrigger>
   )
 }
 

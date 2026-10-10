@@ -603,6 +603,12 @@ footer {
 .menu-options-toolbar > .lg-toolbar-cluster { gap: 2px; padding: 4px; }
 .menu-options-toolbar .lg-toolbar-button { width: 28px; height: 28px; padding: 0; color: inherit; }
 .menu-options-toolbar .lg-toolbar-button[aria-pressed="true"] { background: var(--lg-control-highlight); }
+@media (max-width: 640px) {
+  .menu-options-toolbar { max-width: 100%; flex-wrap: wrap; justify-content: center; row-gap: 8px; }
+  .menu-options-toolbar > .lg-toolbar-cluster { flex: 0 1 auto; min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .menu-options-toolbar > .lg-toolbar-spacer { display: none; }
+  .has-bottom-controls .example-center { bottom: 108px; }
+}
 .submenu-chevron { margin-left: auto; padding-left: 12px; }
 .dark .code-sample code span[style] { color: var(--shiki-dark) !important; }
 .api-reference { margin-top: 48px; }
@@ -632,13 +638,13 @@ footer a:focus-visible,
 }
 .tint-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-/* Progressive blur: a nested scene clips the filtered, stationary scroll frame. */
+/* Floating controls share the scene while its content scrolls beneath them. */
 .progressive-scene { position: absolute; inset: 0; overflow: hidden; background: #f3efe8; color: #2a241d; }
 .progressive-scene.glass-dark { background: #242320; color: #f4efe6; }
-.progressive-frame { position: absolute; inset: 0; overflow: hidden; }
 .progressive-scene .lg-content { background: inherit; }
 .progressive-viewport { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; }
-.progressive-viewport:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.progressive-viewport:focus-visible { outline: none; }
+.progressive-scene:has(.progressive-viewport:focus-visible) { outline: 2px solid currentColor; outline-offset: -3px; }
 .progressive-caption { position: absolute; inset-inline: 28px; margin: 0; font-size: clamp(26px, 4vw, 40px); font-weight: 600; letter-spacing: -1.2px; line-height: 1.05; color: #211e19; }
 .glass-dark .progressive-caption { color: #fff7e8; }
 .progressive-caption.is-top { top: 28px; }
@@ -716,8 +722,8 @@ footer a:focus-visible,
 .value-control-example { display: grid; width: 280px; }
 .value-control-example-switch { width: auto; }
 
-/* Only the outer filter frame is stationary; the header remains in page flow. */
-.docs-scroll-scene { position: relative; height: 100dvh; overflow: hidden; }
+/* Page edge blur stays fixed while the document scrolls beneath it. */
+.page-scroll-frame { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .docs-viewport { height: 100%; overflow: auto; scroll-padding-block: 64px; }
 .docs-viewport { background: var(--site-background); }
 
@@ -734,24 +740,9 @@ footer a:focus-visible,
 .site-topbar { display: flex; align-items: center; gap: 8px; padding: 8px 24px; flex-shrink: 0; }
 .site-topbar > header { margin-left: auto; }
 .site-topbar .site-header { height: 28px; }
-.site-main .docs-scroll-scene { flex: 1; min-height: 0; height: auto; }
 .docs-page { max-width: 1040px; padding: 16px 24px 24px; min-height: 100%; display: flex; flex-direction: column; }
 .docs-content { flex: 1; }
-/* The stepper's presence is a class on the scene: a `:has()` rule here
-   re-styled the entire page subtree on every inline style change within it. */
-.docs-scroll-scene.has-stepper .docs-page { padding-bottom: 88px; }
-.component-stepper-position { position: absolute; z-index: 30; inset: auto 0 max(20px, env(safe-area-inset-bottom)); display: flex; justify-content: center; pointer-events: none; }
-.component-stepper-scene { position: relative; display: flex; pointer-events: auto; }
-.component-stepper-backdrop { width: 100%; height: 100%; background: var(--site-background); }
-.component-stepper { display: flex; align-items: center; padding: 4px; }
-.component-stepper > button { width: 40px; height: 40px; border-radius: 50%; color: inherit; }
-.component-stepper .component-stepper-dots { --pill-dot-size: 24px; --pill-active-width: 40px; --pill-gap: 0px; --pill-bg: transparent; --pill-active-bg: transparent; --pill-container-bg: transparent; --pill-container-border: transparent; border-radius: 0; padding: 0; border: 0; overflow: visible; }
-.component-stepper-dots .pasito-step { border-radius: 0; height: 40px; overflow: visible; }
-.component-stepper-dots .pasito-step::before { content: ""; position: absolute; inset: 16px 8px; clip-path: var(--step-clip, inset(50%)); background: currentColor; opacity: .25; transition: opacity 150ms; }
-.component-stepper-dots .pasito-step[aria-selected="true"]::before { opacity: 1; }
-@media (hover: hover) { .component-stepper-dots .pasito-step:not([aria-selected="true"]):hover::before { opacity: .9; } }
-.component-stepper-dots .pasito-step:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
-@media (prefers-reduced-motion: reduce) { .component-stepper-dots .pasito-step::before { transition: none; } }
+
 .site-sidebar-footer { padding: 4px 12px 8px; gap: 1px; color: var(--site-muted); font-size: 11px; line-height: 16px; }
 @media (max-width: 767px) {
   .site-topbar { padding: 8px 16px; }
@@ -789,6 +780,7 @@ footer a:focus-visible,
 }
 
 .sidebar-options-menu { min-width: 176px; }
+.site-material-toggle { display: flex; align-items: center; min-height: 36px; padding: 4px 8px; justify-content: space-between; gap: 16px; font-size: 12px; font-weight: 400; line-height: 1.625; }
 
 .sidebar-menu-scene { flex: 1; min-height: 0; display: flex; }
 .sidebar-menu-content { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -809,3 +801,13 @@ footer a:focus-visible,
 @media (max-width: 640px) { .demo-customize-menu { min-width: 200px; } }
 
 [data-slot="sidebar"][data-mobile="true"] [data-slot="sidebar-content"] { padding: 1px 4px; }
+
+/* Page chrome uses native backdrop blur only, with no material or refraction.
+   The overlays cover independently composited demos without filtering their
+   live scrollports a second time. Each band increases blur toward the edge. */
+.page-edge-blur { position: absolute; z-index: 40; inset-inline: 0; height: 64px; pointer-events: none; }
+.page-edge-blur.is-top { top: 0; --edge-opacity: var(--page-blur-top, 0); }
+.page-edge-blur.is-bottom { bottom: 0; --edge-opacity: var(--page-blur-bottom, 0); }
+.page-edge-blur > span { position: absolute; inset: 0; opacity: var(--edge-opacity); backdrop-filter: blur(var(--edge-blur)); -webkit-backdrop-filter: blur(var(--edge-blur)); mask-image: linear-gradient(var(--edge-direction), transparent var(--edge-start), #000 var(--edge-end)); }
+.page-edge-blur.is-top { --edge-direction: to top; }
+.page-edge-blur.is-bottom { --edge-direction: to bottom; }

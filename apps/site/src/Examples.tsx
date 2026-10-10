@@ -166,12 +166,17 @@ export function Example({
         setError(d.error)
       }}
     >
-      <GlassContent>
+      {example === "progressive-blur" ? (
         <GlassShape ref={backdropRef} radius={31} className="example-backdrop">
-          {/* Inside GlassContent, so the preview menus refract the demo instead of hiding behind it. */}
-          {example === "progressive-blur" ? <ProgressiveScene options={progressive} appearance={appearance} /> : <Backdrop kind={background} appearance={appearance} />}
+          <ProgressiveScene options={progressive} appearance={appearance} />
         </GlassShape>
-      </GlassContent>
+      ) : (
+        <GlassContent>
+          <GlassShape ref={backdropRef} radius={31} className="example-backdrop">
+            <Backdrop kind={background} appearance={appearance} />
+          </GlassShape>
+        </GlassContent>
+      )}
       {controls && (
         <GlassCorner container={backdropRef} gap={12} className="example-controls">
           {controls}
@@ -230,8 +235,8 @@ export function Example({
           {(example === "slider" || example === "switch") && (
             <div className={`value-control-example value-control-example-${example}`}>
               {example === "switch"
-                ? <GlassSwitch {...options} material="clear" aria-label="Switch" checked={checked} onCheckedChange={setChecked} />
-                : <GlassSlider {...options} material="clear" aria-label="Slider" value={sliderValue} onValueChange={setValue} step={sliderStepped ? 25 : 0.1} ticks={sliderStepped} />}
+                ? <GlassSwitch {...options} aria-label="Switch" checked={checked} onCheckedChange={setChecked} />
+                : <GlassSlider {...options} aria-label="Slider" value={sliderValue} onValueChange={setValue} step={sliderStepped ? 25 : 0.1} ticks={sliderStepped} />}
             </div>
           )}
           {example === "buttons" && (

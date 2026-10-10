@@ -34,6 +34,8 @@ export function Example() {
 
 Import the stylesheet once. It requires neither Tailwind nor a CSS reset. Put glass components inside `GlassScene`, with one `GlassContent` layer for the background. Text, SVG, and images in that layer stay live. In Next.js, use a client component.
 
+`GlassContent` keeps your props, ref, and children on its source element inside stable transparent wrappers. Target its class rather than relying on it being a direct child of the scene. Put opacity and clipping intended for the finished composition on `GlassScene` or a shared ancestor; `GlassContent` styles describe the input behind the glass.
+
 ## Components
 
 | Component | Purpose |
@@ -71,7 +73,7 @@ Set defaults on `GlassScene`; individual surfaces can override them. Menu popups
 
 Slider and switch pressed thumbs default to Clear, with refraction of 5px and 7.75px respectively. Their `tint` sets the track color.
 
-System reduced-motion preferences always apply, including with `motion="full"`. Reduced motion removes stretching and travel; `"none"` removes transitions.
+System reduced-motion preferences always apply, including with `motion="full"`. Reduced motion removes stretching and travel; `"none"` removes transitions. Safari uses the same motion settings as other browsers.
 
 Override styles with `className`, inline styles, or CSS utilities. The stylesheet uses low-specificity `:where()` selectors. Use `radius` to change corners so the material and content clip agree. Override `--lg-foreground` for text and icon colors.
 
@@ -152,16 +154,16 @@ Switches accept Base UI switch props, including `checked`, `defaultChecked`, `on
 </GlassScene>
 ```
 
-For scrolling content, pass the actual scroll viewport to `GlassScrollEdges`:
+For scrolling content, use `GlassContent layout="scroll"` as the viewport and pass its ref to `GlassScrollEdges`. This keeps the glass and blur stationary during Safari scrolling. Give the scene a bounded height, and place floating controls beside the content:
 
 ```tsx
 const viewport = useRef<HTMLDivElement>(null);
 
 <GlassScene style={{ height: 320, overflow: "hidden" }}>
-  <div ref={viewport} tabIndex={0} role="region" aria-label="Reading list"
-    style={{ height: "100%", overflow: "auto", scrollPaddingBlock: 80 }}>
-    <GlassContent layout="flow">{children}</GlassContent>
-  </div>
+  <GlassContent layout="scroll" ref={viewport} tabIndex={0} role="region"
+    aria-label="Reading list" style={{ scrollPaddingBlock: 80 }}>
+    {children}
+  </GlassContent>
   <GlassScrollEdges target={viewport} size={80} blur={20} />
 </GlassScene>
 ```
@@ -212,14 +214,17 @@ scene.dispose();
 
 Use the positioned scene/content/surface structure from the React example. `scene.addForeground(element)` registers foreground content and returns a cleanup function. `scene.addAnimator(animator)` updates custom animation before scene measurements.
 
+In Firefox, each surface draws its own glass: the scene adds an `aria-hidden` layer as the surface's last child, beneath its other children, which paints a live `-moz-element()` view of the content and refracts it. The content layer itself is not filtered there. Firefox otherwise repaints a filtered content layer in software on every frame anything on the page animates. If the content element has no `id`, the scene gives it one while it is attached. Surfaces should not rely on `:last-child` styling of their own children.
+
 The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, and controller APIs for custom integrations. Type declarations describe their options.
 
 ## Requirements and limitations
 
-- React 19+ for React components; HTTPS or localhost and an available WebGPU adapter for rendering.
-- **Safari has known rendering issues.** The initial release showed blank tab-example content in Safari. Chromium, Firefox, Safari, and Electron are acceptance targets; the initial publication did not establish current parity across all four.
+- React 19+ for React components; HTTPS or localhost and an available WebGPU adapter to render glass material maps. Progressive blur needs no WebGPU.
+- SVG filter performance varies between browser engines. Safari can spend substantially longer filtering large content layers than Chromium, even when material maps are cached. Keep scenes close to the content they need to refract, and test animated menus on the devices you support. Chromium, Firefox, Safari, and Electron are acceptance targets; they do not have identical performance.
+- For consistent refraction in Safari, give `GlassContent` an opaque background. Transparent source pixels can leave the original content visible beneath its refracted image.
 - Use bounded scenes with explicit content layers. Arbitrary page-backdrop sampling, native video composition, rotated/transformed ancestors, and native ports are outside the supported scope. Cross-origin image policies apply.
-- `GlassScene.maxSurfaces` defaults to 16 and accepts at most 64. Use `onDiagnostic` for map readiness, construction timing, and GPU errors.
+- `GlassScene.maxSurfaces` defaults to 16 and accepts at most 64. Use `onDiagnostic` for map readiness, construction timing, filter graph limits, and GPU errors.
 - NodeNext TypeScript consumers currently need `skipLibCheck: true` for upstream vgpu declarations.
 
 ## How it works

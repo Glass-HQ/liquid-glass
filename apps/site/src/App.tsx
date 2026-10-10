@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode, RefObject } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
+import { Menu } from "@base-ui/react/menu"
 import {
   BoltIcon,
   DashedLine01Icon,
@@ -45,6 +46,7 @@ import {
   GlassMenu,
   GlassMenuTrigger,
   GlassMenuContent,
+  GlassSwitch,
   GlassMenuSubmenu,
   GlassMenuSubmenuContent,
 } from "@glass-sdk/liquid-glass"
@@ -61,11 +63,12 @@ import {
   DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu"
 import { Example, toolbarVariants } from "./Examples"
+import { PageEdgeBlur } from "./PageEdgeBlur"
 import { defaultProgressiveOptions, progressiveModes } from "./ProgressiveScenes"
 import type { ProgressiveOptions } from "./ProgressiveScenes"
 import type { ExampleKind, ToolbarVariant, MenuOptions } from "./Examples"
 import { ApiReference } from "./ApiReference"
-import { ComponentStepper } from "./ComponentStepper"
+import { SiteMaterialProvider, useSiteMaterial } from "./SiteMaterial"
 import { highlight } from "./highlight"
 import { installCommand, usageCode } from "./usage"
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
@@ -107,17 +110,30 @@ function SidebarCornerControl({ corner, shapeRef, label, children }: {
   )
 }
 function SiteMenu({ theme, preference, onPreferenceChange }: SiteThemeProps) {
+  const { material: siteMaterial, setMaterial } = useSiteMaterial()
   return (
       <GlassMenu>
         <GlassToolbarButton aria-label="Site options" render={<GlassMenuTrigger />}>
           <HugeiconsIcon icon={MoreHorizontalIcon} size={16} />
         </GlassToolbarButton>
-        <GlassMenuContent className="site-glass-choice sidebar-options-menu" align="start">
+        <GlassMenuContent material={siteMaterial} className="site-glass-choice sidebar-options-menu" align="start">
           <DropdownMenuRadioGroup value={preference} onValueChange={(value) => onPreferenceChange(value as ThemePreference)}>
             <DropdownMenuRadioItem value="light" closeOnClick><HugeiconsIcon icon={Sun03Icon} size={14} />Light</DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="dark" closeOnClick><HugeiconsIcon icon={Moon02Icon} size={14} />Dark</DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="system" closeOnClick><HugeiconsIcon icon={ComputerIcon} size={14} />System</DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <GlassShape concentric={{ contentPadding: 8 }} className="site-material-toggle">
+            <span id="site-material-label">Clear glass</span>
+            <Menu.Item closeOnClick={false} render={<GlassSwitch
+              aria-labelledby="site-material-label"
+              material={siteMaterial}
+              appearance={theme}
+              checked={siteMaterial === "clear"}
+              onCheckedChange={(checked) => setMaterial(checked ? "clear" : "regular")}
+              aria-description="Off uses Regular glass. Applies only to site controls."
+            />} />
+          </GlassShape>
           <DropdownMenuSeparator />
           <DropdownMenuItem className="sidebar-github-link" render={<a href={repo} target="_blank" rel="noopener noreferrer" aria-label="GitHub, open source MIT, opens in a new tab" />}>
             <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width={14} height={14} fill="none" aria-hidden="true">
@@ -140,21 +156,20 @@ function PreviewToolbar({
   value,
   onChange,
   children,
-  showMaterial = true,
 }: {
   value: GlassMaterial
   onChange: (m: GlassMaterial) => void
-  showMaterial?: boolean
   children: ReactNode
 }) {
+  const { material: siteMaterial } = useSiteMaterial()
   return (
-    <GlassToolbar material="regular" aria-label="Preview controls" className="preview-toolbar">
+    <GlassToolbar material={siteMaterial} aria-label="Preview controls" className="preview-toolbar">
       <GlassMenu>
         <GlassToolbarButton aria-label="Customize demo" render={<GlassMenuTrigger />}>
           <HugeiconsIcon icon={BoltIcon} size={16} />
         </GlassToolbarButton>
-        <GlassMenuContent className="site-glass-choice demo-customize-menu" align="end">
-          {showMaterial && <GlassChoice label="Material" value={value} onChange={onChange} items={[{ value: "clear", label: "Clear" }, { value: "regular", label: "Regular" }]} />}
+        <GlassMenuContent material={siteMaterial} className="site-glass-choice demo-customize-menu" align="end">
+          <GlassChoice label="Material" value={value} onChange={onChange} items={[{ value: "clear", label: "Clear" }, { value: "regular", label: "Regular" }]} />
           {children}
         </GlassMenuContent>
       </GlassMenu>
@@ -173,6 +188,7 @@ function GlassChoice<T extends string>({
   onChange: (value: T) => void
   items: readonly { value: T; label: string; icon?: typeof Image03Icon }[]
 }) {
+  const { material: siteMaterial } = useSiteMaterial()
   const selected = items.find((item) => item.value === value)
   return (
     <GlassMenuSubmenu>
@@ -180,7 +196,7 @@ function GlassChoice<T extends string>({
         <span>{label}</span>
         <span className="demo-choice-value">{selected?.label}</span>
       </DropdownMenuSubTrigger>
-      <GlassMenuSubmenuContent className="site-glass-choice">
+      <GlassMenuSubmenuContent material={siteMaterial} className="site-glass-choice">
         <DropdownMenuRadioGroup
           value={value}
           onValueChange={(next) => onChange(next as T)}
@@ -271,6 +287,7 @@ function CodeSample({ title, text, language = "tsx" }: { title: string; text: st
   </section>
 }
 function MenuControls({ value, onChange, trigger = false }: { value: MenuOptions; onChange: (value: MenuOptions) => void; trigger?: boolean }) {
+  const { material: siteMaterial } = useSiteMaterial()
   const groups = [
     [
       { label: "Expand up", active: value.side === "top", icon: ArrowUp01Icon, select: () => onChange({ ...value, side: "top" }) },
@@ -292,7 +309,7 @@ function MenuControls({ value, onChange, trigger = false }: { value: MenuOptions
       { label: "Menu detaches from a toolbar", active: value.trigger === "toolbar", icon: LayoutBottomIcon, select: () => onChange({ ...value, trigger: "toolbar" as const }) },
     ]] : []),
   ]
-  return <GlassToolbar material="regular" aria-label="Menu options" className="menu-options-toolbar">
+  return <GlassToolbar material={siteMaterial} aria-label="Menu options" className="menu-options-toolbar">
     {groups.map((group, index) => <Fragment key={index}>
       {index > 0 && <GlassToolbarSpacer sizing="fixed" />}
       {group.map(({ label, active, icon, select }) => <GlassToolbarButton key={label} aria-label={label} title={label} aria-pressed={active} onClick={select} render={<Button variant="ghost" size="icon" />}>
@@ -309,9 +326,8 @@ function ExamplePreview({
   kind: ExampleKind
   theme: GlassAppearance
 }) {
-  const [material, setMaterial] = useState<GlassMaterial>(
-    kind === "surface" ? "clear" : "regular"
-  )
+  const { material: siteMaterial } = useSiteMaterial()
+  const [material, setMaterial] = useState<GlassMaterial>("clear")
   const [tint, setTint] = useState("none")
   const [background, setBackground] = useState<Background>("landscape")
   const [menuOptions, setMenuOptions] = useState<MenuOptions>({ side: "bottom", align: "end", submenu: false, trigger: "button" })
@@ -343,7 +359,7 @@ function ExamplePreview({
       >
         <GlassScene
           appearance={theme}
-          material="regular"
+          material={siteMaterial}
           maxSurfaces={2}
           className="site-tabs-scene"
         >
@@ -356,7 +372,7 @@ function ExamplePreview({
             refraction={8}
             aria-label={`${title} view`}
           >
-            <GlassTabsIndicator radius="capsule" refraction={8} />
+            <GlassTabsIndicator material={siteMaterial} radius="capsule" refraction={8} />
             <GlassTabsTrigger value="preview">Preview</GlassTabsTrigger>
             <GlassTabsTrigger value="usage">
               Install &amp; Usage
@@ -370,7 +386,7 @@ function ExamplePreview({
                 className="preview-controls component-controls"
                 aria-label={`${title} controls`}
               >
-                <PreviewToolbar value={material} onChange={setMaterial} showMaterial={kind !== "slider" && kind !== "switch" && kind !== "progressive-blur"}>
+                <PreviewToolbar value={material} onChange={setMaterial}>
                   {kind === "progressive-blur" ? <>
                     <GlassChoice label="Layout" value={progressive.mode} onChange={(mode) => setProgressive({ ...progressive, mode })} items={progressiveModes} />
                     {progressive.mode === "image" && <GlassChoice label="Edge" value={progressive.edge} onChange={(edge) => setProgressive({ ...progressive, edge })} items={[{ value: "bottom", label: "Bottom edge" }, { value: "top", label: "Top edge" }]} />}
@@ -400,7 +416,7 @@ function ExamplePreview({
                 </PreviewToolbar>
               </fieldset>
             }
-            bottomControls={kind === "slider" ? <GlassToolbar material="regular" aria-label="Slider options" className="menu-options-toolbar">
+            bottomControls={kind === "slider" ? <GlassToolbar material={siteMaterial} aria-label="Slider options" className="menu-options-toolbar">
               {[false, true].map((stepped) => <GlassToolbarButton key={String(stepped)} aria-label={stepped ? "Stepped" : "Continuous"} title={stepped ? "Stepped" : "Continuous"} aria-pressed={sliderStepped === stepped} onClick={() => setSliderStepped(stepped)} render={<Button variant="ghost" size="icon" />}>
                 <HugeiconsIcon icon={stepped ? DashedLine01Icon : SolidLine01Icon} size={16} strokeWidth={1.7} />
               </GlassToolbarButton>)}
@@ -446,7 +462,6 @@ const exampleLinks = [
   { value: "switch", label: "Switch" },
   { value: "progressive-blur", label: "Progressive Blur" },
 ] as const
-const componentLinks = exampleLinks.slice(1)
 type SiteView = "introduction" | "all" | ExampleKind
 function viewFromHash(): SiteView {
   const hash = location.hash.slice(1)
@@ -468,6 +483,7 @@ function Introduction() {
   )
 }
 function SiteNavigation({ view, theme, preference, onPreferenceChange, shapeRef }: SiteThemeProps & { view: SiteView; shapeRef: RefObject<HTMLElement | null> }) {
+  const { material: siteMaterial } = useSiteMaterial()
   const { isMobile, setOpenMobile } = useSidebar()
   const link = (value: SiteView, label: string) => (
     <SidebarMenuItem key={value}>
@@ -482,8 +498,8 @@ function SiteNavigation({ view, theme, preference, onPreferenceChange, shapeRef 
     </SidebarMenuItem>
   )
   const navigation = (
-        <GlassSurface ref={shapeRef} radius={sidebarRadius} material="regular" className="sidebar-glass-surface">
-          <GlassScene className="sidebar-menu-scene" material="regular" appearance={theme}>
+        <GlassSurface ref={shapeRef} radius={sidebarRadius} material={siteMaterial} className="sidebar-glass-surface">
+          <GlassScene className="sidebar-menu-scene" material={siteMaterial} appearance={theme}>
             <GlassContent layout="flow" className="sidebar-menu-content">
       <div className="sidebar-actions" />
       <SidebarContent>
@@ -508,7 +524,7 @@ function SiteNavigation({ view, theme, preference, onPreferenceChange, shapeRef 
   // The stock Sidebar handles desktop and mobile; the glass material lives inside it.
   return (
     <Sidebar className="site-sidebar">
-      <GlassScene className="sidebar-glass-scene" material="regular" appearance={theme}>
+      <GlassScene className="sidebar-glass-scene" material={siteMaterial} appearance={theme}>
         <GlassContent><GlassShape radius={sidebarRadius} className="sidebar-glass-backdrop" /></GlassContent>
         {navigation}
       </GlassScene>
@@ -520,35 +536,6 @@ function Home({ theme, preference, onPreferenceChange }: SiteThemeProps) {
   const sidebarShape = useRef<HTMLElement>(null)
   const pageViewport = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<SiteView>(viewFromHash)
-  const [visibleExample, setVisibleExample] = useState(0)
-  useEffect(() => {
-    const viewport = pageViewport.current
-    if (view !== "all" || !viewport) return
-    const sections = componentLinks.map(({ value }) => viewport.querySelector<HTMLElement>(`#${value}`))
-    let frame = 0
-    const update = () => {
-      frame = 0
-      const bounds = viewport.getBoundingClientRect()
-      const readingLine = bounds.top + bounds.height * 0.35
-      let active = 0
-      sections.forEach((section, index) => {
-        if (section && section.getBoundingClientRect().top <= readingLine) active = index
-      })
-      if (viewport.scrollTop > 0 && viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 1) active = componentLinks.length - 1
-      setVisibleExample(active)
-    }
-    const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
-    const resize = new ResizeObserver(schedule)
-    resize.observe(viewport)
-    sections.forEach(section => { if (section) resize.observe(section) })
-    viewport.addEventListener("scroll", schedule, { passive: true })
-    update()
-    return () => {
-      viewport.removeEventListener("scroll", schedule)
-      resize.disconnect()
-      cancelAnimationFrame(frame)
-    }
-  }, [view])
   useEffect(() => {
     const navigate = () => {
       if (location.hash === "#main-content") return
@@ -563,41 +550,26 @@ function Home({ theme, preference, onPreferenceChange }: SiteThemeProps) {
       <SiteNavigation shapeRef={sidebarShape} view={view} theme={theme} preference={preference} onPreferenceChange={onPreferenceChange} />
       <div className="site-main">
         <GlassShape radius={8} render={<a href="#main-content" aria-label="Skip to content" />} className="skip-link">Skip to content</GlassShape>
-        <div className={`docs-scroll-scene ${view !== "introduction" ? "has-stepper" : ""}`}>
-            <div ref={pageViewport} className="docs-viewport">
-              <div className="site-topbar"><SidebarTrigger aria-label="Toggle navigation" /></div>
-              <div className="page docs-page">
-                <main id="main-content" className="docs-content" tabIndex={-1}>
-                  {view === "introduction" ? (
-                    <Introduction />
-                  ) : (
-                    <div id="examples" className="example-list">
-                      {(["surface", "buttons", "toolbar", "tabs", "menu", "slider", "switch", "progressive-blur"] as const)
-                        .filter((kind) => view === "all" || view === kind)
-                        .map((kind) => (
-                          <ExamplePreview key={kind} kind={kind} theme={theme} />
-                        ))}
-                    </div>
-                  )}
-                </main>
-              </div>
+        <div className="page-scroll-frame">
+          <div ref={pageViewport} className="docs-viewport">
+            <div className="site-topbar"><SidebarTrigger aria-label="Toggle navigation" /></div>
+            <div className="page docs-page">
+              <main id="main-content" className="docs-content" tabIndex={-1}>
+                {view === "introduction" ? (
+                  <Introduction />
+                ) : (
+                  <div id="examples" className="example-list">
+                    {(["surface", "buttons", "toolbar", "tabs", "menu", "slider", "switch", "progressive-blur"] as const)
+                      .filter((kind) => view === "all" || view === kind)
+                      .map((kind) => (
+                        <ExamplePreview key={kind} kind={kind} theme={theme} />
+                      ))}
+                  </div>
+                )}
+              </main>
             </div>
-          {view !== "introduction" && <ComponentStepper
-            theme={theme}
-            items={componentLinks}
-            active={view === "all" ? visibleExample : componentLinks.findIndex((item) => item.value === view)}
-            onNavigate={(index) => {
-              const value = componentLinks[index]!.value
-              const viewport = pageViewport.current
-              if (view === "all" && viewport) {
-                const section = viewport.querySelector<HTMLElement>(`#${value}`)
-                if (section) viewport.scrollTo({
-                  top: section.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop - 24,
-                  behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-                })
-              } else location.hash = value
-            }}
-          />}
+          </div>
+          <PageEdgeBlur target={pageViewport} />
         </div>
       </div>
     </SidebarProvider>
@@ -647,5 +619,5 @@ export default function App() {
       </div>
     )
   }
-  return <Home theme={theme} preference={preference} onPreferenceChange={onPreferenceChange} />
+  return <SiteMaterialProvider><Home theme={theme} preference={preference} onPreferenceChange={onPreferenceChange} /></SiteMaterialProvider>
 }

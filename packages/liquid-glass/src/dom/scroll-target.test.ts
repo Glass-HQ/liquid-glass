@@ -8,7 +8,7 @@ test("scroll edges own only the target, preserve existing filters and release re
   const doc = {
     body: { append: (node: unknown) => attached.add(node) },
     createElementNS: () => {
-      const node = { style: {}, setAttribute() {}, replaceChildren() {}, remove: () => attached.delete(node) };
+      const node = { style: {}, setAttribute() {}, append() {}, replaceChildren() {}, remove: () => attached.delete(node) };
       return node;
     },
   };

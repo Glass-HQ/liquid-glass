@@ -1,95 +1,179 @@
-import { webkit } from "./filter-budget.js";
-/** Keep SVG filters as retained elements. Each frame's markup is parsed into
- * an inert template and compared with the live filters: matching filters only
- * have changed attributes written, so image primitives keep their loaded
- * images and filter references stay valid. Rebuilding filter markup instead
- * makes every image reload asynchronously, which shows as the material
- * blinking for a frame whenever a surface animates. Image primitives name
- * their map with a short `data-map` token, resolved to its URL only when the
- * map changes. */
+import { chromium } from "./engine.js";
+import { pageZoom, zoomFilterMarkup } from "./page-zoom.js";
+
+/** A filter is library-generated SVG: elements and double-quoted attributes,
+ * without text nodes. Keep its description outside the DOM so animation
+ * frames never construct a second, disposable SVG tree just to compare it. */
+interface Description {
+  tag: string;
+  attributes: Record<string, string>;
+  children: Description[];
+}
+interface Retained {
+  element: Element;
+  description: Description;
+  children: Map<string, Retained>;
+}
+interface Filter extends Retained { markup: string; id: string }
+const scenes = new WeakMap<Element, Map<string, Filter>>();
+const ns = "http://www.w3.org/2000/svg";
+let version = 0;
+
+/** Retain filter primitives and their loaded images across geometry changes.
+ * The last description also owns the attribute values, avoiding live DOM
+ * collection reads and redundant writes. Exact repeats do no parsing at all. */
 export function patchFilters(defs: Element, markup: readonly string[], resolve: (token: string) => string | undefined): (id: string) => string {
-  const template = defs.ownerDocument.createElement("template");
-  // Template content is inert: parsing never fetches or decodes images.
-  template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg">${markup.join("")}</svg>`;
-  const next = [...template.content.firstElementChild!.children];
-  const live = new Map<string, Element>();
-  for (const filter of [...defs.children]) live.set(filter.getAttribute("data-filter")!, filter);
+  let live = scenes.get(defs);
+  if (!live) { live = new Map(); scenes.set(defs, live); }
+  const remaining = new Set(live.keys());
   const ids = new Map<string, string>();
-  for (const filter of next) {
-    const base = filter.id;
-    const current = live.get(base);
-    live.delete(base);
+  const links: Element[] = [];
+  const zoom = pageZoom();
+  for (const original of markup) {
+    const source = zoomFilterMarkup(original, zoom);
+    const base = /\bid="([^"]+)"/.exec(source)?.[1];
+    if (!base) throw new Error("A glass filter must have an id.");
+    remaining.delete(base);
+    let current = live.get(base);
+    if (current?.element.parentElement !== defs) current = undefined;
+    if (current?.markup === source) { ids.set(base, current.id); continue; }
+    const description = describe(source);
     if (current) {
-      reconcile(current, filter, resolve);
-      ids.set(base, current.id);
-      continue;
+      const structural = reconcile(current, description, links);
+      current.markup = source;
+      // Chromium does not always repaint after graph structure changes.
+      if (structural && chromium) current.element.setAttribute("x", description.attributes.x!);
+    } else {
+      const id = `${base}-${++version}`;
+      const retained = create(defs.ownerDocument, description, links);
+      retained.element.setAttribute("data-filter", base);
+      retained.element.id = id;
+      defs.append(retained.element);
+      current = { ...retained, markup: source, id };
+      live.set(base, current);
     }
-    // A reference to a removed element is not rebound, so a new filter takes
-    // a fresh id; the changed reference string makes it resolve.
-    const created = defs.ownerDocument.importNode(filter, true);
-    created.setAttribute("data-filter", base);
-    created.id = `${base}-${++version}`;
-    defs.append(created);
-    // Link images once connected: a detached feImage does not repaint its
-    // filter when its image arrives.
-    for (const image of created.querySelectorAll("[data-map]")) link(image, resolve);
-    ids.set(base, created.id);
+    ids.set(base, current.id);
   }
-  for (const filter of live.values()) filter.remove();
+  for (const base of remaining) { live.get(base)!.element.remove(); live.delete(base); }
+  let linked = false;
+  // Images are linked only after the whole graph is connected. A detached
+  // feImage does not repaint its filter when its image arrives.
+  for (const element of links) {
+    const url = resolve(element.getAttribute("data-map")!);
+    if (!url || element.getAttribute("href") === url) continue;
+    element.setAttribute("href", url);
+    linked = true;
+  }
+  // One settling sequence per graph update, not one for every map image.
+  if (linked && chromium) settle(defs);
   return (id) => ids.get(id) ?? id;
 }
-let version = 0;
-/** Bring a live filter to the next markup while keeping every primitive that
- * still exists, keyed by its result name. Surfaces entering or leaving the
- * scene then never reload the images of the others. */
-function reconcile(live: Element, next: Element, resolve: (token: string) => string | undefined) {
-  for (const { name, value } of next.attributes) if (name !== "id" && live.getAttribute(name) !== value) live.setAttribute(name, value);
-  const key = (element: Element, index: number) => element.getAttribute("result") ?? `${element.tagName}#${index}`;
-  const existing = new Map<string, Element>();
-  [...live.children].forEach((child, index) => existing.set(key(child, index), child));
-  let changed = false;
-  const created: Element[] = [];
-  const order = [...next.children].map((child, index) => {
-    const match = existing.get(key(child, index));
-    if (match && sameStructure(match, child)) {
-      existing.delete(key(child, index));
-      patch(match, child, resolve);
-      return match;
+
+/** Parse only the generated subset; attributes never contain markup or
+ * character references. Keeping this private avoids turning it into a
+ * general SVG parser or accepting arbitrary user markup. */
+function describe(markup: string): Description {
+  const stack: Description[] = [];
+  let root: Description | undefined;
+  const tags = /<(\/?)([\w:-]+)([^>]*?)(\/?)>/g;
+  for (const match of markup.matchAll(tags)) {
+    const [, closing, tag, source, selfClosing] = match;
+    if (closing) {
+      if (stack.pop()?.tag !== tag) throw new Error("Unbalanced glass filter markup.");
+      continue;
     }
-    changed = true;
-    const node = live.ownerDocument.importNode(child, true);
-    created.push(node);
-    return node;
+    const attributes: Record<string, string> = {};
+    for (const [, name, value] of source!.matchAll(/([\w:-]+)="([^"]*)"/g)) attributes[name!] = value!;
+    const node: Description = { tag: tag!, attributes, children: [] };
+    if (stack.length) stack[stack.length - 1]!.children.push(node);
+    else if (root) throw new Error("Expected one glass filter.");
+    else root = node;
+    if (!selfClosing) stack.push(node);
+  }
+  if (!root || stack.length || root.tag !== "filter") throw new Error("Invalid glass filter markup.");
+  // Result names are retained-node identities. Reusing one would leave
+  // untracked DOM nodes behind and could change the filter's final output.
+  const results = new Set<string>();
+  for (const child of root.children) {
+    const result = child.attributes.result;
+    if (!result) continue;
+    if (results.has(result)) throw new Error(`Duplicate glass filter result "${result}".`);
+    results.add(result);
+  }
+  // Image definitions have no inputs. Keeping them in a stable leading
+  // block avoids detaching loaded images when optical branches regroup.
+  // An omitted input means the previous primitive, so those graphs must
+  // retain their order, as must a graph whose final output is an image.
+  const explicitInputs = root.children.every((child) => {
+    if (["feImage", "feFlood", "feTurbulence"].includes(child.tag)) return true;
+    if (child.tag === "feMerge") return child.children.every((input) => Boolean(input.attributes.in));
+    return Boolean(child.attributes.in) &&
+      (!["feBlend", "feComposite", "feDisplacementMap"].includes(child.tag) || Boolean(child.attributes.in2));
   });
-  order.forEach((node, index) => {
-    if (live.children[index] !== node) { live.insertBefore(node, live.children[index] ?? null); changed = true; }
+  if (explicitInputs && root.children.at(-1)?.tag !== "feImage") {
+    const images = root.children.filter((child) => child.tag === "feImage");
+    images.sort((a, b) => (a.attributes.result ?? "") < (b.attributes.result ?? "") ? -1 : (a.attributes.result ?? "") > (b.attributes.result ?? "") ? 1 : 0);
+    root.children = [...images, ...root.children.filter((child) => child.tag !== "feImage")];
+  }
+  return root;
+}
+const key = (description: Description, index: number) => description.attributes.result ?? `${description.tag}#${index}`;
+function create(document: Document, description: Description, links: Element[]): Retained {
+  const element = document.createElementNS(ns, description.tag);
+  for (const [name, value] of Object.entries(description.attributes)) element.setAttribute(name, value);
+  const children = new Map<string, Retained>();
+  description.children.forEach((child, index) => {
+    const retained = create(document, child, links);
+    children.set(key(child, index), retained);
+    element.append(retained.element);
   });
-  for (const stale of existing.values()) { stale.remove(); changed = true; }
-  for (const node of created) for (const image of [node, ...node.querySelectorAll("*")]) if (image.hasAttribute("data-map")) link(image, resolve);
-  // Changing a referenced filter's children does not repaint by itself.
-  if (changed) live.setAttribute("x", live.getAttribute("x")!);
+  if (description.attributes["data-map"]) links.push(element);
+  return { element, description, children };
 }
-function sameStructure(a: Element, b: Element): boolean {
-  if (a.tagName !== b.tagName || a.children.length !== b.children.length) return false;
-  for (let i = 0; i < a.children.length; i++) if (!sameStructure(a.children[i]!, b.children[i]!)) return false;
-  return true;
+/** Reconcile by result name at every level, so changing merge inputs does
+ * not replace the merge or any neighboring feImage resource. */
+function reconcile(live: Retained, next: Description, links: Element[]): boolean {
+  const previous = live.description.attributes;
+  for (const [name, value] of Object.entries(next.attributes)) {
+    if (name === "id" || previous[name] === value) continue;
+    live.element.setAttribute(name, value);
+    if (name === "data-map") links.push(live.element);
+  }
+  for (const name of Object.keys(previous)) if (name !== "id" && !(name in next.attributes)) live.element.removeAttribute(name);
+  const remaining = new Map(live.children);
+  const children = new Map<string, Retained>();
+  let structural = false;
+  // A stale insertion cursor would move every surviving sibling past it.
+  // Remove unused and tag-replaced nodes before ordering the survivors.
+  const wanted = new Map(next.children.map((description, index) => [key(description, index), description.tag]));
+  for (const [name, child] of remaining) if (wanted.get(name) !== child.description.tag) {
+    child.element.remove(); remaining.delete(name); structural = true;
+  }
+  let cursor = live.element.firstElementChild;
+  next.children.forEach((description, index) => {
+    const name = key(description, index);
+    let child = remaining.get(name);
+    if (child?.description.tag === description.tag) {
+      remaining.delete(name);
+      structural = reconcile(child, description, links) || structural;
+    } else {
+      child = create(live.element.ownerDocument, description, links);
+      structural = true;
+    }
+    if (child.element !== cursor) { live.element.insertBefore(child.element, cursor); structural = true; }
+    cursor = child.element.nextElementSibling;
+    children.set(name, child);
+  });
+  for (const child of remaining.values()) { child.element.remove(); structural = true; }
+  live.description = next;
+  live.children = children;
+  return structural;
 }
-/** Point an image primitive at the map its token names. */
-function link(image: Element, resolve: (token: string) => string | undefined) {
-  const url = resolve(image.getAttribute("data-map")!);
-  if (!url || image.getAttribute("href") === url) return;
-  image.setAttribute("href", url);
-  // WebKit repaints on its own, and treats the unchanged attribute as a
-  // change: each write there evaluates the whole scene again.
-  const defs = webkit ? null : image.closest("defs");
-  if (defs) settle(defs);
-}
+
 const settling = new WeakMap<Element, number>();
-/** Chromium does not repaint a filtered element when an `feImage` image
- * becomes ready by itself, and offers no load event to wait for. Writing one
- * unchanged attribute invalidates the filter. Repeating that every frame
- * keeps restarting the image's preparation, so it is repeated a few times
- * with growing gaps: the first repaint that finds the image ready shows it. */
+/** Chromium does not repaint a filtered element when an feImage becomes
+ * ready by itself. Re-evaluate with growing gaps until the prepared image
+ * has reached the filter renderer, without restarting it every frame. */
 function settle(defs: Element) {
   const generation = (settling.get(defs) ?? 0) + 1;
   settling.set(defs, generation);
@@ -98,15 +182,4 @@ function settle(defs: Element) {
     const image = defs.querySelector("feImage");
     image?.setAttribute("x", image.getAttribute("x")!);
   }, delay);
-}
-function patch(live: Element, next: Element, resolve: (token: string) => string | undefined): void {
-  let relink = false;
-  for (const { name, value } of next.attributes) if (live.getAttribute(name) !== value) {
-    live.setAttribute(name, value);
-    relink ||= name === "data-map";
-  }
-  // The resolved href and the live id are owned by the patcher, not the markup.
-  for (const { name } of [...live.attributes]) if (name !== "href" && !next.hasAttribute(name)) live.removeAttribute(name);
-  if (relink) link(live, resolve);
-  for (let i = 0; i < next.children.length; i++) patch(live.children[i]!, next.children[i]!, resolve);
 }

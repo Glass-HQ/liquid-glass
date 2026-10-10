@@ -5,10 +5,10 @@ import { capsuleMapGeometry, releaseMapToken } from "./map-image.js";
 import type { MapPlane } from "./map-image.js";
 import { claimFirstPaint, loadStoredMaps, peekStoredMaps, preloadStoredMaps, preloadedKeys, saveStoredMaps } from "./map-store.js";
 export interface MaterialMaps {
-  displacement: string;
-  mask: string;
-  highlight: string;
-  outline: string;
+  /** Displacement in red and green, shape coverage in alpha. */
+  field: string;
+  /** Rim shade with the highlight over it. */
+  overlay: string;
   duration: number;
   /** Capsule maps reused at any width: CSS cap width, plane height, and slices. */
   capsule?: {
@@ -20,7 +20,7 @@ export interface MaterialMaps {
 /** Stored maps are only valid for the shader and encoder that produced them. */
 const version = (() => {
   let hash = 2166136261;
-  for (const char of `${materialShader.wgsl}|png-sub-1`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  for (const char of `${materialShader.wgsl}|png-sub-2`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
   return (hash >>> 0).toString(36);
 })();
 const cache = new Map<string, Promise<MaterialMaps>>();
@@ -81,14 +81,12 @@ function peek(g: MapGeometry, sliceCapsule: boolean): MaterialMaps | undefined {
 }
 const keyOf = (g: MapGeometry, sliceCapsule: boolean) =>
   JSON.stringify([g.width, g.height, g.radius, g.dpr, g.appearance, g.outline, sliceCapsule]);
-const names: MapPlane[] = ["displacement", "mask", "highlight", "outline"];
+const names: MapPlane[] = ["field", "overlay"];
 function assemble(g: MapGeometry, sliceCapsule: boolean, encoded: string[][], duration: number): MaterialMaps {
   const planes = Object.fromEntries(names.map((name, index) => [name, encoded[index]!.slice(1)])) as Record<MapPlane, [string, string, string]>;
   return {
-    displacement: encoded[0]![0]!,
-    mask: encoded[1]![0]!,
-    highlight: encoded[2]![0]!,
-    outline: encoded[3]![0]!,
+    field: encoded[0]![0]!,
+    overlay: encoded[1]![0]!,
     duration,
     ...(sliceCapsule ? { capsule: { cap: g.height + 2, height: g.height + 4, planes } } : {}),
   };
@@ -142,7 +140,7 @@ export function touchMaps(maps: MaterialMaps): void {
   lastUse.set(maps, performance.now());
 }
 const urls = (maps: MaterialMaps) =>
-  [maps.displacement, maps.mask, maps.highlight, maps.outline, ...Object.values(maps.capsule?.planes ?? {}).flat()];
+  [maps.field, maps.overlay, ...Object.values(maps.capsule?.planes ?? {}).flat()];
 function release(maps: MaterialMaps) {
   for (const url of urls(maps)) { releaseMapToken(url); decoded.delete(url); }
 }

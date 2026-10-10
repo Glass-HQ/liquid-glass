@@ -101,7 +101,7 @@ export function usageCode(
   sliderStepped = false,
   progressive: ProgressiveOptions = defaultProgressiveOptions
 ) {
-  if (kind === "progressive-blur") return progressiveCode(progressive, appearance)
+  if (kind === "progressive-blur") return progressiveCode(progressive, material, appearance)
   const extraImports = kind === "menu" ? (menuOptions.trigger === "toolbar" ? ", GlassToolbar, GlassToolbarButton" : "") :
     kind !== "toolbar" || toolbarVariant === "normal" ? "" :
     toolbarVariant === "menu" ? ", GlassMenu, GlassMenuTrigger, GlassMenuContent, GlassMenuItem" : ", GlassToolbarSpacer"
@@ -127,12 +127,12 @@ ${tintedSnippet
 </GlassScene>`
 }
 
-function progressiveCode(options: ProgressiveOptions, appearance: GlassAppearance) {
+function progressiveCode(options: ProgressiveOptions, material: GlassMaterial, appearance: GlassAppearance) {
   const props = [options.blur === "off" ? "disabled" : `blur={${progressiveBlurLevels[options.blur]}}`, options.refraction && "refraction={6}"].filter(Boolean).join(" ")
   if (options.mode === "image") return `import { GlassScene, GlassContent, GlassProgressiveBlur } from "@glass-sdk/liquid-glass";
 import "@glass-sdk/liquid-glass/styles.css";
 
-<GlassScene appearance="${appearance}" style={{ height: 390, overflow: "hidden", borderRadius: 16 }}>
+<GlassScene material="${material}" appearance="${appearance}" style={{ height: 390, overflow: "hidden", borderRadius: 16 }}>
   <GlassContent>
     <img src="/landscape.jpg" alt="Mountain landscape"
       style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -145,14 +145,12 @@ import { GlassScene, GlassContent, GlassButton, GlassScrollEdges } from "@glass-
 import "@glass-sdk/liquid-glass/styles.css";
 
 export function Reader({ children }: { children: ReactNode }) {
-  const scrollRef = useRef<HTMLElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   return (
-    <GlassScene appearance="${appearance}" style={{ height: 390, overflow: "hidden" }}>
-      <GlassContent>
-        <section ref={scrollRef} tabIndex={0} aria-label="Article"
-          style={{ height: "100%", overflowY: "auto", scrollPaddingBlock: 110 }}>
-          {children}
-        </section>
+    <GlassScene material="${material}" appearance="${appearance}" style={{ height: 390, overflow: "hidden" }}>
+      <GlassContent layout="scroll" ref={scrollRef} tabIndex={0} role="region"
+        aria-label="Article" style={{ scrollPaddingBlock: 110 }}>
+        {children}
       </GlassContent>
       <GlassScrollEdges target={scrollRef} size={110} ${props} />
       <GlassButton size="icon" aria-label="Back"

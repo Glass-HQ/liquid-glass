@@ -1,68 +1,32 @@
 import SwiftUI
 import AppKit
 
-// Public system controls: do not wrap the thumb in an additional glassEffect.
+// System controls own their material; adding glassEffect to their thumbs would
+// turn this reference into a custom renderer instead of an Apple comparison.
 struct NativeValueControls: View {
-    let kind: String
+    let kind: ExampleKind
     let tint: Color?
-    @State private var stepped = false
-    @State private var mode = "Standard"
+    let stepped: Bool
+    let api: String
     @State private var value = 50.0
-    @State private var appKitValue = 50.0
     @State private var checked = true
-    @State private var appKitChecked = true
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            HStack {
-                Text("Native").font(.caption)
-                Spacer()
-                if kind != "Switch" { Text(value, format: .number.precision(.fractionLength(0))).monospacedDigit() }
-            }
-            if kind == "Switch" {
-                Toggle("Notifications", isOn: $checked).toggleStyle(.switch)
-            } else if stepped && mode == "Labelled ticks" {
-                Slider(value: $value, in: 0...100, step: 25,
-                    label: { Text("Volume") },
-                    tick: { position in SliderTick(position) { Text(Int(position), format: .number) } })
-
-            } else if stepped {
-                Slider(value: $value, in: 0...100, step: 25,
-                    neutralValue: mode == "Neutral" ? 50 : nil) { Text("Volume") }
-                    minimumValueLabel: { Image(systemName: "speaker.fill") }
-                    maximumValueLabel: { Image(systemName: "speaker.wave.3.fill") }
-
+        Group {
+            if kind == .toggle {
+                if api == "AppKit" { ReferenceSwitch(value: $checked).fixedSize() }
+                else { Toggle("Switch", isOn: $checked).toggleStyle(.switch).labelsHidden().fixedSize() }
             } else {
-                Slider(value: $value, in: 0...100,
-                    neutralValue: mode == "Neutral" ? 50 : nil) { Text("Volume") }
-                    minimumValueLabel: { Image(systemName: "speaker.fill") }
-                    maximumValueLabel: { Image(systemName: "speaker.wave.3.fill") }
-
+                if api == "AppKit" { ReferenceSlider(value: $value, stepped: stepped).frame(width: 280, height: 28) }
+                else if stepped {
+                    Slider(value: $value, in: 0...100, step: 25) { Text("Slider") }
+                        .labelsHidden().frame(width: 280)
+                } else {
+                    Slider(value: $value, in: 0...100) { Text("Slider") }
+                        .labelsHidden().frame(width: 280)
+                }
             }
-            HStack {
-                Text("AppKit").font(.caption)
-                Spacer()
-                if kind != "Switch" { Text(appKitValue, format: .number.precision(.fractionLength(0))).monospacedDigit() }
-            }
-            if kind == "Switch" {
-                HStack { Text("Notifications"); Spacer(); ReferenceSwitch(value: $appKitChecked) }
-            } else {
-                ReferenceSlider(value: $appKitValue, stepped: stepped)
-                    .frame(height: 28)
-            }
-            if kind != "Switch" {
-                Picker("Slider behavior", selection: $stepped) {
-                    Text("Continuous").tag(false)
-                    Text("Stepped").tag(true)
-                }.pickerStyle(.segmented)
-                Picker("Native variant", selection: $mode) {
-                    Text("Standard").tag("Standard")
-                    Text("Neutral at 50").tag("Neutral")
-                    if stepped { Text("Labelled ticks").tag("Labelled ticks") }
-                }.pickerStyle(.menu)
-            }
-            Text("System material · tint applies to native controls")
-                .font(.caption2).foregroundStyle(.secondary)
-        }.frame(width: 280).tint(tint ?? .accentColor)
+        }.tint(tint ?? .accentColor)
+            .onChange(of: stepped) { if stepped { value = (value / 25).rounded() * 25 } }
     }
 }
 private struct ReferenceSlider: NSViewRepresentable {
@@ -72,9 +36,7 @@ private struct ReferenceSlider: NSViewRepresentable {
     func makeNSView(context: Context) -> NSSlider {
         let view = NSSlider(value: value, minValue: 0, maxValue: 100, target: context.coordinator, action: #selector(Coordinator.changed(_:)))
         view.isContinuous = true
-        view.numberOfTickMarks = stepped ? 5 : 0
-        view.allowsTickMarkValuesOnly = stepped
-        view.setAccessibilityLabel("Volume")
+        view.setAccessibilityLabel("Slider")
         return view
     }
     func updateNSView(_ view: NSSlider, context: Context) {
@@ -96,7 +58,7 @@ private struct ReferenceSwitch: NSViewRepresentable {
         let view = NSSwitch()
         view.target = context.coordinator
         view.action = #selector(Coordinator.changed(_:))
-        view.setAccessibilityLabel("Notifications")
+        view.setAccessibilityLabel("Switch")
         return view
     }
     func updateNSView(_ view: NSSwitch, context: Context) {

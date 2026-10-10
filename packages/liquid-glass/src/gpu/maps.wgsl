@@ -1,7 +1,10 @@
 // Lisse outlines tessellated once on the host, shared with DOM clipping.
 // A batch renders several shapes into one atlas: each shape owns a band of
-// rows holding its four planes, so every map of an animation path is one
-// pass and one readback.
+// rows holding its two planes, so every map of an animation path is one
+// pass and one readback. The field plane carries displacement in red and
+// green and shape coverage in alpha; SVG reads a displacement map
+// unpremultiplied, so the two never interfere. The overlay plane is the rim
+// shade with the highlight drawn over it, ready to paint over the material.
 struct Shape {
   size: vec2f,
   // First atlas row of this shape, and physical rows per plane.
@@ -52,7 +55,7 @@ fn shape(s: Shape, point: vec2f) -> vec3f {
   }
   let s = batch.shapes[index];
   let band = position.y - s.row;
-  let plane = min(u32(band / s.rows), 3u);
+  let plane = min(u32(band / s.rows), 1u);
   let local = vec2f(position.x / s.columns, (band - f32(plane) * s.rows) / s.rows);
   let point = local * (s.size + 4.0) - (s.size + 4.0) * 0.5;
   let field = shape(s, point);
@@ -64,8 +67,7 @@ fn shape(s: Shape, point: vec2f) -> vec3f {
   let coverage = sat(0.5 - d / aa);
   let depth = sat(-d * 0.05);
   let edge = 1.0 - sat(sqrt((2.0 - depth) * depth));
-  if (plane == 0u) { return vec4f(vec2f(0.5) - n * edge * 0.5, 0.5, 1.0); }
-  if (plane == 1u) { return vec4f(1, 1, 1, coverage); }
+  if (plane == 0u) { return vec4f(vec2f(0.5) - n * edge * 0.5, 0.5, coverage); }
   // Keep the top/bottom light away from the side outline, including capsules.
   let spread = 1.08;
   let directional = pow(sat((abs(n.y) - cos(spread)) / (1.0 - cos(spread))), 1.25);
@@ -75,13 +77,15 @@ fn shape(s: Shape, point: vec2f) -> vec3f {
   specular = specular / (1.0 + 0.5 * (1.0 - specular));
   let diffuse = diffuseDir * 0.18 * pow(1.0 - sat(-d / 4.5), 2.0) * coverage;
   let highlight = sat(specular * mix(1.0, 0.82, s.dark) + diffuse * mix(1.0, 0.40, s.dark));
-  if (plane == 2u) { return vec4f(vec3f(mix(1.0, 0.82, s.dark)), highlight); }
   let adjusted = d - 0.5;
   let falloff = 1.0 - sat(-adjusted / 0.5);
   let ramp = mix(select(0.0, 1.0, falloff > 0.0), falloff, 0.75);
   let outline = ramp * sat((adjusted + 0.5) / aa + 0.5) * sat(-adjusted / aa + 0.5);
   let sideSpread = 0.98;
   let weights = clamp((vec2f(n.x, -n.x) - cos(sideSpread)) / (1.0 - cos(sideSpread)), vec2f(0), vec2f(1)) * outline;
-  let shade = dot(weights / (vec2f(1) + 0.4 * (vec2f(1) - weights)), vec2f(1));
-  return vec4f(0, 0, 0, shade * mix(0.48, 0.60, s.dark));
+  let shade = dot(weights / (vec2f(1) + 0.4 * (vec2f(1) - weights)), vec2f(1)) * mix(0.48, 0.60, s.dark);
+  // Light over a black rim, unpremultiplied for the PNG encoder.
+  let alpha = highlight + shade * (1.0 - highlight);
+  let light = mix(1.0, 0.82, s.dark) * highlight / max(alpha, 0.00001);
+  return vec4f(vec3f(light), alpha);
 }

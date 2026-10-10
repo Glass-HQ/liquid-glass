@@ -21,22 +21,22 @@ function images(markup: string) {
   }
   return result;
 }
-const planes = { mask: ["left", "middle", "right"] } as Record<"mask", [string, string, string]>;
-const maps = { mask: "full", capsule: { cap: 32, height: 34, planes } } as unknown as MaterialMaps;
+const planes = { field: ["left", "middle", "right"] } as Record<"field", [string, string, string]>;
+const maps = { field: "full", capsule: { cap: 32, height: 34, planes } } as unknown as MaterialMaps;
 
 test("animated capsule keeps both cap widths and moves the right cap with its edge", () => {
   for (const width of [79, 100, 122]) {
-    const b = images(mapImage(maps, "mask", "mask", 10, 20, width, 34));
+    const b = images(mapImage(maps, "field", "mask", 10, 20, width, 34));
     expect(b.get("maskL")).toEqual({ url: "left", x: 10, y: 20, width: 32, height: 34 });
     // The uniform middle tucks half a pixel under each cap to avoid seams.
     expect(b.get("maskM")).toEqual({ url: "middle", x: 41.5, y: 20, width: width - 63, height: 34 });
     expect(b.get("maskR")).toEqual({ url: "right", x: 10 + width - 32, y: 20, width: 32, height: 34 });
   }
-  expect(images(mapImage(maps, "mask", "mask", 0, 0, 50, 34)).get("mask")?.url).toBe("full");
+  expect(images(mapImage(maps, "field", "mask", 0, 0, 50, 34)).get("mask")?.url).toBe("full");
 });
 
 test("a pressed capsule scales its caps with its height so its ends stay round", () => {
-  const b = images(mapImage(maps, "mask", "mask", 0, 0, 200, 51));
+  const b = images(mapImage(maps, "field", "mask", 0, 0, 200, 51));
   expect(b.get("maskL")!.width).toBeCloseTo(48);
   expect(b.get("maskR")!.x).toBeCloseTo(152);
 });

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { mapPlanes } from "../gpu/index.js";
 import { PNG } from "pngjs";
 import { base64, encodePng } from "./png.js";
 import { encodeMapPixels } from "./map-encoding.js";
@@ -34,8 +35,8 @@ test("base64 matches the platform encoder", () => {
 });
 test("map planes and capsule slices are data URLs of the right size", async () => {
   const width = 30, height = 8;
-  const planes = await encodeMapPixels(gradient(width, height, 4), width, height, 10);
-  expect(planes).toHaveLength(4);
+  const planes = await encodeMapPixels(gradient(width, height, mapPlanes), width, height, 10);
+  expect(planes).toHaveLength(mapPlanes);
   for (const [plane, images] of planes.entries()) {
     expect(images).toHaveLength(4);
     const sizes = images.map((url) => PNG.sync.read(Buffer.from(url.slice("data:image/png;base64,".length), "base64")));
