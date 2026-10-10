@@ -1,4 +1,4 @@
-import type { MapGeometry } from "../gpu/index.js";
+import type { MapGeometry } from "../gpu/geometry.js";
 import type { MaterialMaps } from "./maps.js";
 import { touchMaps } from "./maps.js";
 

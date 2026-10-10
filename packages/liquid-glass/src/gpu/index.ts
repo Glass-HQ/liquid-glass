@@ -1,21 +1,14 @@
 import { outlineSegments } from "../core/concentric.js";
-import type { ShapePoint } from "../core/concentric.js";
 import { shapeSegments } from "../core/shape.js";
-import type { GlassRadius } from "../core/shape.js";
 import { effect, frame, init, target } from "vgpu";
 import type { Effect, Gpu, Target, ShaderSource } from "vgpu";
 import source from "./maps.wgsl";
 import { mapPlanes } from "./planes.js";
 export { mapPlanes } from "./planes.js";
-export interface MapGeometry {
-  /** Resolved convex outline for container-relative glass, in local CSS pixels. */
-  outline?: ShapePoint[];
-  width: number;
-  height: number;
-  radius: GlassRadius;
-  dpr?: number;
-  appearance?: "light" | "dark";
-}
+import { mapScale, maxAtlasRows } from "./geometry.js";
+import type { MapGeometry } from "./geometry.js";
+export { mapScale } from "./geometry.js";
+export type { MapGeometry } from "./geometry.js";
 export interface MapPixels {
   width: number;
   height: number;
@@ -35,16 +28,6 @@ interface Shape {
 }
 const maxShapes = 32;
 const maxSegments = 4096;
-const maxAtlasRows = 8192;
-/** Pixels per CSS pixel a map is rendered at. Maps are stretched to their
- * surface when drawn, so a surface too large for the atlas at the display's
- * ratio, such as a full-height panel on a 2x or 3x display, renders at a
- * lower ratio instead of failing. */
-export function mapScale(g: MapGeometry): number {
-  const dpr = Math.max(1, Math.min(g.dpr ?? 1, 2));
-  const fit = Math.min(1, 4096 / ((g.width + 4) * dpr), (maxAtlasRows / mapPlanes) / ((g.height + 4) * dpr));
-  return fit < 1 ? Math.max(0.25, dpr * fit) : dpr;
-}
 /** Measure a request and tessellate its outline; invalid geometry throws here,
  * before anything is queued. */
 function measure(g: MapGeometry): Omit<Shape, "resolve" | "reject" | "started"> {

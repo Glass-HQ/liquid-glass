@@ -21,6 +21,8 @@ bun run lint
 bun run test
 bun run build
 bun run check:package
+bun run check:publish
+bun run check:size
 ```
 
 CI runs these checks and the version guard on pull requests. For rendering changes, also run:
@@ -37,7 +39,7 @@ Review rendering changes in the site's examples in Chromium, Safari, Firefox, an
 
 ## Pull requests
 
-Keep each PR focused on one problem. Explain the change and how you checked it. Include before/after screenshots for visual changes, and a recording when motion matters; attach them to the PR rather than committing them. Maintainers review and merge contributions after CI passes and review conversations are resolved.
+Title commits and PRs as [Conventional Commits](https://www.conventionalcommits.org): `type(scope): summary`, such as `fix(webkit): follow Safari page zoom`. PRs are squash-merged, so the title becomes the commit on `main`. Keep each PR focused on one problem. Explain the change and how you checked it. Include before/after screenshots for visual changes, and a recording when motion matters; attach them to the PR rather than committing them. Maintainers review and merge contributions after CI passes and review conversations are resolved.
 
 Update usage documentation when the API or requirements change. Keep implementation reports, audit logs, and scratch notes out of the repository. Include only source and assets we can distribute.
 

@@ -1,0 +1,23 @@
+{
+  "note": "Gzip budgets in bytes for what an app ships per import, measured by scripts/check-size.mjs. Regenerate with --update only when growth is intended.",
+  "initialGzip": {
+    "Surface": 47104,
+    "Button": 48640,
+    "Toolbar": 61440,
+    "Tabs": 67584,
+    "Menu": 105472,
+    "Slider and switch": 71680,
+    "Progressive blur": 47104,
+    "Everything": 126976
+  },
+  "lazyGzip": {
+    "Surface": 52736,
+    "Button": 52736,
+    "Toolbar": 52736,
+    "Tabs": 52736,
+    "Menu": 52736,
+    "Slider and switch": 52736,
+    "Progressive blur": 52736,
+    "Everything": 52736
+  }
+}

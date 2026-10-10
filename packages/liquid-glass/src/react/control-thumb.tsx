@@ -4,7 +4,8 @@ import type { HTMLAttributes, Ref } from "react";
 import { useRender } from "@base-ui/react/use-render";
 import { attachNativeControlMotion } from "../dom/control-motion.js";
 import type { ControlMotionOptions } from "../dom/control-motion.js";
-import { GlassSurface, useGlassMotion } from "./index.js";
+import { useGlassMotion } from "./scene.js";
+import { GlassSurface } from "./surface.js";
 import type { MaterialOptions } from "../core/materials.js";
 
 type Phase = "idle" | "pressed" | "settling";

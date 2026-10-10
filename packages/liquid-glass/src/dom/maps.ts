@@ -1,6 +1,8 @@
 import { encodeMaterialPixels } from "./map-encoder.js";
-import { getMaterialRenderer, materialShader, mapScale } from "../gpu/index.js";
-import type { MapGeometry } from "../gpu/index.js";
+import { getMaterialRenderer } from "./renderer.js";
+import { mapScale } from "../gpu/geometry.js";
+import type { MapGeometry } from "../gpu/geometry.js";
+import materialShader from "../gpu/maps.wgsl";
 import { capsuleMapGeometry, releaseMapToken } from "./map-image.js";
 import type { MapPlane } from "./map-image.js";
 import { claimFirstPaint, loadStoredMaps, peekStoredMaps, preloadStoredMaps, preloadedKeys, saveStoredMaps } from "./map-store.js";
