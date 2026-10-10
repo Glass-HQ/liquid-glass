@@ -65,7 +65,7 @@ Set defaults on `GlassScene`; individual surfaces can override them. Menu popups
 | `radius` | Component-specific | Continuous corner radius in CSS pixels, `"capsule"`, or `"circle"`. Generic surfaces default to 8px. |
 | `refraction` | `60` | Nonnegative displacement in CSS pixels. Nested surfaces limit their default to the parent inset. |
 | `tint` | None | Six-digit hex color. Colors the glass without changing text or icons. |
-| `interactive` | Component-specific | Press and drag feedback; on by default for buttons, toolbars, and tab bars. |
+| `interactive` | Component-specific | Press and drag feedback; on by default for buttons, toolbars, and tab bars. While pressed, links and images inside stop starting a native browser drag; mark content `draggable="true"` to keep it. |
 | `fluid` | `false` | Animate the outline when layout dimensions change. |
 | `morphFrom` | None | Element ref or getter for a surface's opening and closing shape. |
 | `morph` | By context | `"become"` replaces its source; `"detach"` separates from it. |

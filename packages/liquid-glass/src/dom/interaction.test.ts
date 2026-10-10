@@ -100,3 +100,20 @@ test("requested and system motion preferences apply in Safari too", () => {
   expect(result.exitCode).toBe(0);
   expect(JSON.parse(result.stdout.toString())).toEqual(["full", "full", "reduced", "none", "reduced", "reduced", "none"]);
 });
+
+test("a press keeps native link and image drags from taking over, unless content opts in", () => {
+  const target = surface();
+  const animator = attachInteraction(target.element, () => "full");
+  const node = (draggable: boolean) => ({ nodeType: 1, closest: () => draggable ? {} : null });
+  const dragFrom = (origin: object) => {
+    let prevented = false;
+    target.fire("dragstart", { target: origin, preventDefault: () => { prevented = true; } });
+    return prevented;
+  };
+  expect(dragFrom(node(false))).toBe(false);
+  target.fire("pointerdown", { button: 0, pointerId: 1, clientX: 20, clientY: 14 });
+  expect(dragFrom(node(false))).toBe(true);
+  expect(dragFrom({ nodeType: 3, parentElement: node(false) })).toBe(true);
+  expect(dragFrom(node(true))).toBe(false);
+  animator.dispose();
+});
