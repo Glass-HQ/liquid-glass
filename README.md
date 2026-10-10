@@ -4,6 +4,8 @@ Glass surfaces and controls for React, the web, and Electron. Clear and Regular 
 
 [Examples](https://liquid-glass.glassapp.dev/#examples) · [Usage and API](packages/liquid-glass/README.md)
 
+https://github.com/user-attachments/assets/42b3ebff-2fef-4380-a173-2320d5d0651f
+
 ## Install
 
 ```sh
