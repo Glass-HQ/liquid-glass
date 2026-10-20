@@ -2,7 +2,7 @@
   "name": "liquid-glass-workspace",
   "private": true,
   "type": "module",
-  "packageManager": "bun@canary",
+  "packageManager": "bun@1.4.4-canary.1",
   "workspaces": [
     "apps/*",
     "packages/*"
