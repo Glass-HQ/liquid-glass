@@ -1,6 +1,12 @@
 {
   "plugins": ["typescript", "react", "jsx-a11y"],
-  "categories": { "correctness": "error" },
+  "categories": {
+    "correctness": "error"
+  },
   "ignorePatterns": ["dist", "node_modules", "apps/site/src/components/ui"],
-  "rules": { "react/react-in-jsx-scope": "off" }
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "copy/no-em-dash-copy": "error"
+  },
+  "jsPlugins": ["./tools/oxlint/copy.mjs"]
 }

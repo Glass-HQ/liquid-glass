@@ -212,7 +212,7 @@ function ArticleScene({ blur, appearance }: { blur: BlurProps; appearance: Glass
         <p>Nobody comes here for the view at noon. The heat flattens everything into one color, and the only shade is your own. It is the hour before sunset that matters.</p>
         <h2>The hour before sunset</h2>
         <p>The light arrives sideways and suddenly the dunes have texture again. <strong>Every ripple throws its own small shadow</strong>, and the ridge turns from beige to rust to violet in the time it takes to set up a tripod.</p>
-        <blockquote><p>You stop taking photographs at some point. The light changes faster than you can choose a frame.</p><cite>— Field notes, day two</cite></blockquote>
+        <blockquote><p>You stop taking photographs at some point. The light changes faster than you can choose a frame.</p><cite>Field notes, day two</cite></blockquote>
         <h2>What to bring</h2>
         <ul>
           <li><strong>Water</strong>: more than you think, and a little more after that.</li>

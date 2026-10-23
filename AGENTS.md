@@ -21,3 +21,9 @@
 Write for someone using or contributing to the library. Lead with installation and a working example; explain props, requirements, and surprising limitations. Keep architecture secondary and avoid repeating what types or code already explain.
 
 Rewrite outdated sections instead of appending implementation histories. Keep conversational references, plans, audit logs, publication receipts, and PR summaries out of repository documentation. Put verification evidence in the PR and release summaries in GitHub releases. Add a document only when it has a distinct, durable purpose.
+
+## Scope and copy
+
+Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
+
+Avoid em dashes in written copy. Use a comma, colon, parentheses, or a new sentence.
