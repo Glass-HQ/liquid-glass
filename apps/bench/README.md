@@ -28,7 +28,7 @@ Add a scene when a cost has no scene of its own. Keep each one to a single movin
 | frames/s, slow frame, worst frame | Frames the page started, its 95th percentile gap and its longest gap. |
 | CPU at rest ms/s | Cost while nothing moves and no frame is requested. This should be near zero: every page pays it all the time. |
 | peak MB, growth MB | Memory of the browser's processes during the scene, and what the scene left behind. |
-| filter work Mpx | The area every filter step covers in one redraw, in megapixels of the screen. Counted from the filters, so it is identical on every machine and run. Safari and Firefox compute filters on the CPU, where time follows this number. |
+| filter work Mpx | The area every filter step covers in one redraw, in megapixels of the screen. Counted from the filters, so it is identical on every machine and run. Safari computes every filter on the CPU, where time follows this number. Firefox does too for a filter that contains an image or a displacement, and runs the others on the GPU, so compare this number in Firefox only between builds with the same filters. |
 | filter redraws/s | Frames in which a filter changed. In Safari and Firefox this, not frames/s, is how often the glass itself updates. |
 
 The cost is read from the operating system's process counters, not from the page. Safari and Firefox render filters after the frame callback returns, so a page that times its own frames reports a smooth run while the browser is saturated.
