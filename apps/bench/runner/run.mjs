@@ -27,6 +27,8 @@ const { values: options } = parseArgs({
     seconds: { type: "string" },
     port: { type: "string", default: "5290" },
     "skip-build": { type: "boolean", default: false },
+    // Saves the filter markup of each run, to see what a browser was asked to draw.
+    dump: { type: "boolean", default: false },
   },
 });
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -85,7 +87,7 @@ const server = http.createServer((request, response) => {
   createReadStream(path).pipe(response);
 });
 await new Promise((done) => server.listen(Number(options.port), "127.0.0.1", done));
-const address = (run, index) => `http://localhost:${options.port}/${run.build}/?scene=${run.scene}&run=${index}${options.seconds ? `&seconds=${options.seconds}` : ""}`;
+const address = (run, index) => `http://localhost:${options.port}/${run.build}/?scene=${run.scene}&run=${index}${options.seconds ? `&seconds=${options.seconds}` : ""}${options.dump ? "&dump" : ""}`;
 
 /** Play the whole plan in one browser. Resolves with one result per run. */
 async function play(browser) {

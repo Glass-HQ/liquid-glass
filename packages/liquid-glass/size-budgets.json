@@ -14,7 +14,7 @@
     "dom/shape-effects": 10752,
     "gpu": 51200,
     "dom/map-encoder.worker": 2048,
-    "dom/lens-layers": 2560,
+    "dom/lens-layers": 3584,
     "dom/media-mirror": 3584,
     "dom/escaped-layers": 3584
   }

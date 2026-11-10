@@ -59,7 +59,8 @@ function filterWork() {
 }
 /** Counts the frames in which any filter changed, and the most work one of them asked for. */
 function watchFilters() {
-  let redraws = 0, changed = false, peak = filterWork()
+  const dump = new URLSearchParams(location.search).has("dump")
+  let redraws = 0, changed = false, peak = filterWork(), markup: string[] | undefined
   const observer = new MutationObserver((records) => {
     if (changed || !records.some((record) => record.target instanceof SVGElement || (record.target as HTMLElement).style?.filter.includes("url("))) return
     changed = true
@@ -67,11 +68,11 @@ function watchFilters() {
       changed = false
       redraws++
       const now = filterWork()
-      if (now.megapixels > peak.megapixels) peak = now
+      if (now.megapixels > peak.megapixels) { peak = now; if (dump) markup = [...document.querySelectorAll("filter")].map((filter) => filter.outerHTML) }
     })
   })
   observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "x", "y", "width", "height", "href", "scale", "stdDeviation", "values", "slope", "dx", "dy", "in", "in2"] })
-  return () => { observer.disconnect(); return { redraws, ...peak } }
+  return () => { observer.disconnect(); return { redraws, ...peak, markup } }
 }
 const driver: Driver = {
   root,

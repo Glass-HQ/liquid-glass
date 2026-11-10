@@ -53,6 +53,7 @@ const firefox = spawned("firefox",
       ["browser.shell.checkDefaultBrowser", false], ["browser.aboutwelcome.enabled", false], ["datareporting.policy.dataSubmissionEnabled", false],
       ["browser.startup.homepage_override.mstone", "ignore"], ["startup.homepage_welcome_url", ""], ["browser.tabs.warnOnClose", false],
       ["zen.welcome-screen.seen", true], ["app.update.enabled", false],
+      ["browser.preonboarding.enabled", false], ["termsofuse.bypassNotification", true],
       // LG_BENCH_FIREFOX_PREFS='{"some.pref":true}' tries a preference Firefox does not ship enabled.
       ...Object.entries(JSON.parse(env.LG_BENCH_FIREFOX_PREFS ?? "{}")),
     ].map(([key, value]) => `user_pref(${JSON.stringify(key)}, ${JSON.stringify(value)});`).join("\n")),
