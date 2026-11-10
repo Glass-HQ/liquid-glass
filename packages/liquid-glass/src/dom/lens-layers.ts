@@ -39,9 +39,9 @@ interface Layer {
   /** Inline isolation as authored, restored when the layer leaves. */
   isolation: string;
   written: Map<string, string>;
-  /** Children of a layer whose frost runs on the GPU: the material over a
-   * refracted copy of the backdrop, and the rim and light above it. */
-  split?: { glass: HTMLDivElement; source: HTMLDivElement; light: HTMLDivElement };
+  /** Children of a layer whose frost runs on the GPU: the material over
+   * the backdrop and a refracted copy of it, and the rim and light above. */
+  split?: { glass: HTMLDivElement; source: HTMLDivElement; refracted: HTMLDivElement; light: HTMLDivElement };
   /** The layer's box on screen this frame. */
   screen?: Box;
 }
@@ -76,7 +76,7 @@ export function createLensLayers(root: HTMLElement) {
   const layers = new Map<number, Layer>();
   let contentId: { element: HTMLElement; original: string | null; id: string } | undefined;
 
-  const write = (layer: Layer, name: string, value: string, part?: "glass" | "source" | "light") => {
+  const write = (layer: Layer, name: string, value: string, part?: "glass" | "source" | "refracted" | "light") => {
     const key = part ? `${part} ${name}` : name;
     if (layer.written.get(key) === value) return;
     layer.written.set(key, value);
@@ -84,14 +84,15 @@ export function createLensLayers(root: HTMLElement) {
   };
   const splitOf = (layer: Layer) => {
     if (layer.split) return layer.split;
-    const [glass, source, light] = [0, 1, 2].map(() => {
+    const [glass, source, refracted, light] = [0, 1, 2, 3].map(() => {
       const element = document.createElement("div");
       Object.assign(element.style, { position: "absolute", inset: "0", pointerEvents: "none", backgroundRepeat: "no-repeat", maskRepeat: "no-repeat" });
       return element;
-    }) as [HTMLDivElement, HTMLDivElement, HTMLDivElement];
-    glass.append(source);
+    }) as [HTMLDivElement, HTMLDivElement, HTMLDivElement, HTMLDivElement];
+    refracted.style.inset = "auto";
+    glass.append(source, refracted);
     layer.element.append(glass, light);
-    return layer.split = { glass, source, light };
+    return layer.split = { glass, source, refracted, light };
   };
   /** The images of one map plane across a box: one, or the two caps and the
    * stretched middle of a capsule, listed topmost first as CSS paints them. */
@@ -192,10 +193,11 @@ export function createLensLayers(root: HTMLElement) {
         if (regions.length) markup.push(progressiveGraph(`${layer.base}-blur`, regions, local.width, local.height, "gecko"));
         // Gecko keeps a filter of blurs, blends and color passes on the GPU,
         // and renders one with an image or a displacement in software, where
-        // the frost's two blurs cost most of the glass. A resting Regular
-        // surface therefore refracts its backdrop in software and frosts the
-        // result on the GPU, masked to its shape, with rim and light above.
-        const split = o.material === "regular" && !lens.place;
+        // the frost's two blurs cost most of the glass and every composite
+        // runs a pixel at a time. A resting Regular surface therefore only
+        // displaces in software, over a plain copy of its backdrop, and the
+        // GPU masks that to the shape, frosts both, and adds rim and light.
+        const split = o.material === "regular" && !lens.place && !regions.length;
         const part = split ? "source" as const : undefined;
         if (split) splitOf(layer);
         if (layer.split) {
@@ -226,25 +228,37 @@ export function createLensLayers(root: HTMLElement) {
         if (split) {
           const tint = tintChannels(o);
           const frost = frostMarkup(p, "SourceGraphic", o, 1 / scale);
+          // The refracted copy spans the shape and what its displacement reads.
+          const reach = Math.ceil(lens.refraction / scale) + 2;
+          const inner = {
+            left: Math.max(0, lens_.left - reach), top: Math.max(0, lens_.top - reach),
+            width: Math.min(local.width, lens_.left + lens_.width + reach) - Math.max(0, lens_.left - reach),
+            height: Math.min(local.height, lens_.top + lens_.height + reach) - Math.max(0, lens_.top - reach),
+          };
+          const shape = { left: lens_.left - inner.left, top: lens_.top - inner.top, width: lens_.width, height: lens_.height };
           markup.push(
-            // Refracted inside the shape, the backdrop as it is around it,
-            // which the frost reads at the rim.
-            `${open(layer.base)}${image("field", `${p}field`)}`
-            + `<feDisplacementMap in="SourceGraphic" in2="${p}field" scale="${2 * lens.refraction / scale}" xChannelSelector="R" yChannelSelector="G" ${region} result="${p}refracted"/>`
-            + `<feComposite in="${p}refracted" in2="${p}field" operator="in" ${region} result="${p}inside"/>`
-            + `<feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="${p}inside"/></feMerge></filter>`,
+            `${open(layer.base)}${mapImage(lens.maps, "field", `${p}field`, shape.left, shape.top, shape.width, shape.height)}`
+            + `<feDisplacementMap in="SourceGraphic" in2="${p}field" scale="${2 * lens.refraction / scale}" xChannelSelector="R" yChannelSelector="G" x="${shape.left}" y="${shape.top}" width="${shape.width}" height="${shape.height}"/></filter>`,
             `${open(`${layer.base}-material`)}${frost.markup}${toneMarkup(p, o, lens.parents.length > 0).replace(`in="${p}refracted"`, `in="${frost.result}"`)}${tint ? tintMarkup(p, o, tint).markup : ""}</filter>`,
             ...(tint ? [`${open(`${layer.base}-light`)}${overlayTintMarkup("SourceGraphic", `${p}light`, o, tint)}</filter>`] : []),
           );
-          const field = planeImages(lens.maps, "field", lens_), overlay = planeImages(lens.maps, "overlay", lens_);
-          const position = (images: typeof field) => images.map((i) => `${i.left}px ${lens_.top}px`).join(", ");
-          const size = (images: typeof field) => images.map((i) => `${i.width}px ${lens_.height}px`).join(", ");
-          const urls = (images: typeof field) => images.map((i) => `url("${i.url}")`).join(", ");
+          const position = (images: ReturnType<typeof planeImages>, top: number) => images.map((i) => `${i.left}px ${top}px`).join(", ");
+          const size = (images: ReturnType<typeof planeImages>) => images.map((i) => `${i.width}px ${lens_.height}px`).join(", ");
+          const urls = (images: ReturnType<typeof planeImages>) => images.map((i) => `url("${i.url}")`).join(", ");
+          const field = planeImages(lens.maps, "field", lens_), overlay = planeImages(lens.maps, "overlay", lens_), cut = planeImages(lens.maps, "field", shape);
+          for (const [name, value] of Object.entries({ left: inner.left, top: inner.top, width: inner.width, height: inner.height }))
+            write(layer, name, `${value}px`, "refracted");
+          write(layer, "background-image", sources.map((s) => s.image).join(", "), "refracted");
+          write(layer, "background-position", sources.map((s) => { const [x, y] = toLayer(s.box.left, s.box.top); return `${x - inner.left}px ${y - inner.top}px`; }).join(", "), "refracted");
+          write(layer, "background-size", sources.map((s) => `${s.box.width / f.sx}px ${s.box.height / f.sy}px`).join(", "), "refracted");
+          write(layer, "mask-image", urls(cut), "refracted");
+          write(layer, "mask-position", position(cut, shape.top), "refracted");
+          write(layer, "mask-size", size(cut), "refracted");
           write(layer, "mask-image", urls(field), "glass");
-          write(layer, "mask-position", position(field), "glass");
+          write(layer, "mask-position", position(field, lens_.top), "glass");
           write(layer, "mask-size", size(field), "glass");
           write(layer, "background-image", urls(overlay), "light");
-          write(layer, "background-position", position(overlay), "light");
+          write(layer, "background-position", position(overlay, lens_.top), "light");
           write(layer, "background-size", size(overlay), "light");
           continue;
         }
@@ -281,7 +295,7 @@ export function createLensLayers(root: HTMLElement) {
         const split = layer.split && layer.written.get("glass display") === "block";
         if (layer.split) write(layer, "filter", split ? "none" : own);
         if (!split) { write(layer, "filter", own); continue; }
-        write(layer, "filter", own, "source");
+        write(layer, "filter", own, "refracted");
         write(layer, "filter", `url("#${live(`${layer.base}-material`)}")`, "glass");
         write(layer, "filter", blurred.has(`${layer.base}-light`) ? `url("#${live(`${layer.base}-light`)}")` : "none", "light");
       }
