@@ -15,6 +15,23 @@
         "vercel": "^62.4.0",
       },
     },
+    "apps/bench": {
+      "name": "@liquid-glass/bench",
+      "version": "0.0.0",
+      "dependencies": {
+        "@glass-sdk/liquid-glass": "workspace:*",
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0",
+      },
+      "devDependencies": {
+        "@types/node": "^24",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^6.1.2",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.2",
+      },
+    },
     "apps/site": {
       "name": "@liquid-glass/site",
       "version": "0.0.1",
@@ -256,6 +273,8 @@
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.6.0", "", {}, "sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw=="],
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
+
+    "@liquid-glass/bench": ["@liquid-glass/bench@workspace:apps/bench"],
 
     "@liquid-glass/site": ["@liquid-glass/site@workspace:apps/site"],
 

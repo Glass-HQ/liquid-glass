@@ -18,6 +18,10 @@
 
 A `pre-push` hook runs every check and blocks a push that fails. There's no CI on everyday work, on purpose: [Contributing](CONTRIBUTING.md#checks) explains why. Don't add it back.
 
+## Performance
+
+Measure with `bun run bench` ([guide](apps/bench/README.md)); keep measuring tools and scenes in `apps/bench`, not in scratch folders outside the repository. Claim a gain only where the session marks one, and say which browsers and which machine it ran on. Timings in Safari and Firefox are noisy because both saturate the CPU: read `filter work` and `filter redraws/s` there first.
+
 ## Documentation
 
 Write for someone using or contributing to the library. Lead with installation and a working example; explain props, requirements, and surprising limitations. Keep architecture secondary and avoid repeating what types or code already explain.

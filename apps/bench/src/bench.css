@@ -1,0 +1,11 @@
+html, body { margin: 0; background: #16181d; font: 15px/1.4 system-ui, sans-serif; color: #111; }
+#root { padding: 20px; }
+.page { display: grid; gap: 16px; padding: 16px; background: #f4f1ea; }
+.page-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.page-row article { padding: 16px; border-radius: 16px; min-height: 96px; }
+.page-row h3 { margin: 0 0 6px; }
+.page-row p { margin: 0; }
+.bench-ticker { position: absolute; top: 300px; left: 550px; padding: 8px 14px; border-radius: 10px; background: #ffd400; font-weight: 700; }
+.bench-index { color: #eee; max-width: 760px; }
+.bench-index a { color: #9cf; }
+.bench-status { position: fixed; right: 8px; bottom: 6px; color: #889; font-size: 12px; }

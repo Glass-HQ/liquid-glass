@@ -11,3 +11,6 @@ coverage/
 *.tgz
 
 apps/native-reference/build/
+
+apps/bench/results/
+apps/bench/.base/

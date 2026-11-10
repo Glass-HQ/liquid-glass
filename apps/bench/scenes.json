@@ -1,0 +1,14 @@
+{
+  "drag": "One panel moving over a still picture.",
+  "drag-over-canvas": "The same drag over a canvas, which Safari draws in a layer of its own.",
+  "drag-half-stage": "The same drag with half as much background behind it: how much of the cost is the background, not the glass.",
+  "drag-among-many": "One panel moving while twelve other pieces of glass stay still: the cost of glass that did not change.",
+  "content-change": "Still glass over content that repaints every frame.",
+  "scroll": "A toolbar over a scrolling page of live text.",
+  "scroll-edges": "The same scroll with progressive blur at both edges.",
+  "menu": "A menu morphing open and closed three times.",
+  "controls": "Glass inside glass: a tab indicator and a switch thumb moving.",
+  "resize": "A panel changing size every frame, so its shape is drawn again and again. Memory is the number to watch.",
+  "reference-opaque": "No glass: an opaque panel making the same drag. The cost of the page by itself.",
+  "reference-css-blur": "No glass: a panel with a plain CSS backdrop blur making the same drag. The floor for any fallback that still blurs."
+}

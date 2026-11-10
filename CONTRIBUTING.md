@@ -23,6 +23,10 @@ Use the installed vgpu tools through `bun run vgpu`. Start with `docs cat gettin
 
 Review rendering changes in the site's examples in Chromium, Safari, Firefox, and Electron. Check both appearances and materials. Record browser versions, observed results, and anything you could not check with your change. An unavailable GPU adapter is not a passing result. For comparison with system materials, use the [native reference app](apps/native-reference/README.md).
 
+## Performance
+
+`bun run bench` plays fixed scenes in real Chrome, Safari, Firefox and Electron windows and reports what each cost. A change made for speed needs a session against its base, `bun run bench --base main`, on a machine left alone while it runs. Quote the table in the commit message. A difference the session does not mark as better is noise, and is no reason for a change. See the [bench guide](apps/bench/README.md).
+
 ## Pull requests
 
 Title commits and PRs as [Conventional Commits](https://www.conventionalcommits.org): `type(scope): summary`, such as `fix(webkit): follow Safari page zoom`. PRs are squash-merged, so the title becomes the commit on `main`. Keep each PR focused on one problem. Explain the change and how you checked it. Include before/after screenshots for visual changes, and a recording when motion matters; attach them to the PR rather than committing them. Maintainers review and merge contributions once review conversations are resolved.
