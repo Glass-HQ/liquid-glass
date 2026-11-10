@@ -1,6 +1,8 @@
 // Bundles what an app ships for typical imports of the built package and checks
-// each against its budget. "Initial" is everything loaded with the entry; "lazy"
-// is code split behind dynamic imports, such as the GPU map renderer.
+// each against its budget. "Initial" is everything loaded with the entry. Code
+// split behind a dynamic import, such as the GPU map renderer or an engine's own
+// path, is budgeted per module: what loading it downloads beyond the initial
+// code. Engine-specific modules never load together, so they are not summed.
 //
 //   node scripts/check-size.mjs            check budgets
 //   node scripts/check-size.mjs --json     print measurements as JSON
@@ -49,9 +51,17 @@ async function measure(name, source) {
     visit(entryOut);
     const sum = (keys, fn) => keys.reduce((n, k) => n + fn(files.get(join(process.cwd(), k)) ?? files.get(k) ?? new Uint8Array()), 0);
     const all = Object.keys(outputs).filter((k) => k.endsWith(".js"));
-    const lazy = all.filter((k) => !initial.has(k));
     const gz = (b) => gzipSync(b, { level: 9 }).length, br = (b) => brotliCompressSync(b).length;
-    return { name, initialGzip: sum([...initial], gz), initialBrotli: sum([...initial], br), lazyGzip: sum(lazy, gz), lazyChunks: lazy.length };
+    const lazy = {};
+    for (const key of all) {
+      const entryPoint = outputs[key].entryPoint;
+      if (initial.has(key) || !entryPoint) continue;
+      const loaded = new Set();
+      const load = (k) => { if (loaded.has(k) || initial.has(k)) return; loaded.add(k); for (const i of outputs[k].imports) if (i.kind === "import-statement" && outputs[i.path]) load(i.path); };
+      load(key);
+      lazy[entryPoint.replace(/^.*\/dist\//, "").replace(/\.js$/, "")] = sum([...loaded], gz);
+    }
+    return { name, initialGzip: sum([...initial], gz), initialBrotli: sum([...initial], br), lazy };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -67,17 +77,30 @@ const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
 let budgets = JSON.parse(readFileSync(budgetsFile, "utf8"));
 if (process.argv.includes("--update")) {
   const next = { note: budgets.note, initialGzip: {}, lazyGzip: {} };
-  for (const r of results) { next.initialGzip[r.name] = (Math.floor(r.initialGzip / 512) + 1) * 512; next.lazyGzip[r.name] = (Math.floor(r.lazyGzip / 512) + 1) * 512; }
+  const step = (n) => (Math.floor(n / 512) + 1) * 512;
+  for (const r of results) {
+    next.initialGzip[r.name] = step(r.initialGzip);
+    for (const [module, size] of Object.entries(r.lazy)) next.lazyGzip[module] = Math.max(next.lazyGzip[module] ?? 0, step(size));
+  }
   writeFileSync(budgetsFile, JSON.stringify(next, null, 2) + "\n");
   budgets = next;
 }
 let failed = false;
-console.log("Import".padEnd(20), "Initial gzip".padStart(13), "Budget".padStart(10), "Lazy gzip".padStart(11));
+console.log("Import".padEnd(20), "Initial gzip".padStart(13), "Budget".padStart(10));
 for (const r of results) {
-  const limit = budgets.initialGzip[r.name], lazyLimit = budgets.lazyGzip[r.name];
-  const over = r.initialGzip > limit || r.lazyGzip > lazyLimit;
+  const limit = budgets.initialGzip[r.name];
+  const over = !(r.initialGzip <= limit);
   failed ||= over;
-  console.log(r.name.padEnd(20), kb(r.initialGzip).padStart(13), kb(limit).padStart(10), kb(r.lazyGzip).padStart(11), over ? "  OVER BUDGET" : "");
+  console.log(r.name.padEnd(20), kb(r.initialGzip).padStart(13), kb(limit).padStart(10), over ? "  OVER BUDGET" : "");
+}
+const lazy = {};
+for (const r of results) for (const [module, size] of Object.entries(r.lazy)) lazy[module] = Math.max(lazy[module] ?? 0, size);
+console.log("\nLoaded on demand".padEnd(25), "Gzip".padStart(9), "Budget".padStart(10));
+for (const [module, size] of Object.entries(lazy).sort()) {
+  const limit = budgets.lazyGzip[module];
+  const over = !(size <= limit);
+  failed ||= over;
+  console.log(module.padEnd(24), kb(size).padStart(9), (limit === undefined ? "none" : kb(limit)).padStart(10), over ? "  OVER BUDGET" : "");
 }
 console.log(`styles.css: ${kb(css)} gzip. React is excluded; it is a peer dependency.`);
 if (failed) { console.error("Bundle size exceeds its budget. Reduce it, or run with --update if the growth is intended."); process.exit(1); }

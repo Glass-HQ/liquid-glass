@@ -389,6 +389,20 @@ test("a submenu fades in place and never morphs from or back into its row", () =
   }, () => true, { submenu: true, parentMenu: {} as Element });
 });
 
+test("a closing submenu's glass leads its content out and ends once faint", () => {
+  withPopups((create) => {
+    const { animator, place, exit, exited } = create(undefined, { submenu: true, parentMenu: {} as Element });
+    place(); animator.frame(200); animator.frame(1000);
+    exit(1000);
+    for (let at = 1016; at <= 1100; at += 16) animator.frame(at);
+    expect(animator.opacity()).toBeGreaterThan(0);
+    expect(animator.opacity()).toBeLessThan(0.5);
+    for (let at = 1116; at <= 1200; at += 16) animator.frame(at);
+    expect(animator.opacity()).toBe(0);
+    expect(exited()).toBe(true);
+  });
+});
+
 test("sibling submenus morph from the outgoing panel size, not the row", () => {
   withPopups((create) => {
     const parentMenu = {} as Element;
@@ -461,7 +475,7 @@ test("aborting a replacement releases the outgoing submenu to finish closing", (
 });
 
 
-test("hover intent holds the visible panel before a sibling mounts", () => {
+test("hover intent holds the visible panel before a sibling mounts, which then starts moving from it", () => {
   withPopups((create) => {
     const parentMenu = {} as Element;
     const first = create(undefined, { submenu: true, parentMenu, height: 80 });
@@ -474,7 +488,11 @@ test("hover intent holds the visible panel before a sibling mounts", () => {
     next.place(1340);
     release();
     expect(first.exited()).toBe(true);
-    expect(next.animator.geometry()!.height).toBe(80);
+    // The replacement starts from the outgoing panel and is moving: after
+    // placement settles it has taken at most two frames' steps toward its size.
+    const height = next.animator.geometry()!.height;
+    expect(height).toBeGreaterThanOrEqual(80);
+    expect(height).toBeLessThan(80 + 0.4 * (160 - 80));
   });
 });
 

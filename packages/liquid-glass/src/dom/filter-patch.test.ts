@@ -181,3 +181,83 @@ test("duplicate primitive identities cannot leave a trailing tile as the filter 
   expect(defs.mutations()).toBe(before);
   expect(defs.children[0]!.children.map((node) => node.getAttribute("result"))).toEqual(["edge", "tile", "output"]);
 });
+
+test("WebKit detaches a retained filter only when its graph topology changes", () => {
+  // Engine detection is fixed at import time. Isolate this WebKit-only path
+  // so the suite's UA-neutral filter-patch import and its module cache stay clean.
+  const script = `
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+      vendor: "Apple Computer, Inc.",
+      userAgent: "Mozilla/5.0 AppleWebKit/605.1.15 Version/27.0 Safari/605.1.15",
+    } });
+    const [{ patchFilters }, { webkit, chromium }] = await Promise.all([
+      import(${JSON.stringify(new URL("./filter-patch.ts", import.meta.url).href)}),
+      import(${JSON.stringify(new URL("./engine.ts", import.meta.url).href)}),
+    ]);
+    class ElementStub {
+      attributes = new Map();
+      children = [];
+      parentElement = null;
+      constructor(ownerDocument, tagName) { this.ownerDocument = ownerDocument; this.tagName = tagName; }
+      get id() { return this.attributes.get("id") ?? ""; }
+      set id(value) { this.setAttribute("id", value); }
+      get firstElementChild() { return this.children[0] ?? null; }
+      get nextSibling() { return this.nextElementSibling; }
+      get nextElementSibling() {
+        const siblings = this.parentElement?.children;
+        return siblings?.[siblings.indexOf(this) + 1] ?? null;
+      }
+      getAttribute(name) { return this.attributes.get(name) ?? null; }
+      setAttribute(name, value) { this.attributes.set(name, value); }
+      removeAttribute(name) { this.attributes.delete(name); }
+      append(element) { this.insertBefore(element, null); }
+      insertBefore(element, before) {
+        element.remove();
+        const index = before ? this.children.indexOf(before) : this.children.length;
+        if (index < 0) throw new Error("Insertion point is not a child");
+        this.children.splice(index, 0, element);
+        element.parentElement = this;
+        if (this.tagName === "defs") this.ownerDocument.rootOperations.push(["insert", element.id, before?.id ?? null]);
+      }
+      remove() {
+        if (!this.parentElement) return;
+        if (this.parentElement.tagName === "defs") this.ownerDocument.rootOperations.push(["remove", this.id]);
+        const siblings = this.parentElement.children;
+        siblings.splice(siblings.indexOf(this), 1);
+        this.parentElement = null;
+      }
+    }
+    const document = {
+      rootOperations: [],
+      createElementNS(_namespace, tag) { return new ElementStub(document, tag); },
+    };
+    const defs = new ElementStub(document, "defs");
+    const filter = (id, contents) => '<filter id="' + id + '" x="0" y="0" width="1" height="1">' + contents + '</filter>';
+    const apply = (contents) => patchFilters(defs, contents.map(([id, value]) => filter(id, value)), () => undefined);
+    const base = '<feFlood flood-opacity="0" result="base"/>';
+    const output = '<feMerge result="output"><feMergeNode in="base"/></feMerge>';
+    if (!webkit || chromium) throw new Error("Safari engine detection failed in isolated process");
+    const sibling = '<feFlood flood-opacity="0" result="sibling"/>';
+    apply([["glass", base + output], ["other", sibling]]);
+    const retained = defs.children[0];
+    const retainedSibling = defs.children[1];
+    document.rootOperations.length = 0;
+    apply([["glass", base.replace('flood-opacity="0"', 'flood-opacity="0.1"') + output], ["other", sibling]]);
+    if (document.rootOperations.length)
+      throw new Error("Geometry updates replaced the retained filter");
+    apply([["glass", base + '<feOffset in="base" dx="1" result="extra"/>'
+      + '<feMerge result="output"><feMergeNode in="base"/><feMergeNode in="extra"/></feMerge>'], ["other", sibling]]);
+    const expectedOperations = [
+      ["remove", retained.id],
+      ["insert", retained.id, retainedSibling.id],
+    ];
+    if (JSON.stringify(document.rootOperations) !== JSON.stringify(expectedOperations))
+      throw new Error("Topology update did not detach and restore the retained root exactly once");
+    if (defs.children[0] !== retained || defs.children[1] !== retainedSibling || retained.parentElement !== defs)
+      throw new Error("Topology updates failed to restore the retained filter");
+    console.log("webkit detach path ok");
+  `;
+  const result = Bun.spawnSync([process.execPath, "--eval", script]);
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString() || result.stdout.toString());
+  expect(result.stdout.toString()).toContain("webkit detach path ok");
+});

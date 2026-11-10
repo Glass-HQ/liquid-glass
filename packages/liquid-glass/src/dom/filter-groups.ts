@@ -25,7 +25,7 @@ function union(a: FilterBounds, b: FilterBounds): FilterBounds {
  * This keeps distant small lenses from creating a scene-sized software pass.
  * Callers separately check the extra branches against WebKit's outset budget. */
 export function clusterFilterBranches<T>(members: readonly T[], regions: (member: T) => BranchRegions,
-  stages: { output: number; sampled: number }): T[][] {
+  stages: { output: number; sampled: number }, limit = Infinity): T[][] {
   const clusters: Cluster<T>[] = [];
   const cost = (cluster: Cluster<T>) => area(cluster.crop) + stages.sampled * area(cluster.sampled)
     + (stages.output + (cluster.members.length > 1 ? 4 : 0)) * area(cluster.output) + cluster.images;
@@ -43,6 +43,22 @@ export function clusterFilterBranches<T>(members: readonly T[], regions: (member
     }
     if (joined) clusters[best] = joined;
     else clusters.push(own);
+  }
+  const join = (a: Cluster<T>, b: Cluster<T>): Cluster<T> => ({
+    output: union(a.output, b.output), crop: union(a.crop, b.crop), sampled: union(a.sampled, b.sampled),
+    members: [...a.members, ...b.members], images: a.images + b.images,
+  });
+  // Over the limit, rejoin whichever two branches cost the least together.
+  while (clusters.length > Math.max(1, limit)) {
+    let best: [number, number, Cluster<T>] | undefined, least = Infinity;
+    for (let i = 0; i < clusters.length; i++) for (let j = i + 1; j < clusters.length; j++) {
+      const candidate = join(clusters[i]!, clusters[j]!);
+      const added = cost(candidate) - cost(clusters[i]!) - cost(clusters[j]!);
+      if (added < least) { least = added; best = [i, j, candidate]; }
+    }
+    const [i, j, candidate] = best!;
+    clusters[i] = candidate;
+    clusters.splice(j, 1);
   }
   return clusters.map((cluster) => cluster.members);
 }

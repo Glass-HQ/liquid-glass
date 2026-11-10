@@ -1,9 +1,9 @@
-import { generatePath, generateClipPath } from "@lisse/core";
-import type { SmoothCornerOptions } from "@lisse/core";
+import { cornerPath } from "./corner-path.js";
+import type { CornerOptions } from "./corner-path.js";
 
 /** A fixed continuous corner, a continuous capsule, or a circular cap. */
 export type GlassRadius = number | "capsule" | "circle";
-export function cornerOptions(radius: GlassRadius): SmoothCornerOptions {
+export function cornerOptions(radius: GlassRadius): CornerOptions {
   if (typeof radius !== "number" && radius !== "capsule" && radius !== "circle")
     throw new RangeError("Unknown glass radius.");
   if (typeof radius === "number" && (!Number.isFinite(radius) || radius < 0))
@@ -12,7 +12,7 @@ export function cornerOptions(radius: GlassRadius): SmoothCornerOptions {
     smoothing: 0.8125, preserveSmoothing: true,
     curve: radius === "circle" ? "arc" : "squircle" };
 }
-/** Lisse path generation is not cheap, and a page repeats the same few
+/** Path generation is not cheap, and a page repeats the same few
  * shapes many times over, so results are memoized by exact geometry. */
 const memo = new Map<string, string>();
 function remember(key: string, make: () => string): string {
@@ -25,14 +25,14 @@ function remember(key: string, make: () => string): string {
   return value;
 }
 export function shapePath(width: number, height: number, radius: GlassRadius): string {
-  return remember(`p|${width}|${height}|${radius}`, () => generatePath(width, height, cornerOptions(radius)));
+  return remember(`p|${width}|${height}|${radius}`, () => cornerPath(width, height, cornerOptions(radius)));
 }
 export function shapeClip(width: number, height: number, radius: GlassRadius): string {
-  return remember(`c|${width}|${height}|${radius}`, () => generateClipPath(width, height, cornerOptions(radius)));
+  return remember(`c|${width}|${height}|${radius}`, () => `path("${cornerPath(width, height, cornerOptions(radius))}")`);
 }
 
 type Point = [number, number];
-/** Tessellate Lisse's SVG path for the WGSL distance field. This is the same
+/** Tessellate the SVG path for the WGSL distance field. This is the same
  * outline used by the DOM, not a second corner formula. Uniform shapes are
  * symmetric, so the GPU only needs the top-right quadrant. */
 export function shapePolygon(width: number, height: number, radius: GlassRadius): Point[] {

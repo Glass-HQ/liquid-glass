@@ -8,6 +8,7 @@ import type {
   PhysicalEdge,
   ProgressiveBlurOptions,
 } from "../core/progressive.js";
+import { boundsMeet as overlaps } from "./filter-bounds.js";
 import { filterBudgetFactor, filterGraphOutsets, outsetBudget } from "./filter-budget.js";
 import { padRepaintReach, repaintReach, tiledReach } from "./filter-reach.js";
 import { filterPixelRatio, pageZoom, untiledOutsets } from "./page-zoom.js";
@@ -50,6 +51,11 @@ const ease = (u: number) => u * u * (3 - 2 * u);
 /** Inverse of `ease` on [0, 1]. */
 const unease = (d: number) => 0.5 - Math.sin(Math.asin(1 - 2 * Math.max(0, Math.min(1, d))) / 3);
 const weight = (level: number, u: number) => Math.max(0, 1 - Math.abs(levels * ease(Math.max(0, Math.min(1, u))) - level));
+/** The sum of a level's weight and every sharper level's. Software filters
+ * keep weights in 8 bits, and two neighbors rounded apart sum a step above
+ * or below one, which reads as stripes. There a level keeps its cover and
+ * drops the sharper level's, so neighbors split one rounded value exactly. */
+const cover = (level: number, u: number) => Math.min(1, Math.max(0, level + 1 - levels * ease(Math.max(0, Math.min(1, u)))));
 /** The part of the depth, from the sharp side (0) to the edge (1), where a
  * level contributes. Each level only blurs this band: a third of the depth. */
 const bands = Array.from({ length: levels + 1 }, (_, level) => [unease((level - 1) / levels), unease((level + 1) / levels)] as const);
@@ -72,11 +78,14 @@ function inverseNormal(p: number): number {
  * to each level's weight. Floods, blurs, transfers and composites are the
  * primitives Gecko renders on the GPU; an image anywhere in the graph sends
  * the whole element to its software fallback. */
-export const rampTables = Array.from({ length: levels + 1 }, (_, level) => Array.from({ length: 65 }, (_, n) => {
+const rampTable = (share: (level: number, u: number) => number) => Array.from({ length: levels + 1 }, (_, level) => Array.from({ length: 65 }, (_, n) => {
   const a = n / 64;
   const u = a <= 0 ? 0 : a >= 1 ? 1 : 0.5 + inverseNormal(a) / 6;
-  return Number(weight(level, u).toFixed(4));
+  return Number(share(level, u).toFixed(4));
 }).join(" "));
+/** Gecko filters in floating point, where weights add exactly. */
+export const rampTables = rampTable(weight);
+export const coverTables = rampTable(cover);
 /** WebKit filters in software and charges a blur's outsets once for every
  * consumer of its result, so a shared ramp would grow its buffer sevenfold.
  * There each level's weight is a small image spanning only its band. */
@@ -96,7 +105,7 @@ export function maskUrl(token: string): string | undefined {
   for (let k = 0; k < maskSamples; k++) {
     const f = (k + 0.5) / maskSamples;
     const u = reverse ? hi - f * (hi - lo) : lo + f * (hi - lo);
-    pixels.set([255, 255, 255, Math.round(255 * weight(level, u))], k * 4);
+    pixels.set([255, 255, 255, Math.round(255 * cover(level, u))], k * 4);
   }
   const url = pngDataUrlSync(vertical ? 1 : maskSamples, vertical ? maskSamples : 1, pixels);
   masks.set(token, url);
@@ -119,10 +128,10 @@ function along(r: ProgressiveRegion, from: number, to: number): Box {
     case "left": return round({ x: r.x + (1 - to) * r.width, y: r.y, width: (to - from) * r.width, height: r.height });
   }
 }
-const overlaps = (a: Box, b: Box) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
 /** The blurred, weighted levels of one region, whose sum is its result. */
-function levelParts(r: ProgressiveRegion, p: string, source: string, imageMasks: boolean, full?: Box): { markup: string[]; even: string[]; odd: string[] } {
+function levelParts(r: ProgressiveRegion, p: string, source: string, target: FilterEngine, full?: Box): { markup: string[]; even: string[]; odd: string[] } {
+  const imageMasks = target === "webkit", covers = target !== "gecko";
   const markup: string[] = [];
   const vertical = r.edge === "top" || r.edge === "bottom";
   const away = r.edge === "bottom" || r.edge === "right" ? -1 : 1;
@@ -154,10 +163,17 @@ function levelParts(r: ProgressiveRegion, p: string, source: string, imageMasks:
       markup.push(`<feGaussianBlur in="${input}" stdDeviation="${sigma}" ${attributes(band)} result="${p}blur${level}"/>`);
       input = `${p}blur${level}`;
     }
-    markup.push(imageMasks
+    // The strongest level's cover is one everywhere it is drawn.
+    const masked = !covers || level < levels;
+    if (masked) markup.push(imageMasks
       ? `<feImage data-map="pg:${r.edge}:${level}" preserveAspectRatio="none" ${attributes(band)} result="${p}weight${level}"/>`
-      : `<feComponentTransfer in="${p}ramp"${region} result="${p}weight${level}"><feFuncA type="table" tableValues="${rampTables[level]}"/></feComponentTransfer>`);
-    markup.push(`<feComposite in="${input}" in2="${p}weight${level}" operator="in"${region} result="${p}part${level}"/>`);
+      : `<feComponentTransfer in="${p}ramp"${region} result="${p}weight${level}"><feFuncA type="table" tableValues="${(covers ? coverTables : rampTables)[level]}"/></feComponentTransfer>`);
+    if (masked) {
+      const result = `${p}${covers && level ? "covered" : "part"}${level}`;
+      markup.push(`<feComposite in="${input}" in2="${p}weight${level}" operator="in"${region} result="${result}"/>`);
+      input = result;
+    }
+    if (covers && level) markup.push(`<feComposite in="${input}" in2="${p}weight${level - 1}" operator="out"${region} result="${p}part${level}"/>`);
     // Alternate levels never overlap, so a merge adds them exactly.
     (level % 2 ? odd : even).push(`${p}part${level}`);
   }
@@ -184,7 +200,7 @@ export function progressiveGraph(id: string, regions: ProgressiveRegion[], width
     let source = "SourceGraphic";
     regions.forEach((r, index) => {
       const p = `e${index}`;
-      const { markup, even, odd } = levelParts(r, p, source, false, full);
+      const { markup, even, odd } = levelParts(r, p, source, target, full);
       parts.push(...markup, merge(even, `${p}even`, full), merge(odd, `${p}odd`, round(r)), add(`${p}even`, `${p}odd`, `${p}result`, full));
       source = `${p}result`;
     });
@@ -198,7 +214,7 @@ export function progressiveGraph(id: string, regions: ProgressiveRegion[], width
       const results: string[] = [], areas: string[] = [];
       group.forEach((r) => {
         const index = regions.indexOf(r), p = `e${index}`;
-        const { markup, even, odd } = levelParts(r, p, source, target === "webkit");
+        const { markup, even, odd } = levelParts(r, p, source, target);
         parts.push(...markup, `<feFlood flood-color="#fff" ${attributes(round(r))} result="${p}area"/>`,
           merge(even, `${p}even`, round(r)), merge(odd, `${p}odd`, round(r)), add(`${p}even`, `${p}odd`, `${p}result`, round(r)));
         results.push(`${p}result`);
@@ -478,7 +494,7 @@ export function createProgressiveLayer(
         // them. Leave half the budget to glass chained on the same element.
         const tiled = currentOutsets > untiledOutsets(width, height) / 2;
         const pad = Math.min((tiled ? tiledReach : 1) * repaintReach(next, width, height), outsetBudget(width * scale, height * scale) / scale / 2, tiled ? Infinity : untiledOutsets(width, height, 0.85) / 2);
-        if (pad > currentOutsets) { next = padRepaintReach(next, Math.floor(pad), width, height, tiled); currentOutsets = Math.floor(pad); }
+        if (pad > currentOutsets) { next = padRepaintReach(next, Math.floor(pad), width, height, currentOutsets === budgetOutsets ? budgetOutsets : undefined); currentOutsets = filterGraphOutsets(next); }
       }
       const zoom = pageZoom();
       if (next !== markup || zoom !== markupZoom) {

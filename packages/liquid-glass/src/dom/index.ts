@@ -1,7 +1,7 @@
 import { polygonClip } from "../core/concentric.js";
 import type { ShapePoint } from "../core/concentric.js";
 import { createConcentricResolver, setResolvedShape, registerShapeContainer } from "./shape-layout.js";
-import { getLayoutSize } from "@lisse/core";
+import { getLayoutSize } from "./layout-size.js";
 import { shapeClip, shapePolygon, cornerOptions } from "../core/shape.js";
 import { attachInteraction, resolveMotion } from "./interaction.js";
 import type { GlassMotion, SurfaceAnimator } from "./interaction.js";
@@ -16,7 +16,7 @@ import { shapeDistance } from "../core/morph-path.js";
 import { comparePaintOrder, foregroundFilter, overlaps } from "./foreground.js";
 import type { ForegroundLens } from "./foreground.js";
 import { patchFilters } from "./filter-patch.js";
-import { createMapWarmer, mapWarmup as warmup } from "./warm.js";
+import { createMapWarmer, mapWarmup as warmup, warmDocumentStyle } from "./warm.js";
 import { updateControlMotion } from "./control-motion.js";
 import { createProgressiveLayer } from "./progressive.js";
 import type { ScrollEdgesOptions } from "./progressive.js";
@@ -32,10 +32,14 @@ import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds
 import { sharedBackdropMaterials } from "./shared-backdrop.js";
 import { gecko } from "./filter-stages.js";
 import { chromium } from "./engine.js";
-import { createLensLayers } from "./lens-layers.js";
-import type { LayerFrame, LayerLens } from "./lens-layers.js";
+import type { LayerFrame, LayerLens, LensLayers } from "./lens-layers.js";
 import { composeSparseLayers } from "./compose-layers.js";
 import { acquireFilterPaintRoot, acquireSceneCompositingLayer } from "./filter-paint-root.js";
+import { registerSceneRoot, releaseFilterPart, sceneDepth, setFilterPart } from "./filter-chain.js";
+import type { LayerBox } from "./composited.js";
+import type { EscapedLayers, LayerGlass } from "./escaped-layers.js";
+import { zoomFilterMarkup } from "./page-zoom.js";
+import { boundsMeet } from "./filter-bounds.js";
 import type { FilterBounds } from "./filter-bounds.js";
 import { materials } from "../core/materials.js";
 import { frostMarkup, overlayTintMarkup, tintChannels, tintMarkup, toneMarkup } from "./material-graph.js";
@@ -179,6 +183,7 @@ export function createGlassScene(
   config: GlassSceneOptions = {},
 ): GlassSceneController {
   const releaseSceneLayer = webkit ? acquireSceneCompositingLayer(root) : undefined;
+  const unregisterRoot = registerSceneRoot(root);
   const owner = ++serial;
   const svg = document.createElementNS(ns, "svg");
   svg.setAttribute("aria-hidden", "true");
@@ -249,33 +254,42 @@ export function createGlassScene(
   const warmRenderer = typeof navigator !== "undefined" && "gpu" in navigator
     ? setTimeout(() => { getMaterialRenderer().then((renderer) => renderer.warmed).catch(() => undefined); }, 600)
     : undefined;
+  const warmStyle = setTimeout(() => warmDocumentStyle(root.ownerDocument), 700);
   let surfaceFilters = "";
   let progressiveOutsets = 0;
   let composedZoom = `${pageZoom()} ${devicePixelRatio}`;
-  /** Gecko draws each surface's glass in a layer of its own. */
-  const layers = gecko ? createLensLayers(root) : undefined;
+  /** Gecko draws each surface's glass in a layer of its own; only Gecko
+   * downloads that code, and its glass waits for it. */
+  let layers: LensLayers | undefined;
+  if (gecko) import("./lens-layers.js").then(({ createLensLayers }) => {
+    if (disposed) return;
+    layers = createLensLayers(root);
+    adoptBlurHost();
+    dirty = true;
+    ticker.wake();
+  }, () => undefined);
+  /** WebKit composites some content apart from the content's filter, above
+   * the glass it draws; such layers draw a copy of the glass on themselves.
+   * Only WebKit needs this, so other engines never download its code. */
+  let escapes: EscapedLayers | undefined;
+  if (webkit) import("./escaped-layers.js").then(({ createEscapedLayers }) => {
+    if (disposed) return;
+    escapes = createEscapedLayers(() => ticker.wake());
+    ticker.wake();
+  }, () => undefined);
+  let layerGlass: LayerGlass[] = [];
+  let layerKey = "";
+  const layerStyles = new Map<HTMLElement, FilterStyle>();
+  const layerIds = new WeakMap<HTMLElement, number>();
   let contentRect = { left: 0, top: 0, width: 0, height: 0 };
   let lastPaintOrder = "";
-  interface FilterStyle { original: string; base: string; priority: string; applied?: string; releasePaint?: () => void }
-  const retainFilter = (element: HTMLElement): FilterStyle => {
-    const original = element.style.getPropertyValue("filter");
-    // CSS-wide keywords cannot be concatenated with filter functions. Keep
-    // the authored declaration for cleanup and compose its resolved value.
-    const base = /^(initial|inherit|unset|revert|revert-layer)$/i.test(original.trim()) ? getComputedStyle(element).filter : original;
-    return { original, base, priority: element.style.getPropertyPriority("filter"), releasePaint: webkit ? acquireFilterPaintRoot(element) : undefined };
-  };
-  const applyFilter = (element: HTMLElement, style: FilterStyle, filters: string) => {
-    const original = style.base.trim().toLowerCase() === "none" ? "" : style.base;
-    const next = filters ? [original, filters].filter(Boolean).join(" ") : style.original;
-    if (element.style.getPropertyValue("filter") !== next || element.style.getPropertyPriority("filter") !== style.priority)
-      element.style.setProperty("filter", next, style.priority);
-    style.applied = element.style.getPropertyValue("filter");
-  };
+  /** One claim per filtered element; scenes sharing an element chain their filters. */
+  interface FilterStyle { owner: string; releasePaint?: () => void }
+  const retainFilter = (element: HTMLElement, kind = ""): FilterStyle =>
+    ({ owner: `${owner}${kind}`, releasePaint: webkit ? acquireFilterPaintRoot(element) : undefined });
+  const applyFilter = (element: HTMLElement, style: FilterStyle, filters: string) => setFilterPart(element, style.owner, sceneDepth(root), filters);
   const releaseFilter = (element: HTMLElement, style: FilterStyle) => {
-    if (style.applied !== undefined && element.style.getPropertyValue("filter") === style.applied && element.style.getPropertyPriority("filter") === style.priority) {
-      if (style.original) element.style.setProperty("filter", style.original, style.priority);
-      else element.style.removeProperty("filter");
-    }
+    releaseFilterPart(element, style.owner);
     style.releasePaint?.();
   };
   let contentStyle: FilterStyle | undefined;
@@ -290,6 +304,13 @@ export function createGlassScene(
     if (blurHost) { releaseFilter(blurHost.element, blurHost.style); blurHost.element.removeAttribute("data-glass-blur-active"); }
     blurHost = undefined;
     contentStyle = undefined;
+  };
+  /** Gecko's layers draw the content's blur on its wrapper, once they load. */
+  const adoptBlurHost = () => {
+    const host = content?.parentElement;
+    if (!layers || blurHost || !host?.hasAttribute("data-glass-blur-host")) return;
+    host.setAttribute("data-glass-blur-active", "");
+    blurHost = { element: host, style: retainFilter(host, "blur") };
   };
   const restoreForeground = (element: HTMLElement) => {
     const original = foregroundStyles.get(element);
@@ -310,7 +331,6 @@ export function createGlassScene(
     )));
     return Math.max(0, Math.min(8, inset * 0.6));
   };
-  const parentsOf = (l: Lens) => [...lenses].filter((parent) => parent !== l && parent.element.contains(l.element));
   const blurOf = (l: Lens, soften: number) => {
     const regular = l.options.material === "regular";
     return regular ? Math.max(materials.regular.blur, (l.options.appearance === "dark" ? materials.regular.dark : materials.regular.light).fillSigma) * soften : 0;
@@ -334,27 +354,11 @@ export function createGlassScene(
     }
     return foregroundOrder;
   };
-  /** Rebuild the filters for the measured content size. The filter's
-   * bounding box is the content layer, which can be taller than the scene
-   * when it uses flow layout inside a scroller. */
-  function compose(width: number, height: number) {
-    if (!content) return;
-    if (!width || !height) {
-      if (contentStyle) applyFilter(content, contentStyle, "");
-      return;
-    }
-    // Resizing the host svg invalidates every filter it defines.
-    if (svg.getAttribute("width") !== String(width) || svg.getAttribute("height") !== String(height)) {
-      svg.setAttribute("width", String(width));
-      svg.setAttribute("height", String(height));
-      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    }
-    // Stable per-surface ids keep the content layer's filter reference
-    // unchanged while surfaces animate; only attributes are patched.
-    const id = `lg-${owner}`;
-    const filters: string[] = [],
-      applied: string[] = [];
-    const ordered = order();
+  /** The scene's glass over a filtered box of `width` × `height`, for these
+   * surfaces in paint order and in that box's coordinates. `outer` counts the
+   * outsets of filters chained after it, and `regions` the progressive blur. */
+  function sceneGraph(ordered: Lens[], width: number, height: number, outer: number, regions: ReturnType<typeof progressive.regions>, onLayer = false) {
+    const parentsOf = (l: Lens) => ordered.filter((parent) => parent !== l && parent.element.contains(l.element));
     // One filter draws every surface of the scene. The source is extended
     // once; each surface works only inside its own crop and contributes its
     // masked material, rim, and light to a single final merge. A surface's
@@ -369,14 +373,13 @@ export function createGlassScene(
     const pairedSources = new Set(paired.values());
     const compoundOf = (unit: readonly Lens[]) => unit.length === 2 && paired.get(unit[1]!) === unit[0]
       ? { source: unit[0]!, popup: unit[1]! } : undefined;
-    const drawn = ordered.filter((l) => l.maps && (l.opacity >= 0.001 || pairedSources.has(l)));
+    const drawn = ordered.filter((l) => l.maps && (l.opacity >= 0.001 || pairedSources.has(l) || webkit && Boolean(l.outline?.arriving())));
     const parents = new Map(drawn.map((l) => [l, parentsOf(l)] as const));
     const wanted = new Map(drawn.map((l) => [l, refractionOf(l, parents.get(l)!)] as const));
     // Glass shows other glass when it overlaps it or bends it in from its
     // rim; a frosted blur reaching further adds only a faint tint, not worth
     // a shared full-size pass on every frame.
     const reach = (l: Lens) => wanted.get(l)! + 4;
-    const touches = (a: Lens, b: Lens) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
     const near = (a: Lens, b: Lens) => {
       const r = Math.max(reach(a), reach(b));
       return a.x < b.x + b.w + r && b.x - r < a.x + a.w && a.y < b.y + b.h + r && b.y - r < a.y + a.h;
@@ -389,10 +392,18 @@ export function createGlassScene(
     // images, which a single material pass refracts. Elsewhere a shared
     // branch only spreads its passes over the empty space between surfaces.
     const branchKey = (l: Lens) => `${l.options.material ?? "clear"},${l.options.appearance ?? "light"},${l.options.tint ?? ""},${wanted.get(l)}`;
-    const independent = (l: Lens) => webkit && l.opacity >= 0.999 && !parents.get(l)!.length;
+    // Submenus fade in and out beside their parent. On WebKit they keep one
+    // graph shape at every opacity, since any change of shape redraws it all.
+    const fades = (l: Lens) => webkit && l.element.hasAttribute("data-glass-submenu");
+    const independent = (l: Lens) => webkit && l.opacity >= 0.999 && !parents.get(l)!.length && !fades(l);
     // Neighbors drawn in the same pass need no finished glass of each other.
+    // A shared branch sees no glass beneath it, so only earlier surfaces can
+    // keep a surface out; glass above reads its overlay either way, and the
+    // shared branch is drawn where its first member is.
+    const drawnIndex = new Map(drawn.map((l, index) => [l, index] as const));
     const shareable = (l: Lens) => independent(l) && !drawn.some((other) =>
-      other !== l && near(l, other) && (!independent(other) || branchKey(other) !== branchKey(l) || mapBoxesOverlap(l, other)));
+      other !== l && near(l, other) && (drawnIndex.get(other)! < drawnIndex.get(l)! ? !independent(other) || branchKey(other) !== branchKey(l) : false)
+        || other !== l && near(l, other) && mapBoxesOverlap(l, other));
     let units: Lens[][] = [];
     const sharedUnits = new Map<string, Lens[]>();
     for (const l of drawn) {
@@ -415,7 +426,7 @@ export function createGlassScene(
     // A branch samples the finished layers of the glass it touches, which
     // adds their outsets to its own.
     const outsetsFor = (groups: readonly Lens[][]) => groups.reduce((sum, unit) => sum + Math.max(...unit.map((l) => outsetsOf.get(l)!))
-      + (unit.length === 1 || compoundOf(unit) ? drawn.filter((other) => !unit.includes(other) && unit.some((member) => touches(other, member))).reduce((most, other) => Math.max(most, outsetsOf.get(other)!), 0) : 0), 0);
+      + (unit.length === 1 || compoundOf(unit) ? drawn.filter((other) => !unit.includes(other) && unit.some((member) => overlaps(other, member))).reduce((most, other) => Math.max(most, outsetsOf.get(other)!), 0) : 0), 0);
     const soften = filterBudgetFactor(width * scale, height * scale, outsetsFor(units));
     const amounts = new Map(drawn.map((l) => [l, wanted.get(l)! * soften] as const));
     const sampling = new Map(drawn.map((l) => {
@@ -434,19 +445,28 @@ export function createGlassScene(
       const padding = Math.ceil(3 * blurOf(l, soften) + amounts.get(l)! + 8);
       return { x: l.x - 2 - padding, y: l.y - 2 - padding, width: l.w + 4 + 2 * padding, height: l.h + 4 + 2 * padding };
     };
-    const clustered = units.flatMap((unit) => {
+    const cluster = (extra: number) => units.flatMap((unit) => {
       if (unit.length < 2 || compoundOf(unit)) return [unit];
       const regular = unit[0]!.options.material === "regular";
       const tinted = /^#[\da-f]{6}$/i.test(unit[0]!.options.tint ?? "");
-      return clusterFilterBranches(unit, (l) => {
+      const split = clusterFilterBranches(unit, (l) => {
         const output = { x: l.x - 2, y: l.y - 2, width: l.w + 4, height: l.h + 4 };
         const reach = amounts.get(l)! + 3;
         return { output, crop: cropOf(l), sampled: { x: output.x - reach, y: output.y - reach, width: output.width + 2 * reach, height: output.height + 2 * reach } };
-      }, { output: (regular ? 4 : 3) + (tinted ? 3 : 0), sampled: regular ? 4 : 0 });
+      }, { output: (regular ? 4 : 3) + (tinted ? 3 : 0), sampled: regular ? 4 : 0 }, 1 + extra);
+      extra -= split.length - 1;
+      return split;
     });
-    // Splitting sparse groups must not soften the glass to fit more outsets.
-    // Keep the original grouping when WebKit's buffer budget needs it.
-    if (!gecko && filterBudgetFactor(width * scale, height * scale, outsetsFor(clustered)) >= soften) units = clustered;
+    // Splitting sparse groups must not soften the glass to fit more outsets,
+    // or push a whole layer past WebKit's tiling size. Every branch adds its
+    // outsets to the layer, and a tiled layer runs the whole filter per tile,
+    // so take the most branches that still fit.
+    const untiled = untiledOutsets(width, height) * scale;
+    const fits = (groups: Lens[][]) => !gecko && filterBudgetFactor(width * scale, height * scale, outsetsFor(groups)) >= soften;
+    let clustered = cluster(Infinity);
+    if (fits(clustered) && outsetsFor(units) > untiled) units = clustered;
+    else for (let extra = clustered.length - units.length; extra > 0; clustered = cluster(--extra))
+      if (fits(clustered) && outsetsFor(clustered) <= untiled) { units = clustered; break; }
     const unitName = (unit: readonly Lens[]) => unit.length > 1 ? `g${unit.map((member) => member.serial).sort((a, b) => a - b).join("-")}` : `s${unit[0]!.serial}`;
     const crops = drawn.map(cropOf);
     const unionOf = (boxes: readonly FilterBounds[]): FilterBounds => {
@@ -463,7 +483,8 @@ export function createGlassScene(
     const buildStage = (stageUnits: readonly Lens[][]) => {
       const unitOf = new Map(stageUnits.flatMap((unit) => unit.map((l) => [l, unit] as const)));
       const reads = stageUnits.flat().map((l) => webkit ? sampling.get(l)! : cropOf(l));
-      const tiles = stageUnits.length ? edgeTiles(width, height, webkit ? unionSamplingBounds(reads) : bounds, "scene", crossedSides(width, height, reads)) : { markup: "", names: {} };
+      // A layer's own glass sees nothing past its pixels; transparency there is exact.
+      const tiles = stageUnits.length && !onLayer ? edgeTiles(width, height, webkit ? unionSamplingBounds(reads) : bounds, "scene", crossedSides(width, height, reads)) : { markup: "", names: {} };
       const parts: string[] = [tiles.markup];
       const source = "SourceGraphic";
       const beneathOf = new Map(stageUnits.map((unit, index) => {
@@ -483,6 +504,36 @@ export function createGlassScene(
       // finished layer read by a second consumer with different bounds is
       // evaluated again from its blurs up, so glass merely near another
       // surface takes only that surface's rim and light images instead.
+      // Neighbors past the same edges, with no glass beneath, read the same
+      // backdrop: the source and its edge tiles. One cropped merge over their
+      // overlapping crops serves all of them, rather than one buffer each.
+      // A surface never reads past an edge its own crop does not cross, so
+      // tiles another member needs never reach it.
+      const sharedCrops = new Map<Lens[], { name: string; markup: string; emitted: boolean }>();
+      if (webkit) {
+        const eligible = stageUnits.filter((unit) => !beneathOf.get(unit)!.length
+          && tilesFor(width, height, unionOf(unit.map(cropOf))).some((key) => tiles.names[key]));
+        const groups: { units: Lens[][]; box: FilterBounds }[] = [];
+        for (const unit of eligible) {
+          let group = { units: [unit], box: unionOf(unit.map(cropOf)) };
+          for (let index = 0; index < groups.length;) {
+            if (!boundsMeet(group.box, groups[index]!.box)) { index++; continue; }
+            const joined = groups.splice(index, 1)[0]!;
+            group = { units: [...joined.units, ...group.units], box: unionOf([joined.box, group.box]) };
+            index = 0;
+          }
+          groups.push(group);
+        }
+        for (const group of groups) {
+          if (group.units.length < 2) continue;
+          const keys = new Set(group.units.flatMap((unit) => tilesFor(width, height, unionOf(unit.map(cropOf)))));
+          const edges = [...keys].map((key) => tiles.names[key]).filter((name): name is string => Boolean(name));
+          const name = `crop${group.units.map(unitName).sort().join("")}`;
+          const markup = `<feMerge result="${name}" ${region(group.box)}>${edges.map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/></feMerge>`;
+          const entry = { name, markup, emitted: false };
+          for (const unit of group.units) sharedCrops.set(unit, entry);
+        }
+      }
       const layersOf = new Map<Lens[], string[]>();
       const maskOf = new Map<Lens[], string>();
       stageUnits
@@ -521,7 +572,7 @@ export function createGlassScene(
             return unit.map((member) => memberImage(member, surfaceMapResult(member.serial, plane))).join("")
               + `<feMerge result="${result}" ${region(box)}>${unit.map((member) => `<feMergeNode in="${surfaceMapResult(member.serial, plane)}"/>`).join("")}</feMerge>`;
           };
-          const opaque = unit.length > 1 || l.opacity >= 0.999;
+          const opaque = unit.length > 1 || l.opacity >= 0.999 && !fades(l);
           const first = parts.length;
           // The field displaces with its red and green channels and covers
           // the shape with its alpha, which a fading surface scales.
@@ -550,9 +601,13 @@ export function createGlassScene(
           // Glass well inside its content reads the source directly. Only a
           // surface past the content's edge or above other glass gathers its
           // backdrop into a cropped merge, which software filters pay for.
-          if (edges.length || inputs.length)
+          const gathered = edges.length || inputs.length;
+          const sharedCrop = sharedCrops.get(unit);
+          if (sharedCrop) {
+            if (!sharedCrop.emitted) { parts.push(sharedCrop.markup); sharedCrop.emitted = true; }
+          } else if (gathered)
             parts.push(`<feMerge result="${p}crop" ${region(crop)}>${edges.map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/>${inputs.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`);
-          const cropped = edges.length || inputs.length ? `${p}crop` : source;
+          const cropped = sharedCrop?.name ?? (gathered ? `${p}crop` : source);
           let base = cropped;
           if (o.material === "regular") {
             const backdrop = shared?.get(unit);
@@ -588,6 +643,15 @@ export function createGlassScene(
             // Fully opaque glass needs no opacity pass over its rim and light.
             ...(opaque ? [] : [`<feComponentTransfer in="${overlay}" result="${p}fadedOverlay"><feFuncA type="linear" slope="${l.opacity}"/></feComponentTransfer>`]),
           );
+          // Over a layer composited apart from the content, the content's own
+          // glass lies beneath. Refraction only moves pixels, so the glass
+          // of both together is this layer's glass over the content's,
+          // weighted by how much of the layer the refraction carried here.
+          if (onLayer) parts.push(
+            `<feColorMatrix in="${p}refracted" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="${p}cover"/>`,
+            `<feComposite in="${p}inside" in2="${p}cover" operator="in" result="${p}ownInside"/>`,
+            `<feComposite in="${opaque ? overlay : `${p}fadedOverlay`}" in2="${p}cover" operator="in" result="${p}ownOverlay"/>`,
+          );
           // Without a subregion every primitive covers the whole filter region,
           // the scene plus padding. Only the surface's box matters, plus the
           // reach of its displacement for the material it samples.
@@ -603,7 +667,7 @@ export function createGlassScene(
                 const region = sampledStages.has(/result="([^"]+)"/.exec(attributes)?.[1] ?? "") ? reachBox : { x, y, width: w, height: h };
                 return `<${name}${attributes} x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}"${close}>`;
               });
-          const layer = [`${p}inside`, opaque ? overlay : `${p}fadedOverlay`];
+          const layer = onLayer ? [`${p}ownInside`, `${p}ownOverlay`] : [`${p}inside`, opaque ? overlay : `${p}fadedOverlay`];
           layersOf.set(unit, layer);
           maskOf.set(unit, mask);
         });
@@ -612,13 +676,59 @@ export function createGlassScene(
       // DOM backdrop is transparent. Sparse contributions preserve alpha and
       // paint order with one full-scene pass, however many surfaces there are.
       if (stageUnits.length) {
-        parts.push(composeSparseLayers(stageUnits.map((unit) => ({
-          id: unitName(unit), mask: maskOf.get(unit)!, layers: layersOf.get(unit)!,
-          bounds: unionSamplingBounds(unit.map((l) => ({ x: l.x - 2, y: l.y - 2, width: l.w + 4, height: l.h + 4 }))),
-        }))));
+        parts.push(composeSparseLayers(stageUnits.map((unit) => {
+          const boxes = unit.map((l) => ({ x: l.x - 2, y: l.y - 2, width: l.w + 4, height: l.h + 4 }));
+          return { id: unitName(unit), mask: maskOf.get(unit)!, layers: layersOf.get(unit)!, bounds: unionSamplingBounds(boxes), ...(boxes.length > 1 ? { parts: boxes } : {}) };
+        })));
       }
       return parts.join("");
     };
+    const primitives = () => {
+      let primitives = buildStage(units);
+      if (webkit) {
+        const own = filterGraphOutsets(primitives);
+        const total = own + outer;
+        const budget = filterBudgetFactor(width * scale, height * scale, total * scale);
+        const factor = own ? Math.max(0, Math.min(1, (total * budget - outer) / own)) : 1;
+        if (factor < 1) primitives = primitives.replace(/(<fe(?:GaussianBlur|DisplacementMap)\b[^>]*?\s(?:stdDeviation|scale)=")([^"]+)(")/g,
+          (_, before: string, value: string, after: string) => before + value.split(" ").map((part) => Number(part) * factor).join(" ") + after);
+        // Chained filters add their outsets, so the progressive blur's count
+        // toward the reach a repaint needs.
+        const needed = repaintReach(primitives, width, height, regions);
+        // Padding must not split a layer that would otherwise stay whole; one
+        // that is split anyway needs the full reach in every tile.
+        // Leave room for rounding and for layer bounds wider than the content.
+        const tiled = own * factor + outer > untiledOutsets(width, height);
+        const pad = Math.min(tiled ? tiledReach * needed : needed, outsetBudget(width * scale, height * scale) / scale, tiled ? Infinity : untiledOutsets(width, height, 0.85)) - outer;
+        if (pad > own * factor) primitives = padRepaintReach(primitives, Math.floor(pad), width, height);
+      }
+      return primitives;
+    };
+    return { drawn, parents, wanted, reach, bounds, primitives };
+  }
+  /** Rebuild the filters for the measured content size. The filter's
+   * bounding box is the content layer, which can be taller than the scene
+   * when it uses flow layout inside a scroller. */
+  function compose(width: number, height: number) {
+    if (!content || gecko && !layers) return;
+    if (!width || !height) {
+      if (contentStyle) applyFilter(content, contentStyle, "");
+      return;
+    }
+    // Resizing the host svg invalidates every filter it defines.
+    if (svg.getAttribute("width") !== String(width) || svg.getAttribute("height") !== String(height)) {
+      svg.setAttribute("width", String(width));
+      svg.setAttribute("height", String(height));
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    }
+    // Stable per-surface ids keep the content layer's filter reference
+    // unchanged while surfaces animate; only attributes are patched.
+    const id = `lg-${owner}`;
+    const filters: string[] = [],
+      applied: string[] = [];
+    const ordered = order();
+    const graph = sceneGraph(ordered, width, height, progressiveOutsets, progressive.regions());
+    const { drawn, parents, wanted, reach, bounds } = graph;
     filterError = undefined;
     if (layers) {
       // Every surface draws its own glass; the content keeps only passes
@@ -638,27 +748,28 @@ export function createGlassScene(
       }
       layers.update([...layered.values()], content, contentRect, blurHost?.matches ? { left: 0, top: 0, regions: progressive.regions() } : undefined);
     } else if (drawn.length) {
-      let primitives = buildStage(units);
-      if (webkit) {
-        const own = filterGraphOutsets(primitives);
-        const total = own + progressiveOutsets;
-        const budget = filterBudgetFactor(width * scale, height * scale, total * scale);
-        const factor = own ? Math.max(0, Math.min(1, (total * budget - progressiveOutsets) / own)) : 1;
-        if (factor < 1) primitives = primitives.replace(/(<fe(?:GaussianBlur|DisplacementMap)\b[^>]*?\s(?:stdDeviation|scale)=")([^"]+)(")/g,
-          (_, before: string, value: string, after: string) => before + value.split(" ").map((part) => Number(part) * factor).join(" ") + after);
-        // Chained filters add their outsets, so the progressive blur's count
-        // toward the reach a repaint needs.
-        const needed = repaintReach(primitives, width, height, progressive.regions());
-        // Padding must not split a layer that would otherwise stay whole; one
-        // that is split anyway needs the full reach in every tile.
-        // Leave room for rounding and for layer bounds wider than the content.
-        const tiled = own * factor + progressiveOutsets > untiledOutsets(width, height);
-        const pad = Math.min(tiled ? tiledReach * needed : needed, outsetBudget(width * scale, height * scale) / scale, tiled ? Infinity : untiledOutsets(width, height, 0.85)) - progressiveOutsets;
-        if (pad > own * factor) primitives = padRepaintReach(primitives, Math.floor(pad), width, height, tiled);
-      }
+      const primitives = graph.primitives();
       const filterId = `${id}-scene`;
       filters.push(`<filter id="${filterId}" x="${bounds.x / width}" y="${bounds.y / height}" width="${bounds.width / width}" height="${bounds.height / height}" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${primitives}</filter>`);
       applied.push(filterId);
+    }
+    // A layer WebKit composites apart from the content draws the glass over
+    // it from its own pixels, in its own coordinates, and only where it paints.
+    const layerTargets = new Map<HTMLElement, string>();
+    if (!layers) for (const layer of layerGlass) {
+      const over = ordered.filter((l) => !layer.element.contains(l.element) && !l.element.contains(layer.element) &&
+        // WebKit fails a filter whose primitives lie wholly outside the layer.
+        intersects(layer, l, 2));
+      if (!over.length) continue;
+      const shift = (p: Placed): Placed => ({ ...p, x: p.x - layer.x, y: p.y - layer.y });
+      const local = over.map((l): Lens => ({ ...l, x: l.x - layer.x, y: l.y - layer.y, place: l.place && { ...l.place, a: shift(l.place.a), b: shift(l.place.b) } }));
+      const glass = sceneGraph(local, layer.w, layer.h, 0, [], true);
+      if (!glass.drawn.length) continue;
+      const markup = zoomFilterMarkup(glass.primitives(), 1 / layer.scale);
+      const filterId = `${id}-k${layerIdOf(layer.element)}`;
+      const b = glass.bounds;
+      filters.push(`<filter id="${filterId}" x="${b.x / layer.w}" y="${b.y / layer.h}" width="${b.width / layer.w}" height="${b.height / layer.h}" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${markup}</filter>`);
+      layerTargets.set(layer.element, filterId);
     }
     const foregroundTargets = new Map<HTMLElement, string>();
     const filteredAncestors = new Map<ForegroundLens, Lens[]>();
@@ -683,8 +794,14 @@ export function createGlassScene(
     });
     for (const element of foregroundStyles.keys()) if (!foregroundTargets.has(element)) restoreForeground(element);
     const liveId = patchFilters(defs, filters, mapUrl);
+    for (const [element, style] of layerStyles) if (!layerTargets.has(element)) { releaseFilter(element, style); layerStyles.delete(element); }
+    for (const [element, filterId] of layerTargets) {
+      let style = layerStyles.get(element);
+      if (!style) { style = retainFilter(element, `layer${layerIdOf(element)}`); layerStyles.set(element, style); }
+      applyFilter(element, style, `url("#${liveId(filterId)}")`);
+    }
     for (const [element, filterId] of foregroundTargets) {
-      if (!foregroundStyles.has(element)) foregroundStyles.set(element, retainFilter(element));
+      if (!foregroundStyles.has(element)) foregroundStyles.set(element, retainFilter(element, "foreground"));
       applyFilter(element, foregroundStyles.get(element)!, `url("#${liveId(filterId)}")`);
     }
     // A chain keeps every pass in the same CSS reference box. Nested filtered
@@ -712,7 +829,9 @@ export function createGlassScene(
     getSurfaceMaterialMaps(g, persist)
       .then((maps) => {
         l.preparing.delete(key);
-        if (!disposed && lenses.has(l) && l.path?.some((w) => mapKey({ ...w, dpr: g.dpr, appearance: g.appearance }) === key)) {
+        // A path planned while its surface is still being placed has no
+        // scene path yet; keep its maps for when it starts.
+        if (!disposed && lenses.has(l) && (!l.path || l.path.some((w) => mapKey({ ...w, dpr: g.dpr, appearance: g.appearance }) === key))) {
           const warm = warmer.has(maps);
           warmer.warm(maps);
           l.prepared.set(key, { geometry: g, maps, ready: warm ? 0 : performance.now() + warmup });
@@ -774,6 +893,13 @@ export function createGlassScene(
       })
       .finally(() => { pending--; ticker.wake(); });
   }
+  const intersects = (a: LayerBox, b: LayerBox, margin = 0) =>
+    a.x - margin < b.x + b.w && b.x - margin < a.x + a.w && a.y - margin < b.y + b.h && b.y - margin < a.y + a.h;
+  const layerIdOf = (element: HTMLElement) => {
+    let id = layerIds.get(element);
+    if (id === undefined) { id = ++lensSerial; layerIds.set(element, id); }
+    return id;
+  };
   /** One frame of the scene: advance animations, sample geometry, and plan
    * the writes that follow. Reads happen here; every style write and the
    * filter rebuild run in the shared write phase, after all tickers measured. */
@@ -989,6 +1115,14 @@ export function createGlassScene(
         dirty = true;
       }
     });
+    if (escapes) {
+      const drawn = content ? [...lenses].filter((l) => l.maps && l.opacity > 0.001 && l.w > 0 && l.h > 0) : [];
+      const plan = escapes.plan(content, r, drawn, [...lenses].map((l) => l.element), now, structure, (l) => blurOf(l as Lens, 1));
+      const key = plan.layers.map((layer) => `${layerIdOf(layer.element)}:${[layer.x, layer.y, layer.w, layer.h, layer.scale].map((n) => n.toFixed(2)).join(",")}`).join(";");
+      if (key !== layerKey) { layerKey = key; layerGlass = plan.layers; dirty = true; }
+      if (plan.busy) busy = true;
+      writes.push(plan.write);
+    }
     // CSS stacking can change without geometry changing, but only with the DOM.
     const paintOrder = orderForeground().map((target) => target.serial).join(",");
     if (paintOrder !== lastPaintOrder) { dirty = true; lastPaintOrder = paintOrder; }
@@ -1031,7 +1165,8 @@ export function createGlassScene(
   const ticker = createTicker(tick, {
     root,
     // The filters and the warmer are this scene's own output.
-    ignore: (target) => svg.contains(target) || warmer.owns(target) || Boolean(layers?.owns(target)),
+    ignore: (target, record) => svg.contains(target) || warmer.owns(target) || Boolean(layers?.owns(target)) || Boolean(escapes?.owns(target, record)) ||
+      (record.type === "attributes" && record.attributeName === "style" && layerStyles.has(target as HTMLElement)),
     onMutation: () => { structure++; },
   });
   return {
@@ -1043,11 +1178,7 @@ export function createGlassScene(
       // which a popup, caret or highlight above it causes. A layer of its own
       // keeps the filtered result until the filter or the content changes.
       if (element) contentStyle = retainFilter(element);
-      const host = element?.parentElement;
-      if (layers && host?.hasAttribute("data-glass-blur-host")) {
-        host.setAttribute("data-glass-blur-active", "");
-        blurHost = { element: host, style: retainFilter(host) };
-      }
+      adoptBlurHost();
       if (element) ticker.observe(element);
       dirty = true;
       ticker.wake();
@@ -1070,7 +1201,14 @@ export function createGlassScene(
         lens.animators.push(lens.outline = attachGeometryMotion(element, {
           from: options.morphFrom, morph: options.morph, layout: options.fluid, radius: options.radius ?? 8, motion, neck: options.neck, enter: options.morphEnter,
           submenu: element.hasAttribute("data-glass-submenu"),
-          prepared: (shape) => { const entry = lens.prepared.get(mapKey({ width: shape.width, height: shape.height, radius: shape.radius, outline: shape.outline, dpr: shape.dpr ?? motionDpr, appearance: options.appearance })); return Boolean(entry) && entry!.ready <= performance.now(); },
+          prepared: (shape) => {
+            const geometry = { width: shape.width, height: shape.height, radius: shape.radius, outline: shape.outline, dpr: shape.dpr ?? motionDpr, appearance: options.appearance };
+            // The outline asks as soon as it plans, before this frame's scene
+            // pass prepares its path; decoded maps apply now, not a frame later.
+            if (!lens.prepared.has(mapKey(geometry))) prepare(lens, geometry, Boolean(shape.resting));
+            const entry = lens.prepared.get(mapKey(geometry));
+            return Boolean(entry) && entry!.ready <= performance.now();
+          },
         }));
       if (options.interactive) {
         lens.animators.push(attachInteraction(element, motion));
@@ -1132,8 +1270,12 @@ export function createGlassScene(
     addScrollEdges: (options) => { const remove = progressive.addScroll(options); ticker.wake(); return () => { remove(); ticker.wake(); }; },
     dispose() {
       clearTimeout(warmRenderer);
+      clearTimeout(warmStyle);
       progressive.dispose();
       layers?.dispose();
+      escapes?.dispose();
+      for (const [element, style] of layerStyles) releaseFilter(element, style);
+      layerStyles.clear();
       warmer.dispose();
       animators.forEach((animator) => animator.dispose());
       animators.clear();
@@ -1143,6 +1285,7 @@ export function createGlassScene(
       for (const element of foregroundStyles.keys()) restoreForeground(element);
       svg.remove();
       releaseSceneLayer?.();
+      unregisterRoot();
       lenses.forEach((lens) => { lens.animators.forEach((animator) => animator.dispose()); setResolvedShape(lens.element); lens.releaseShape(); lens.element.style.clipPath = lens.clip; lens.element.style.borderRadius = lens.borderRadius; lens.element.style.removeProperty("--lg-radius"); demote(lens); });
       lenses.clear();
       foregrounds.clear();

@@ -1,23 +1,21 @@
 {
-  "note": "Gzip budgets in bytes for what an app ships per import, measured by scripts/check-size.mjs. Regenerate with --update only when growth is intended.",
+  "note": "Gzip budgets in bytes, measured by scripts/check-size.mjs: initialGzip per typical import, lazyGzip per module loaded on demand. Regenerate with --update only when growth is intended.",
   "initialGzip": {
-    "Surface": 47104,
+    "Surface": 47616,
     "Button": 48640,
-    "Toolbar": 61440,
-    "Tabs": 67584,
-    "Menu": 105472,
-    "Slider and switch": 71680,
+    "Toolbar": 55808,
+    "Tabs": 62464,
+    "Menu": 100352,
+    "Slider and switch": 66048,
     "Progressive blur": 47104,
-    "Everything": 127488
+    "Everything": 121856
   },
   "lazyGzip": {
-    "Surface": 52736,
-    "Button": 52736,
-    "Toolbar": 52736,
-    "Tabs": 52736,
-    "Menu": 52736,
-    "Slider and switch": 52736,
-    "Progressive blur": 52736,
-    "Everything": 52736
+    "dom/shape-effects": 10752,
+    "gpu": 51200,
+    "dom/map-encoder.worker": 2048,
+    "dom/lens-layers": 2560,
+    "dom/media-mirror": 3584,
+    "dom/escaped-layers": 3584
   }
 }

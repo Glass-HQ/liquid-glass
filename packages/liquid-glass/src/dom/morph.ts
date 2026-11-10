@@ -1,5 +1,5 @@
 import { Spring, settleTime, springs } from "../core/spring.js";
-import { getLayoutSize } from "@lisse/core";
+import { getLayoutSize } from "./layout-size.js";
 import type { SpringOptions } from "../core/spring.js";
 import type { GlassRadius } from "../core/shape.js";
 import { contentReveal, morphDraw, morphShape, openingAxis, planMorph, radiusPixels, sourceConceal } from "../core/morph-path.js";
@@ -36,6 +36,9 @@ export interface GeometryAnimator extends SurfaceAnimator {
   waypoints(): readonly LensWaypoint[];
   /** Material opacity while materializing or leaving a non-glass source. */
   opacity(): number;
+  /** Fading in from nothing, still invisible: glass the scene should add to
+   * its filter now, so the new structure is not built on a visible frame. */
+  arriving(): boolean;
   /** Waiting for the maps of its path before moving. */
   pending(): boolean;
   /** Initial popup placement has not settled enough to request its maps. */
@@ -137,10 +140,16 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
   // A slight bounce keeps the return from trailing off; the last percent is never shown.
   const settle: SpringOptions = { duration: 0.32, bounce: 0.1 };
   const entrance = options.submenu ? { duration: 0.22, bounce: 0 } : springs.morph;
-  const fadeSpring = options.submenu ? { duration: 0.14, bounce: 0 } : springs.glow;
+  const fadeSpring = options.submenu ? { duration: 0.16, bounce: 0 } : springs.glow;
+  /** A submenu leaves faster than it arrives: the pointer has moved on. */
+  const leaveSpring = options.submenu ? { duration: 0.1, bounce: 0 } : springs.glow;
   const progress = new Spring(0, springs.morph);
   // Reduced motion materializes in place: only the content fades.
   const fade = new Spring(1, fadeSpring);
+  const fadeEnd = 0.03;
+  /** Frames an arriving glass stays invisible: WebKit adds it to the
+   * filter, rebuilds the graph and renders that, each frame late. */
+  let arrival = 0;
   let source: Element | null = null, glass: Element | null = null, morph: GlassMorph = "become";
   let sourceRect: Box = { left: 0, top: 0, width: 0, height: 0 };
   let release: (() => void) | undefined;
@@ -265,9 +274,9 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
     closed = false;
     const still = materialize || options.motion() === "reduced";
     progress.configure(entrance).jump(still ? 1 : 0);
-    if (still) { plan = undefined; waiting = 0; }
+    if (still) { plan = undefined; waiting = 0; arrival = webkit ? 3 : 0; }
     else { planEntry(); waiting = now || performance.now(); }
-    fade.jump(still ? 0 : 1).target = 1;
+    fade.configure(fadeSpring).jump(still ? 0 : 1).target = 1;
     element.dataset.glassMorph = "enter";
     element.style.setProperty("--lg-morph", "0");
   }
@@ -293,12 +302,14 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
     morphing = true;
     exiting = true;
     waiting = 0;
+    arrival = 0;
     const still = !plan || materialize || options.motion() === "reduced";
     progress.configure(settle).target = still ? 1 : 0;
     fade.target = still ? 0 : 1;
     element.dataset.glassMorph = "exit";
     // Base UI keeps the popup mounted until its animations finish.
-    const seconds = still ? settleTime(fadeSpring, fade.value, 0, fade.velocity)
+    fade.configure(still ? leaveSpring : fadeSpring);
+    const seconds = still ? settleTime(leaveSpring, fade.value, 0, fade.velocity, options.submenu ? fadeEnd : 0)
       : settleTime(settle, progress.value, 0, progress.velocity, 0.01);
     holding?.cancel();
     // Start the spring and unmount hold on the same clock. After idle, the
@@ -306,7 +317,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
     previous = performance.now();
     // Hover focus can arrive a frame after the outgoing item's close. Keep
     // the panel whole across that intent window, then fade an actual exit.
-    const intentDelay = options.submenu ? 60 : 0;
+    const intentDelay = options.submenu ? 24 : 0;
     exitStarts = previous + intentDelay;
     holding = element.animate([{}, {}], { duration: Math.max(16, seconds * 1000 + 40 + intentDelay) });
     if (retainers) holding.pause();
@@ -359,7 +370,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       exiting = false;
       morphing = true;
       progress.configure(entrance).target = 1;
-      fade.target = 1;
+      fade.configure(fadeSpring).target = 1;
       // Closing may interrupt the original map preparation. Reopening keeps
       // this outline in place until that path is ready, with a fresh bounded
       // wait rather than spending its entrance while the maps still arrive.
@@ -405,6 +416,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       // Spring.step is analytic: a dropped paint must not slow the animation
       // clock or let Base UI's exit hold finish before the outline returns.
       let dt = previous ? Math.max(0, (at - previous) / 1000) : frame;
+      const step = dt;
       previous = at;
       now = at;
       if (retainers && exiting && !closed) return true;
@@ -418,9 +430,18 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
         const stable = placed && placement && Math.hypot(rect.left - placement.left, rect.top - placement.top) < 0.5
           && Math.abs(rect.width - placement.width) < 0.5 && Math.abs(rect.height - placement.height) < 0.5;
         placement = rect;
-        // Two settled frames: the first paint can land before placement.
+        // A settled frame: the first paint can land before placement.
         settledFrames = stable ? settledFrames + 1 : 0;
-        if (settledFrames >= 2 || ++waited > 8) {
+        // Start the path's maps while placement settles, so a first opening
+        // spends these frames rendering them instead of waiting afterwards.
+        // Only the maps start here: the plan itself is made again on entry.
+        if (placed && !options.submenu && options.motion() === "full") {
+          resolve();
+          planEntry();
+          if (plan) ready();
+          plan = undefined;
+        }
+        if (settledFrames >= 1 || ++waited > 8) {
           entering = false;
           dt = 0;
           if (!element.hasAttribute("data-ending-style")) enter();
@@ -446,11 +467,17 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
         if (next.width && next.height) box = next;
       }
       if (waiting && (ready() || at - waiting > maxWait)) {
+        // Preparing a path does not spend any of its animation time; a path
+        // ready in the frame it enters starts moving in that frame.
+        dt = waiting === at && !entering ? step : 0;
         waiting = 0; progress.target = 1;
-        // Preparing a path does not spend any of its animation time.
-        dt = 0;
+        // WebKit rebuilds the filter the first time the outline moves and
+        // renders that a frame later, both late. Step just off the start so
+        // that happens while the glass still sits on its item, then grow.
+        if (webkit && options.submenu && !exiting && progress.value === 0) { progress.value = 1e-3; arrival = 3; }
       }
       if (waiting) dt = 0;
+      if (arrival) { arrival--; dt = 0; }
       if (handoffPending && !waiting) {
         // The replacement owns the slot once its motion can start. A cold
         // path leaves the previous return visible while preparing its maps;
@@ -463,6 +490,9 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       }
       progress.step(dt);
       fade.step(dt);
+      // A submenu is gone once it is faint; its spring tail would leave a
+      // trace of glass for twice as long as the fade itself.
+      if (exiting && options.submenu && fade.target === 0 && fade.value < fadeEnd) fade.jump(0);
       const active = () => {
         const running = entering || morphing || waiting > 0 || !progress.settled || !fade.settled;
         if (!running) previous = 0;
@@ -527,6 +557,7 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
     detachedSource: () => !closed && morph === "detach" && glass?.isConnected && plan?.stops.some((stop) => stop.absorbs) ? glass : undefined,
     waypoints: () => plan?.shapes ?? [],
     pending: () => waiting > 0,
+    arriving: () => morphing && !exiting && !closed && !plan && fade.target === 1 && fade.value < 0.001,
     positioning: () => entering,
     opacity() {
       // Waiting for placement, or parked at the source after an exit.
@@ -534,7 +565,9 @@ export function attachGeometryMotion(element: HTMLElement, options: GeometryMoti
       if (!morphing) return 1;
       // Fading the glass itself redraws the scene every frame; on WebKit the
       // material arrives whole and leaves with the popup.
-      if (!plan) return webkit && !options.submenu ? 1 : fade.value;
+      // An exiting submenu's glass leads its content out: refraction stays
+      // visible at an alpha where blurred text has already gone.
+      if (!plan) return webkit && !options.submenu ? 1 : exiting && options.submenu ? fade.value * fade.value : fade.value;
       if (options.submenu) return 1;
       // A bubble from a plain element condenses over its first moments instead of popping in.
       return plan.glass ? 1 : Math.min(1, Math.max(0, progress.value / 0.2));

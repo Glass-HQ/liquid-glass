@@ -7,7 +7,22 @@ import { webkit } from "./engine.js";
  * screen's and `visualViewport.scale` only the pinch. */
 let measured = { ratio: 0, pinch: 0, zoom: 1 };
 
-const pinch = () => (webkit && typeof visualViewport === "object" && visualViewport && visualViewport.scale > 0 ? visualViewport.scale : 1);
+/** Reading `visualViewport.scale` costs a style and layout check in WebKit,
+ * and every scene asks several times a frame. It changes only with a resize
+ * of the visual viewport, which pinch magnification fires. */
+let pinchScale: number | undefined;
+let watching = false;
+const pinch = () => {
+  if (!webkit || typeof visualViewport !== "object" || !visualViewport) return 1;
+  if (pinchScale === undefined) {
+    pinchScale = visualViewport.scale > 0 ? visualViewport.scale : 1;
+    if (!watching && typeof visualViewport.addEventListener === "function") {
+      watching = true;
+      visualViewport.addEventListener("resize", () => { pinchScale = undefined; });
+    }
+  }
+  return pinchScale;
+};
 
 /** Whether pinch magnification is active. WebKit repaints a magnified page
  * whole, but fails tiles at a magnified element's edge whose filter region

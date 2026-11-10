@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { PNG } from "pngjs";
-import { maskUrl, progressiveGraph, rampTables } from "./progressive.js";
+import { coverTables, maskUrl, progressiveGraph, rampTables } from "./progressive.js";
 import type { ProgressiveRegion } from "./progressive.js";
 import { filterPrimitiveCount } from "./filter-stages.js";
 
@@ -10,29 +10,42 @@ const primitives = (markup: string) => new Set([...markup.matchAll(/<(fe\w+)/g)]
 const boxes = (markup: string, tag: string) => [...markup.matchAll(new RegExp(`<${tag}\\b[^>]*?\\sy="([-\\d.]+)"[^>]*?\\sheight="([-\\d.]+)"`, "g"))]
   .map((match) => ({ y: Number(match[1]), height: Number(match[2]) }));
 
+/** What each level contributes: its cover less the sharper level's. */
+const shares = (covers: number[]) => covers.map((cover, level) => cover * (1 - (level ? covers[level - 1]! : 0)));
+
 test("ramp weights split every depth between the blur levels", () => {
-  const tables = rampTables.map((table) => table.split(" ").map(Number));
-  for (let n = 0; n < tables[0]!.length; n++)
-    expect(tables.reduce((sum, table) => sum + table[n]!, 0)).toBeCloseTo(1, 3);
+  for (const tables of [rampTables, coverTables.map((table, level) => level === coverTables.length - 1 ? table.replace(/[\d.]+/g, "1") : table)]) {
+    const rows = tables.map((table) => table.split(" ").map(Number));
+    for (let n = 0; n < rows[0]!.length; n++) {
+      const split = tables === rampTables ? rows.map((row) => row[n]!) : shares(rows.map((row) => row[n]!));
+      expect(split.reduce((sum, share) => sum + share, 0)).toBeCloseTo(1, 3);
+    }
+  }
 });
 
 test("WebKit band masks split every depth between the blur levels", () => {
   // Each level's image spans only its band; together they cover the depth once.
   const samples = 400;
-  const sums = new Float64Array(samples);
   const markup = progressiveGraph("p", [bottom], 900, 400, "webkit");
-  for (const match of markup.matchAll(/<feImage data-map="(pg:bottom:\d)"[^>]*?\sy="([-\d.]+)"[^>]*?\sheight="([-\d.]+)"/g)) {
-    const png = PNG.sync.read(Buffer.from(maskUrl(match[1]!)!.split(",")[1]!, "base64"));
-    const y = Number(match[2]), height = Number(match[3]);
-    for (let i = 0; i < samples; i++) {
-      const depth = bottom.y + (i + 0.5) * bottom.height / samples;
+  // Where each level is drawn, and its cover image; outside an image the cover is transparent.
+  const images = [...markup.matchAll(/<feImage data-map="(pg:bottom:(\d))"[^>]*?\sy="([-\d.]+)"[^>]*?\sheight="([-\d.]+)"/g)].map((m) => ({ level: Number(m[2]), y: Number(m[3]), height: Number(m[4]), png: PNG.sync.read(Buffer.from(maskUrl(m[1]!)!.split(",")[1]!, "base64")) }));
+  const cover = (level: number, depth: number) => {
+    const image = images.find((i) => i.level === level);
+    if (!image || depth < image.y || depth >= image.y + image.height) return 0;
+    return image.png.data[Math.min(image.png.height - 1, Math.floor((depth - image.y) / image.height * image.png.height)) * 4 + 3]! / 255;
+  };
+  const parts = [...markup.matchAll(/<feComposite[^>]*?\sy="([-\d.]+)"[^>]*?\sheight="([-\d.]+)"[^>]*?result="e0part(\d)"/g)].map((m) => ({ level: Number(m[3]), y: Number(m[1]), height: Number(m[2]) }));
+  expect(parts.length).toBe(7);
+  for (let i = 0; i < samples; i++) {
+    const depth = bottom.y + (i + 0.5) * bottom.height / samples;
+    let sum = 0;
+    for (const { level, y, height } of parts) {
       if (depth < y || depth >= y + height) continue;
-      const row = Math.min(png.height - 1, Math.floor((depth - y) / height * png.height));
-      sums[i] += png.data[row * 4 + 3]! / 255;
+      sum += (level === 6 ? 1 : cover(level, depth)) * (1 - (level ? cover(level - 1, depth) : 0));
     }
+    // Bands are rounded out to whole pixels, so their ends may be cut a little.
+    expect(Math.abs(sum - 1)).toBeLessThan(0.12);
   }
-  // Bands are rounded out to whole pixels, so the boundaries may overlap a little.
-  for (let i = 0; i < samples; i++) expect(Math.abs(sums[i]! - 1)).toBeLessThan(0.12);
 });
 
 test("Gecko graphs stay on WebRender's native primitives and below its operation limit", () => {

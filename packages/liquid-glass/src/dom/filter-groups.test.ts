@@ -36,3 +36,12 @@ test("clusters retain member identity and stable order through repeated measurem
   expect(first[0]![0]).toBe(lenses[0]);
   expect(first[1]![0]).toBe(lenses[2]);
 });
+
+test("a branch limit rejoins the nearest branches and leaves the outlier apart", () => {
+  // A row of three distant buttons and one far corner, like a toolbar.
+  const row = [{ x: 0, y: 600 }, { x: 300, y: 600 }, { x: 600, y: 600 }], corner = { x: 1200, y: 0 };
+  const stages = { output: 3, sampled: 0 };
+  expect(clusterFilterBranches([...row, corner], regions, stages)).toHaveLength(4);
+  expect(clusterFilterBranches([...row, corner], regions, stages, 2)).toEqual([row, [corner]]);
+  expect(clusterFilterBranches([...row, corner], regions, stages, 1)).toEqual([[...row, corner]]);
+});

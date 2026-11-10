@@ -55,6 +55,7 @@ const voidElements = /^(area|base|br|col|embed|hr|img|input|link|meta|source|tra
  * (and of the glass under it) and refracts only that. The content layer
  * itself stays unfiltered on the GPU. An unchanged layer is never
  * rasterized again, and a moving one costs only its own area. */
+export type LensLayers = ReturnType<typeof createLensLayers>;
 export function createLensLayers(root: HTMLElement) {
   const owner = ++serial;
   const document = root.ownerDocument;

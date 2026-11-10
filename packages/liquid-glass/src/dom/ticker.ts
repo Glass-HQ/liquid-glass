@@ -21,7 +21,7 @@ export interface TickerOptions {
   /** Where mutations, input, and animation events are listened for. */
   root: Node;
   /** Mutations in these nodes are the ticker's own output and never wake it. */
-  ignore?: (target: Node) => boolean;
+  ignore?: (target: Node, record: MutationRecord) => boolean;
   /** Called for mutations that are not ignored, before the next frame. */
   onMutation?: () => void;
   /** Milliseconds between heartbeats while idle. */
@@ -73,7 +73,7 @@ export function createTicker(step: (now: number) => StepResult, options: TickerO
   const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(wake) : undefined;
   const mutations = typeof MutationObserver === "function"
     ? new MutationObserver((records) => {
-      if (ignore && !records.some((record) => !ignore(record.target))) return;
+      if (ignore && !records.some((record) => !ignore(record.target, record))) return;
       onMutation?.();
       wake();
     })

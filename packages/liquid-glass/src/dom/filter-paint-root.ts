@@ -23,6 +23,12 @@ export function acquireSceneCompositingLayer(element: HTMLElement): () => void {
   return acquirePaintHint(element, "opacity");
 }
 
+/** Give an element WebKit repaints on every frame a layer of its own, so its
+ * repaints never re-run the filter of the content it sits in. */
+export function acquireRepaintLayer(element: HTMLElement): () => void {
+  return acquirePaintHint(element, "transform");
+}
+
 function acquirePaintHint(element: HTMLElement, hint: string): () => void {
   let claim = claims.get(element);
   if (!claim) {

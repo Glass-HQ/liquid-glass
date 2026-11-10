@@ -140,3 +140,29 @@ test("a shared unit keeps distant member pixels", () => {
   const inputs = pixels([shared], .5, 2);
   close(evaluate(markup, inputs, 99), sequential([shared], inputs, 99));
 });
+
+test("a shared unit composes only its members' boxes with neighbors", () => {
+  const parts = [{ x: 0, y: 0, width: 20, height: 20 }, { x: 80, y: 0, width: 20, height: 20 }];
+  const shared: SparseCompositionUnit = { ...unit("shared", { x: 0, y: 0, width: 100, height: 20 }), parts };
+  // One neighbor lies inside the shared union box but touches no member,
+  // another overlaps the second member.
+  const between = unit("between", { x: 40, y: 0, width: 20, height: 20 });
+  const above = unit("above", { x: 90, y: 0, width: 20, height: 20 });
+  const units = [shared, between, above];
+  const markup = composeSparseLayers(units);
+  const inside = (current: SparseCompositionUnit, x: number) => (current.parts ?? [current.bounds]).some((box) => contains(box, x, 5));
+  for (const x of [-1, 0, 10, 19.99, 20, 30, 45, 59.99, 70, 80, 85, 90, 95, 99.99, 100, 105, 110]) {
+    for (let seed = 0; seed < 6; seed++) {
+      const inputs = pixels(units, [0, .45, 1][seed % 3]!, seed);
+      for (const current of units) if (!inside(current, x)) {
+        inputs[current.mask] = transparent;
+        current.layers.forEach((layer) => { inputs[layer] = transparent; });
+      }
+      close(evaluate(markup, inputs, x), sequential(units, inputs, x));
+    }
+  }
+  // Only the overlapping member and its neighbor share a rectangle.
+  expect(markup.match(/<feFlood/g)).toHaveLength(1);
+  expect(markup).toMatch(/<feFlood[^>]*x="78" y="-2" width="34" height="24"|<feFlood[^>]*x="80" y="0" width="30" height="20"/);
+  expect(markup).not.toContain("between-output");
+});

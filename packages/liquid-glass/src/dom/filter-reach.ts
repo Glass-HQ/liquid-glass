@@ -1,3 +1,4 @@
+import { filterGraphOutsets } from "./filter-budget.js";
 import type { FilterBounds } from "./filter-bounds.js";
 
 /** WebKit filters a partial repaint of an HTML element over the dirty rect
@@ -24,42 +25,57 @@ export function repaintReach(markup: string, width: number, height: number, extr
   return gap > 0 ? Math.ceil((gap / 2 + 2) / 16) * 16 : 0;
 }
 
-/** Add `outsets` to the filter's last merge with transparent images that
- * only move pixels. As siblings in that merge they raise its outsets to at
- * least `outsets` instead of adding to the branches beside them.
+/** Raise repaint reach with a transparent branch in the last merge.
  *
- * Offsets are cheap copies but stay within half the element, so their
- * shifted image always overlaps the region. A layer WebKit splits into tiles
- * filters each tile over the tile grown by its outsets once, which needs more
- * reach than that; `tiled` pads with blurs of a transparent flood instead,
- * whose outsets grow without moving anything. */
-export function padRepaintReach(markup: string, outsets: number, width: number, height: number, tiled = false): string {
+ * WebKit charges a displacement `scale / 2` of outsets wherever its region
+ * is, and an image whose region misses the repaint fails the whole filter.
+ * Every primitive region is in reach of any repaint, so a one-pixel seed
+ * inside one of them always yields an image, and displacing it by a map
+ * with no coverage keeps it transparent. Two one-pixel primitives reach as
+ * far as any full-size padding, which software filters fill on every render.
+ * Without such a region, a transparent flood covers the element instead. */
+export function padRepaintReach(markup: string, outsets: number, width: number, height: number, naturalOutsets?: number): string {
   const start = [...markup.matchAll(/<feMerge[\s>]/g)].at(-1)?.index ?? -1;
   if (start < 0 || outsets <= 0) return markup;
   const open = markup.indexOf(">", start) + 1;
-  const box = `x="0" y="0" width="${width}" height="${height}"`;
-  let pad = `<feFlood flood-opacity="0" ${box} result="reach"/>`, inputs: string[];
-  if (tiled) {
-    // WebKit caps a blur's kernel at 500 pixels, so chain blurs for more.
-    let input = "reach", left = outsets, step = 0;
-    while (left > 0) {
-      const amount = Math.min(left, 700);
-      pad += `<feGaussianBlur in="${input}" stdDeviation="${Math.ceil(amount / blurOutsetRatio)}" ${box} result="reach-${++step}"/>`;
-      input = `reach-${step}`;
-      left -= amount;
+  const natural = naturalOutsets ?? filterGraphOutsets(markup);
+  // A pixel of an existing region is in reach of any repaint; so is the
+  // element's center once the reach spans half of it from every side.
+  const seed = seedPoint(markup, width, height)
+    ?? (2 * outsets >= Math.max(width, height) / 2 + 1 ? { x: Math.floor(Math.max(0, width - 1) / 2), y: Math.floor(Math.max(0, height - 1) / 2) } : undefined);
+  const build = (reach: number) => {
+    const scale = 2 * Math.ceil(reach);
+    if (!seed) {
+      // Opposed offsets of a flood over the element, each within half of it,
+      // keep overlapping the repaint wherever it is.
+      const box = `x="0" y="0" width="${width}" height="${height}"`;
+      const dx = Math.min(reach, Math.floor(width / 2)), dy = Math.min(reach, Math.floor(height / 2));
+      return markup.slice(0, start) + `<feFlood flood-opacity="0" ${box} result="reach-seed"/>`
+        + `<feOffset in="reach-seed" dx="${dx}" dy="${dy}" ${box} result="reach-after"/><feOffset in="reach-seed" dx="${-dx}" dy="${-dy}" ${box} result="reach-before"/>`
+        + markup.slice(start, open) + `<feMergeNode in="reach-after"/><feMergeNode in="reach-before"/>` + markup.slice(open);
     }
-    inputs = [input];
-  } else {
-    const dx = Math.min(outsets, Math.floor(width / 2)), dy = Math.min(outsets, Math.floor(height / 2));
-    pad += `<feOffset in="reach" dx="${dx}" dy="${dy}" ${box} result="reach-after"/>`
-      + `<feOffset in="reach" dx="${-dx}" dy="${-dy}" ${box} result="reach-before"/>`;
-    inputs = ["reach-after", "reach-before"];
-  }
-  return markup.slice(0, start) + pad + markup.slice(start, open)
-    + inputs.map((input) => `<feMergeNode in="${input}"/>`).join("") + markup.slice(open);
+    const pad = `<feFlood flood-opacity="0" x="${seed.x}" y="${seed.y}" width="1" height="1" result="reach-seed"/>`
+      + `<feDisplacementMap in="reach-seed" in2="reach-seed" scale="${scale}" x="${seed.x}" y="${seed.y}" width="1" height="1" result="reach"/>`;
+    return markup.slice(0, start) + pad + markup.slice(start, open) + `<feMergeNode in="reach"/>` + markup.slice(open);
+  };
+  // WebKit's fold can add the reach to the graph's own outsets instead of
+  // taking the larger; ask only for the difference when that still suffices.
+  const smaller = natural > 0 && natural < outsets ? build(outsets - natural) : undefined;
+  return smaller && filterGraphOutsets(smaller) >= outsets ? smaller : build(outsets);
 }
+
+/** A pixel inside the first primitive region that lies within the element. */
+function seedPoint(markup: string, width: number, height: number): { x: number; y: number } | undefined {
+  for (const [tag] of markup.matchAll(/<fe\w+\b[^>]*>/g)) {
+    const value = (name: string) => Number(new RegExp(`\\s${name}="([-\\d.e]+)"`).exec(tag)?.[1] ?? NaN);
+    const x = value("x"), y = value("y"), w = value("width"), h = value("height");
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
+    if (x < 0 || y < 0 || x + w > width || y + h > height) continue;
+    return { x: Math.floor(x + Math.min(w, 1) / 2), y: Math.floor(y + Math.min(h, 1) / 2) };
+  }
+  return undefined;
+}
+
 /** A tile grows its own rectangle by the outsets once rather than twice,
  * so it needs about twice the outsets of a whole-layer repaint. */
 export const tiledReach = 2;
-/** WebKit's outsets per unit of blur deviation: 3/2 of a kernel of 1.88 deviations. */
-const blurOutsetRatio = 3 * 0.75 * Math.sqrt(2 * Math.PI) / 2;

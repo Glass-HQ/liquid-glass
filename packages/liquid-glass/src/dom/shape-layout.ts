@@ -1,4 +1,4 @@
-import { getLayoutSize } from "@lisse/core";
+import { getLayoutSize } from "./layout-size.js";
 import { concentricOutline, contentInsets, cornerPlacement, insetShape, polygonClip } from "../core/concentric.js";
 import type { ShapeGeometry, ShapePoint } from "../core/concentric.js";
 import { cornerOptions } from "../core/shape.js";

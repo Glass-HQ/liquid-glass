@@ -1,3 +1,4 @@
+import { webkit } from "./engine.js";
 import type { MaterialMaps } from "./maps.js";
 
 const ns = "http://www.w3.org/2000/svg";
@@ -5,8 +6,10 @@ const ns = "http://www.w3.org/2000/svg";
 // probe has at most 48 image primitives and one merge, with 96 URLs retained.
 const imagesPerProbe = 48;
 const retainedImages = 96;
-/** First-use grace shared by map admission and scene animation readiness. */
-export const mapWarmup = 50;
+/** First-use grace shared by map admission and scene animation readiness.
+ * WebKit loads a `data:` map within a frame and repaints an animating
+ * filter every frame; Chromium can paint a fresh image blank for longer. */
+export const mapWarmup = webkit ? 16 : 50;
 let serial = 0;
 
 /** Chromium draws a newly referenced filter image blank until it has been
@@ -138,4 +141,18 @@ export function createMapWarmer(root: HTMLElement) {
       warmed.clear();
     },
   };
+}
+
+const styledDocuments = new WeakSet<Document>();
+/** WebKit spends 10–20 ms restyling the page the first time a popup opens,
+ * and almost nothing on later openings. One full restyle while the page is
+ * quiet takes that cost off the first gesture. */
+export function warmDocumentStyle(document: Document) {
+  if (!webkit || styledDocuments.has(document)) return;
+  styledDocuments.add(document);
+  const html = document.documentElement;
+  html.style.setProperty("--lg-warm", "0");
+  void getComputedStyle(html).color;
+  html.style.removeProperty("--lg-warm");
+  if (!html.style.length) html.removeAttribute("style");
 }
