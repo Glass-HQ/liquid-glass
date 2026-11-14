@@ -36,7 +36,7 @@ struct NativeUsage: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
-            codeSection("Installation", text: "bun run native\n# Requires macOS 26+, Xcode, and Apple Silicon.")
+            codeSection("Installation", text: "vp run native\n# Requires macOS 26+, Xcode, and Apple Silicon.")
             codeSection("Usage", text: "import SwiftUI\nimport AppKit\n\n\(snippet)")
             VStack(alignment: .leading, spacing: 12) {
                 Text("Native API").font(referenceFont(18, .medium))

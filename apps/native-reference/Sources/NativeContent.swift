@@ -32,7 +32,7 @@ struct ReferenceContent: Decodable {
         guard let url = Bundle.main.url(forResource: "site-content", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let content = try? JSONDecoder().decode(ReferenceContent.self, from: data) else {
-            fatalError("Native reference content is missing. Rebuild with bun run native:build.")
+            fatalError("Native reference content is missing. Rebuild with vp run native:build.")
         }
         return content
     }()

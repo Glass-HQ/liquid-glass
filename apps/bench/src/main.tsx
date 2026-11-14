@@ -268,7 +268,7 @@ if (scene) {
     <div className="bench-index">
       <h1>Liquid Glass bench scenes</h1>
       <p>
-        Each scene isolates one cost. Open one to watch it play; <code>bun run bench</code> measures
+        Each scene isolates one cost. Open one to watch it play; <code>vp run bench</code> measures
         them.
       </p>
       <ul>

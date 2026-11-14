@@ -3,10 +3,10 @@
 Build and open the local macOS comparison app:
 
 ```sh
-bun run native
+vp run native
 ```
 
-Requires Xcode, Apple Silicon, and macOS 26 or newer. `bun run native:build` builds without opening the app.
+Requires Xcode, Apple Silicon, and macOS 26 or newer. `vp run native:build` builds without opening the app.
 
 Choose an example in the standard SwiftUI sidebar. Each example has Preview and Install & Usage views. The app follows the website’s example order and reuses its wallpapers, player, albums, messages, and article content. The build refreshes that content from the site source; album artwork loads from the same remote URLs and requires network access.
 

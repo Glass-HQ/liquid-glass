@@ -3,14 +3,14 @@
 Measures what Liquid Glass costs in real browser windows: Chrome, Safari, Firefox and Electron.
 
 ```sh
-bun run bench                       # every scene, every browser, 5 repetitions
-bun run bench --base main           # compare the working tree against a commit
-bun run bench --browsers safari --scenes drag,menu --reps 3
+vp run bench                       # every scene, every browser, 5 repetitions
+vp run bench --base main           # compare the working tree against a commit
+vp run bench --browsers safari --scenes drag,menu --reps 3
 ```
 
 A full session takes about 20 minutes per browser, or 40 with `--base`. It opens windows and needs them visible, so leave the machine alone while it runs: other work shows up in the numbers. Close your other Safari windows first, because Safari's processes are shared by all of them. Results print as a table and are saved in `results/`.
 
-Open `bun run --cwd apps/bench dev` (or any built scene with `?scene=drag`) to watch a scene play without measuring it.
+Open `vp run --filter @liquid-glass/bench dev` (or any built scene with `?scene=drag`) to watch a scene play without measuring it.
 
 ## Scenes
 

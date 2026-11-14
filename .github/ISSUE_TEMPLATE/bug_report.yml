@@ -1,24 +1,32 @@
 name: Bug report
-description: Report a problem with the library or examples.
+description: Report a problem with a package or its examples.
+labels: [bug]
 body:
   - type: textarea
     id: problem
     attributes:
       label: What happened?
-      description: Describe the problem and what you expected.
+      description: Describe the problem and what you expected instead.
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
       label: Reproduction
-      description: Include steps and a small example or reproduction link. Attach images or a recording for rendering issues.
+      description: Steps and a small example or a link to a reproduction. Attach screenshots or a recording for visual problems.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "0.0.2"
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: Package version, browser and version, OS, and any relevant console errors. Include device or GPU details for rendering issues if available.
+      description: Browser or runtime and its version, operating system, and any console errors. For rendering problems, include the device or GPU if you know it.
     validations:
       required: true
