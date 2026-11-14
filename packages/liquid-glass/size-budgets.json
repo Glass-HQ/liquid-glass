@@ -5,10 +5,10 @@
     "Button": 49152,
     "Toolbar": 56320,
     "Tabs": 62464,
-    "Menu": 100352,
-    "Slider and switch": 66560,
+    "Menu": 109568,
+    "Slider and switch": 67072,
     "Progressive blur": 47104,
-    "Everything": 122368
+    "Everything": 131584
   },
   "lazyGzip": {
     "dom/shape-effects": 10752,
