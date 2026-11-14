@@ -23,7 +23,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "type": "module",
   "sideEffects": [
@@ -59,8 +60,7 @@
     "dev": "vp build --watch --emptyOutDir false",
     "test": "bun test",
     "check:size": "node scripts/check-size.mjs",
-    "check:gpu": "vgpu doctor && node scripts/check-shader.mjs && node scripts/gpu-smoke.mjs",
-    "prepublishOnly": "node scripts/check-version.mjs"
+    "check:gpu": "vgpu doctor && node scripts/check-shader.mjs && node scripts/gpu-smoke.mjs"
   },
   "dependencies": {
     "@lisse/core": "catalog:",

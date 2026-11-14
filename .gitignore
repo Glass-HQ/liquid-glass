@@ -14,3 +14,4 @@ apps/native-reference/build/
 
 apps/bench/results/
 apps/bench/.base/
+packages/liquid-glass/CHANGELOG.md

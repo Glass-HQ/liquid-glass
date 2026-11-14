@@ -1,0 +1,81 @@
+# Publishes a release from its tag. `node scripts/release.ts <version>` makes the
+# commit and the liquid-glass@<version> tag; pushing the tag runs this workflow.
+# Run it by hand for a dry run of the current version: it checks, builds and
+# packs everything, but publishes nothing.
+name: Release
+on:
+  push:
+    tags:
+      - "liquid-glass@*"
+  workflow_dispatch:
+permissions:
+  contents: write
+  id-token: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version-file: package.json
+          package-manager: false
+          run-install: false
+      - run: bun install --frozen-lockfile
+      - name: Check that the tag matches the package versions
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            tag="liquid-glass@$(node -p 'require("./packages/liquid-glass/package.json").version')"
+          else
+            tag="$GITHUB_REF_NAME"
+          fi
+          node scripts/check-version.ts "$tag"
+          version="${tag#liquid-glass@}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      # The site and bench type-check against the built package, so build first.
+      - run: vp run -r build
+      - run: vp check
+      - run: vp run -r test
+      - run: node scripts/changelog.ts build
+      - run: node scripts/check-packages.ts
+      - run: vp run --filter @glass-sdk/liquid-glass check:size
+      - name: Pack the public packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          for dir in packages/*/; do
+            if [ "$(node -p "require('./${dir}package.json').private === true")" = false ]; then
+              (cd "$dir" && bun pm pack --destination "$RUNNER_TEMP/packages")
+            fi
+          done
+          ls -l "$RUNNER_TEMP/packages"
+      - name: Publish to npm
+        run: |
+          # Trusted publishing needs npm 11.5.1 or later; provenance is automatic.
+          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) throw new Error(`npm ${process.argv[1]} is older than 11.5.1`)' "$(npm --version)"
+          cd "$RUNNER_TEMP/packages"
+          for tgz in *.tgz; do
+            name="$(tar -xOzf "$tgz" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).name')"
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already on npm, skipping."
+            elif [ "$DRY_RUN" = true ]; then
+              npm publish "$tgz" --access public --dry-run
+            else
+              npm publish "$tgz" --access public
+            fi
+          done
+      - name: Create the GitHub release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/changelog.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --verify-tag --title "Liquid Glass $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

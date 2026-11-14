@@ -4,7 +4,8 @@
   "workspaces": {
     "packages": [
       "apps/*",
-      "packages/*"
+      "packages/*",
+      "scripts"
     ],
     "catalog": {
       "@base-ui/react": "^1.9.0",
@@ -29,6 +30,7 @@
     "lint": "vp lint",
     "build": "vp run -r build",
     "test": "vp run -r test",
+    "release": "node scripts/release.ts",
     "bench": "node apps/bench/runner/run.mjs",
     "native": "vp run native:build && open \"apps/native-reference/build/Liquid Glass Reference.app\"",
     "native:build": "node scripts/build-native.mjs"

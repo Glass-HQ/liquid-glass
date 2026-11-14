@@ -34,9 +34,12 @@ run() {
   "$@"
 }
 run bun install --frozen-lockfile
-run vp check
+# The site and bench type-check against the built package, so build first.
 run vp run build
+run vp check
+run node scripts/changelog.ts check
 run vp run test
+run node scripts/changelog.ts build
 run node scripts/check-packages.ts
 run vp run --filter @glass-sdk/liquid-glass check:size
 
