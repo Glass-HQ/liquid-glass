@@ -64,14 +64,14 @@
       "dependencies": {
         "@base-ui/react": "catalog:",
         "@lisse/core": "catalog:",
-        "vgpu": "^0.5.0",
+        "vgpu": "^0.6.0",
       },
       "devDependencies": {
         "@types/bun": "^1.4.4",
         "@types/pngjs": "^6.0.5",
         "@types/react": "catalog:",
         "@types/react-dom": "catalog:",
-        "@vgpu/wgsl": "^0.5.0",
+        "@vgpu/wgsl": "^0.6.0",
         "esbuild": "^0.28.2",
         "pngjs": "^7.0.0",
         "react": "catalog:",
@@ -737,15 +737,15 @@
 
     "@vercel/vc-native-win32-x64": ["@vercel/vc-native-win32-x64@62.4.0", "", { "os": "win32", "cpu": "x64" }, "sha512-RZMvGx2w4U47uPsOWQrN4q9lumzrXnbDv9HzufaHPkBWuBxfiSgNZ1xMSZidxiQCm4mB2ePsuYM/QLGZLmG2Kw=="],
 
-    "@vgpu/adapter-mock": ["@vgpu/adapter-mock@0.5.0", "", { "dependencies": { "@vgpu/core": "0.5.0" } }, "sha512-YtgXOFn1qI+8oTJenG2wWbQPA28V0CfE5UJs5Xqbt6qyR/xaZ5LHH2XWTwFcjnqn2b1xQCyTatJCMyyOdweUnw=="],
+    "@vgpu/adapter-mock": ["@vgpu/adapter-mock@0.6.0", "", { "dependencies": { "@vgpu/core": "0.6.0" } }, "sha512-xLzDbi0satAaY1z8a+9mVLBX5XXsoaGFiyPqR+T/QWKTXeYWLKloMHzJ2eIhHWeGEJJmpqhpYM/TMssjZjXbNA=="],
 
-    "@vgpu/adapter-node": ["@vgpu/adapter-node@0.5.0", "", { "dependencies": { "@vgpu/core": "0.5.0", "webgpu": "0.4.0" } }, "sha512-lgzqFcLDejwRgwlaNStzkwLNU9b4aN2OoPpWqT1UyPmK521BSw2OIQKzAuDIkzNlREla6KNC12G6bthhOzZKzw=="],
+    "@vgpu/adapter-node": ["@vgpu/adapter-node@0.6.0", "", { "dependencies": { "@vgpu/core": "0.6.0", "webgpu": "0.4.0" }, "hasInstallScript": true }, "sha512-A/ZvkZV+vWMQOtaKyK+G2VlYWMwr7hce2AlpnkVouLKfsJ3TR+VeIKZC/OXgDYtEQ6fANmHEmHuTFge5kjSyaA=="],
 
-    "@vgpu/core": ["@vgpu/core@0.5.0", "", { "dependencies": { "@vgpu/wgsl": "0.5.0" } }, "sha512-z80DHRHViv6+FKKkPzggEtT1ZZs/WCKRQbzJuwYdA135DZaSbCMoRK4anhM+I/nOHuDpf7H3xjkwE6rfolWZUw=="],
+    "@vgpu/core": ["@vgpu/core@0.6.0", "", { "dependencies": { "@vgpu/wgsl": "0.6.0" } }, "sha512-0ihBJl1kiFl5sBidv4dmoDepR7TCCaeSxy+EzJWz8zX/C4lw4jDGsN/ThgO/p79QGRUgRSW5J21erG2a6AtuWg=="],
 
-    "@vgpu/wgsl": ["@vgpu/wgsl@0.5.0", "", { "dependencies": { "@vgpu/wgsl-std": "0.5.0" }, "peerDependencies": { "@vgpu/adapter-node": ">=0.1.6 <1.0.0 || ^0.5.0-rc.0" }, "optionalPeers": ["@vgpu/adapter-node"] }, "sha512-PDlDJem7J28C9bk+vPy2kYZEoW8+nYIx2oN4nu7/WF2V7ETx32BtmWcawwMbhiu/CVsobFafML0h0eqLRBNa3Q=="],
+    "@vgpu/wgsl": ["@vgpu/wgsl@0.6.0", "", { "dependencies": { "@vgpu/wgsl-std": "0.6.0" }, "peerDependencies": { "@vgpu/adapter-node": ">=0.1.6 <1.0.0 || ^0.5.0-rc.0 || ^0.6.0-rc.0" }, "optionalPeers": ["@vgpu/adapter-node"] }, "sha512-/TlncdEz8hS5JvUI4lKDOK4irYgnfWrrox9sspc5Kt8xl6E3nqHjWfJw9iaAT9nDir8RuzPUNSxrCV8t3IDNmw=="],
 
-    "@vgpu/wgsl-std": ["@vgpu/wgsl-std@0.5.0", "", {}, "sha512-NjMyJxwy4evFNCSqFQy4EqAbZ7iU+NUyJYyG9tLUhbdDLzBmfZlk1S3PyRZ9olBFFfEiVW2JNVw10maPKLEs1A=="],
+    "@vgpu/wgsl-std": ["@vgpu/wgsl-std@0.6.0", "", {}, "sha512-C2C52G40p+54FKPAVzaXlffi4hLKK5xViTuINVH/CfBWb70qOL2WJ7cBiEpY5guvXAWHCJ1wyg+n6RSy92XnsA=="],
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.1.2", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.1" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "oxc-transform-react": "^0.152.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler", "oxc-transform-react"] }, "sha512-fhJNGUdscQa4HkI0xFxwonWyhnVReCPDbXI7FH7jmzpnVCrFQI7PRrhWecO263610vOrs9tr2Y4xcf8uAdFxbw=="],
 
@@ -1537,7 +1537,7 @@
 
     "vercel": ["vercel@62.4.0", "", { "dependencies": { "@vercel/backends": "16.0.0", "@vercel/blob": "2.8.0", "@vercel/build-utils": "14.18.0", "@vercel/cli-auth": "0.3.10", "@vercel/cli-config": "0.3.1", "@vercel/container": "16.0.0", "@vercel/detect-agent": "1.2.5", "@vercel/elysia": "16.0.0", "@vercel/express": "16.0.0", "@vercel/fastify": "16.0.0", "@vercel/fun": "1.3.6", "@vercel/go": "19.0.0", "@vercel/h3": "16.0.0", "@vercel/hono": "16.0.0", "@vercel/hydrogen": "17.0.0", "@vercel/koa": "16.0.0", "@vercel/nestjs": "16.0.0", "@vercel/next": "20.0.0", "@vercel/node": "21.0.0", "@vercel/prepare-flags-definitions": "0.3.0", "@vercel/python": "22.0.0", "@vercel/python-analysis": "0.14.0", "@vercel/redwood": "18.0.0", "@vercel/remix-builder": "21.0.0", "@vercel/ruby": "18.0.0", "@vercel/rust": "17.0.0", "@vercel/static-build": "18.0.0", "chokidar": "4.0.0", "esbuild": "0.27.0", "jose": "5.9.6", "jsonc-parser": "3.3.1", "luxon": "^3.4.0", "sandbox": "4.4.0", "smol-toml": "1.5.2", "undici": "5.29.0", "uuid": "14.0.1", "zod": "4.1.11" }, "optionalDependencies": { "@vercel/vc-native-darwin-arm64": "62.4.0", "@vercel/vc-native-darwin-x64": "62.4.0", "@vercel/vc-native-linux-arm64": "62.4.0", "@vercel/vc-native-linux-x64": "62.4.0", "@vercel/vc-native-win32-arm64": "62.4.0", "@vercel/vc-native-win32-x64": "62.4.0" }, "bin": { "vc": "dist/vc.js", "vercel": "dist/vc.js" } }, "sha512-5GCsUgVxZRS8o3REvA5hwn6hnw4PaSxGeKo1okEBM1X4Xw60ZcDZt22IxHGFx9mAfoa3jg+a3Gtp8ZZFJNYyaA=="],
 
-    "vgpu": ["vgpu@0.5.0", "", { "dependencies": { "@modelcontextprotocol/server": "2.0.0", "@vgpu/adapter-mock": "0.5.0", "@vgpu/adapter-node": "0.5.0", "@vgpu/core": "0.5.0", "@vgpu/wgsl": "0.5.0", "@vgpu/wgsl-std": "0.5.0", "@webgpu/types": "^0.1.69", "pixelmatch": "^7.2.0", "pngjs": "^7.0.0", "wgpu-matrix": "^3.4.2", "zod": "^4.4.3" }, "peerDependencies": { "three": ">=0.180.0 <0.200.0" }, "optionalPeers": ["three"], "bin": { "vgpu": "bin/vgpu.js" } }, "sha512-isQfMHRTysYFfT8UWTzqQI/ROw2L7lVkj7xoUJlvIF6FjYxBNS/YNG7qp3tZ7ZvZZ3uwYjso+geQv/bEq5Hl3w=="],
+    "vgpu": ["vgpu@0.6.0", "", { "dependencies": { "@modelcontextprotocol/server": "2.0.0", "@vgpu/adapter-mock": "0.6.0", "@vgpu/adapter-node": "0.6.0", "@vgpu/core": "0.6.0", "@vgpu/wgsl": "0.6.0", "@vgpu/wgsl-std": "0.6.0", "@webgpu/types": "^0.1.69", "pixelmatch": "^7.2.0", "pngjs": "^7.0.0", "wgpu-matrix": "^3.4.2", "zod": "^4.4.3" }, "peerDependencies": { "three": ">=0.180.0 <0.200.0" }, "optionalPeers": ["three"], "bin": { "vgpu": "bin/vgpu.js" } }, "sha512-st7Sc40nNnRHoWFguP7sGOeziLtO/bF+YL/Tn1fn2h9cGmSpWq4gxEQp0/T6Z7Xz3zH66ZS3qBp+ZLMBrUSxug=="],
 
     "vite": ["@voidzero-dev/vite-plus-core@1.6.0", "", { "dependencies": { "@oxc-project/runtime": "=0.158.0", "@oxc-project/types": "=0.158.0", "lightningcss": "^1.33.0", "postcss": "^8.5.32", "yuku-parser": "0.19.0" }, "optionalDependencies": { "@voidzero-dev/vite-plus-darwin-arm64": "1.6.0", "@voidzero-dev/vite-plus-darwin-x64": "1.6.0", "@voidzero-dev/vite-plus-linux-arm64-gnu": "1.6.0", "@voidzero-dev/vite-plus-linux-arm64-musl": "1.6.0", "@voidzero-dev/vite-plus-linux-x64-gnu": "1.6.0", "@voidzero-dev/vite-plus-linux-x64-musl": "1.6.0", "@voidzero-dev/vite-plus-win32-arm64-msvc": "1.6.0", "@voidzero-dev/vite-plus-win32-x64-msvc": "1.6.0", "fsevents": "~2.3.3" }, "peerDependencies": { "@arethetypeswrong/core": "^0.18.1", "@types/node": "^20.19.0 || >=22.12.0", "@typescript/native-preview": "*", "@vitejs/devtools": "^0.7.1 || ^0.8.0", "@volar/typescript": "~2.4.0", "@vue/language-core": "~3.2.0 || ~3.3.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "publint": "^0.3.8", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "typescript": "^5.0.0 || ^6.0.0 || ^7.0.0", "unplugin-unused": ">=0.5.0", "unrun": "*", "vue-tsc": "~3.2.0 || ~3.3.0", "yaml": "^2.4.2" }, "optionalPeers": ["@arethetypeswrong/core", "@types/node", "@typescript/native-preview", "@vitejs/devtools", "@volar/typescript", "@vue/language-core", "esbuild", "jiti", "less", "publint", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "typescript", "unplugin-unused", "unrun", "vue-tsc", "yaml"] }, "sha512-0UFh0AVjt3ZynvRk0BTCwysCeURhyZCoEGabEptwOzlvQjV2eGRcf5jPTfLGaKwgw2dKOQYH4vq/N3H7WUdIyw=="],
 

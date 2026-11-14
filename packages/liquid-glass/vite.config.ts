@@ -1,20 +1,10 @@
-import { defineConfig } from "vite-plus";
 import { wgslVitePlugin } from "@vgpu/wgsl/loader-vite";
+import { defineConfig } from "vite-plus";
+
 export default defineConfig({
-  plugins: [
-    wgslVitePlugin(),
-    {
-      name: "portable-shader-paths",
-      generateBundle(_, bundle) {
-        for (const output of Object.values(bundle))
-          if (output.type === "chunk")
-            output.code = output.code.replaceAll(
-              `${import.meta.dirname}/src/gpu/maps.wgsl`,
-              "liquid-glass/maps.wgsl",
-            );
-      },
-    },
-  ],
+  // The loader prepares each shader at build time and fails the build on WGSL
+  // parse or layout errors. `vp run check:gpu` validates it on a real device.
+  plugins: [wgslVitePlugin({ minify: true })],
   build: {
     lib: {
       entry: {

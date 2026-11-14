@@ -182,8 +182,8 @@ export class MaterialRenderer {
       while (table.length < maxSegments) table.push([0, 0, 0, 0]);
       const slot = this.slot([width, height]);
       try {
-        // Uniform writes and the pass are encoded without yielding, so a
-        // following batch cannot overwrite them before this one is submitted.
+        // vgpu captures uniform values when the pass is recorded, so a
+        // following batch's writes cannot reach this one.
         this.shader.set({
           batch: { count: shapes.length, pad: [0, 0, 0], shapes: entries },
           outline: { segments: table },
@@ -217,8 +217,10 @@ export function getMaterialRenderer(): Promise<MaterialRenderer> {
   const next = init()
     .then((gpu) => {
       const current = new MaterialRenderer(gpu);
-      gpu.gpu.lost.then(() => {
+      // After a device loss, the next request starts a new device.
+      void gpu.lost.then(() => {
         if (renderer === next) renderer = undefined;
+        current.dispose();
       });
       return current;
     })
