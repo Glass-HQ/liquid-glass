@@ -1,9 +1,9 @@
-import type { ExampleKind, ToolbarVariant, MenuOptions } from "./Examples"
-import { progressiveBlurLevels, defaultProgressiveOptions } from "./ProgressiveScenes"
-import type { ProgressiveOptions } from "./ProgressiveScenes"
-import type { GlassMaterial, GlassAppearance } from "@glass-sdk/liquid-glass"
+import type { ExampleKind, ToolbarVariant, MenuOptions } from "./Examples";
+import { progressiveBlurLevels, defaultProgressiveOptions } from "./ProgressiveScenes";
+import type { ProgressiveOptions } from "./ProgressiveScenes";
+import type { GlassMaterial, GlassAppearance } from "@glass-sdk/liquid-glass";
 
-export const installCommand = "npm install @glass-sdk/liquid-glass@~0.0.2"
+export const installCommand = "npm install @glass-sdk/liquid-glass@~0.0.2";
 
 const imports = {
   slider: "GlassSlider",
@@ -14,7 +14,7 @@ const imports = {
   toolbar: "GlassToolbar, GlassToolbarButton",
   tabs: "GlassTabs",
   menu: "GlassButton, GlassMenu, GlassMenuTrigger, GlassMenuContent, GlassMenuItem",
-}
+};
 const snippets = {
   slider: `<GlassSlider aria-label="Volume" defaultValue={50} onValueCommitted={(value) => console.log(value)} />`,
   switch: `<label style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -35,9 +35,10 @@ const snippets = {
   ]}
 />`,
   menu: "",
-}
+};
 function menuContentCode(material: GlassMaterial, options: MenuOptions) {
-  const share = options.submenu ? `<GlassMenuSubmenu>
+  const share = options.submenu
+    ? `<GlassMenuSubmenu>
   <GlassMenuSubmenuTrigger>Share ›</GlassMenuSubmenuTrigger>
   <GlassMenuSubmenuContent material="${material}">
     <GlassMenuItem>Copy link</GlassMenuItem>
@@ -50,46 +51,67 @@ function menuContentCode(material: GlassMaterial, options: MenuOptions) {
       </GlassMenuSubmenuContent>
     </GlassMenuSubmenu>
   </GlassMenuSubmenuContent>
-</GlassMenuSubmenu>` : "<GlassMenuItem>Share</GlassMenuItem>"
+</GlassMenuSubmenu>`
+    : "<GlassMenuItem>Share</GlassMenuItem>";
   return `<GlassMenuContent material="${material}" side="${options.side}" align="${options.align}">
   <GlassMenuItem>Save to library</GlassMenuItem>
-${share.split("\n").map((line) => `  ${line}`).join("\n")}
+${share
+  .split("\n")
+  .map((line) => `  ${line}`)
+  .join("\n")}
   <GlassMenuItem>Download</GlassMenuItem>
-</GlassMenuContent>`
+</GlassMenuContent>`;
 }
 function menuCode(material: GlassMaterial, options: MenuOptions) {
-  if (options.trigger === "toolbar") return `<GlassToolbar aria-label="Playback">
+  if (options.trigger === "toolbar")
+    return `<GlassToolbar aria-label="Playback">
   <GlassToolbarButton aria-label="Play">▶</GlassToolbarButton>
   <GlassToolbarButton aria-label="Favorite">♡</GlassToolbarButton>
   <GlassMenu>
     <GlassToolbarButton aria-label="Options" render={<GlassMenuTrigger />}>
       ⋯
     </GlassToolbarButton>
-${menuContentCode(material, options).split("\n").map((line) => `    ${line}`).join("\n")}
+${menuContentCode(material, options)
+  .split("\n")
+  .map((line) => `    ${line}`)
+  .join("\n")}
   </GlassMenu>
-</GlassToolbar>`
+</GlassToolbar>`;
   return `<GlassMenu>
   <GlassMenuTrigger render={<GlassButton size="icon" aria-label="Options" />}>
     ⋯
   </GlassMenuTrigger>
-${menuContentCode(material, options).split("\n").map((line) => `  ${line}`).join("\n")}
-</GlassMenu>`
+${menuContentCode(material, options)
+  .split("\n")
+  .map((line) => `  ${line}`)
+  .join("\n")}
+</GlassMenu>`;
 }
 function toolbarCode(variant: ToolbarVariant, material: GlassMaterial, options: MenuOptions) {
-  return `<GlassToolbar aria-label="Playback"${variant === "flexible" ? ' style={{ width: 196 }}' : ""}>
+  return `<GlassToolbar aria-label="Playback"${variant === "flexible" ? " style={{ width: 196 }}" : ""}>
   <GlassToolbarButton aria-label="Play">▶</GlassToolbarButton>
   <GlassToolbarButton aria-label="Volume">♪</GlassToolbarButton>${
-    variant === "fixed" ? '\n  <GlassToolbarSpacer sizing="fixed" />' :
-    variant === "flexible" ? '\n  <GlassToolbarSpacer sizing="flexible" />' : ""
+    variant === "fixed"
+      ? '\n  <GlassToolbarSpacer sizing="fixed" />'
+      : variant === "flexible"
+        ? '\n  <GlassToolbarSpacer sizing="flexible" />'
+        : ""
   }
-  <GlassToolbarButton aria-label="Favorite">♡</GlassToolbarButton>${variant === "menu" ? `
+  <GlassToolbarButton aria-label="Favorite">♡</GlassToolbarButton>${
+    variant === "menu"
+      ? `
   <GlassMenu>
     <GlassToolbarButton aria-label="Playback options" render={<GlassMenuTrigger />}>
       ⋯
     </GlassToolbarButton>
-${menuContentCode(material, options).split("\n").map((line) => `    ${line}`).join("\n")}
-  </GlassMenu>` : ""}
-</GlassToolbar>`
+${menuContentCode(material, options)
+  .split("\n")
+  .map((line) => `    ${line}`)
+  .join("\n")}
+  </GlassMenu>`
+      : ""
+  }
+</GlassToolbar>`;
 }
 export function usageCode(
   kind: ExampleKind,
@@ -99,15 +121,37 @@ export function usageCode(
   menuOptions: MenuOptions = { side: "bottom", align: "end", submenu: false, trigger: "button" },
   tint?: string,
   sliderStepped = false,
-  progressive: ProgressiveOptions = defaultProgressiveOptions
+  progressive: ProgressiveOptions = defaultProgressiveOptions,
 ) {
-  if (kind === "progressive-blur") return progressiveCode(progressive, material, appearance)
-  const extraImports = kind === "menu" ? (menuOptions.trigger === "toolbar" ? ", GlassToolbar, GlassToolbarButton" : "") :
-    kind !== "toolbar" || toolbarVariant === "normal" ? "" :
-    toolbarVariant === "menu" ? ", GlassMenu, GlassMenuTrigger, GlassMenuContent, GlassMenuItem" : ", GlassToolbarSpacer"
-  const submenuImports = menuOptions.submenu && (kind === "menu" || (kind === "toolbar" && toolbarVariant === "menu")) ? ", GlassMenuSubmenu, GlassMenuSubmenuTrigger, GlassMenuSubmenuContent" : ""
-  const snippet = kind === "toolbar" ? toolbarCode(toolbarVariant, material, menuOptions) : kind === "menu" ? menuCode(material, menuOptions) : kind === "slider" && sliderStepped ? `<GlassSlider aria-label="Volume" min={0} max={100} step={25} ticks defaultValue={50} />` : snippets[kind]
-  const tintedSnippet = tint ? snippet.replace(/<(GlassSurface|GlassButton|GlassToolbar|GlassTabs|GlassSlider|GlassSwitch|GlassMenuContent|GlassMenuSubmenuContent)(?=[\s>])/g, `<$1 tint="${tint}"`) : snippet
+  if (kind === "progressive-blur") return progressiveCode(progressive, material, appearance);
+  const extraImports =
+    kind === "menu"
+      ? menuOptions.trigger === "toolbar"
+        ? ", GlassToolbar, GlassToolbarButton"
+        : ""
+      : kind !== "toolbar" || toolbarVariant === "normal"
+        ? ""
+        : toolbarVariant === "menu"
+          ? ", GlassMenu, GlassMenuTrigger, GlassMenuContent, GlassMenuItem"
+          : ", GlassToolbarSpacer";
+  const submenuImports =
+    menuOptions.submenu && (kind === "menu" || (kind === "toolbar" && toolbarVariant === "menu"))
+      ? ", GlassMenuSubmenu, GlassMenuSubmenuTrigger, GlassMenuSubmenuContent"
+      : "";
+  const snippet =
+    kind === "toolbar"
+      ? toolbarCode(toolbarVariant, material, menuOptions)
+      : kind === "menu"
+        ? menuCode(material, menuOptions)
+        : kind === "slider" && sliderStepped
+          ? `<GlassSlider aria-label="Volume" min={0} max={100} step={25} ticks defaultValue={50} />`
+          : snippets[kind];
+  const tintedSnippet = tint
+    ? snippet.replace(
+        /<(GlassSurface|GlassButton|GlassToolbar|GlassTabs|GlassSlider|GlassSwitch|GlassMenuContent|GlassMenuSubmenuContent)(?=[\s>])/g,
+        `<$1 tint="${tint}"`,
+      )
+    : snippet;
   return `import {
 ${["GlassScene", "GlassContent", ...`${kind === "menu" && menuOptions.trigger === "toolbar" ? imports.menu.replace("GlassButton, ", "") : imports[kind]}${extraImports}${submenuImports}`.split(", ")].map((name) => `  ${name},`).join("\n")}
 } from "@glass-sdk/liquid-glass";
@@ -124,12 +168,22 @@ ${tintedSnippet
   .map((line) => `    ${line}`)
   .join("\n")}
   </div>
-</GlassScene>`
+</GlassScene>`;
 }
 
-function progressiveCode(options: ProgressiveOptions, material: GlassMaterial, appearance: GlassAppearance) {
-  const props = [options.blur === "off" ? "disabled" : `blur={${progressiveBlurLevels[options.blur]}}`, options.refraction && "refraction={6}"].filter(Boolean).join(" ")
-  if (options.mode === "image") return `import { GlassScene, GlassContent, GlassProgressiveBlur } from "@glass-sdk/liquid-glass";
+function progressiveCode(
+  options: ProgressiveOptions,
+  material: GlassMaterial,
+  appearance: GlassAppearance,
+) {
+  const props = [
+    options.blur === "off" ? "disabled" : `blur={${progressiveBlurLevels[options.blur]}}`,
+    options.refraction && "refraction={6}",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (options.mode === "image")
+    return `import { GlassScene, GlassContent, GlassProgressiveBlur } from "@glass-sdk/liquid-glass";
 import "@glass-sdk/liquid-glass/styles.css";
 
 <GlassScene material="${material}" appearance="${appearance}" style={{ height: 390, overflow: "hidden", borderRadius: 16 }}>
@@ -139,7 +193,7 @@ import "@glass-sdk/liquid-glass/styles.css";
   </GlassContent>
   <GlassProgressiveBlur edge="${options.edge}" size={260} ${props} />
   <p style={{ position: "absolute", ${options.edge}: 28, left: 28 }}>A little further away.</p>
-</GlassScene>`
+</GlassScene>`;
   return `import { useRef, type ReactNode } from "react";
 import { GlassScene, GlassContent, GlassButton, GlassScrollEdges } from "@glass-sdk/liquid-glass";
 import "@glass-sdk/liquid-glass/styles.css";
@@ -157,5 +211,5 @@ export function Reader({ children }: { children: ReactNode }) {
         style={{ position: "absolute", top: 14, left: 16 }}>‹</GlassButton>
     </GlassScene>
   );
-}`
+}`;
 }

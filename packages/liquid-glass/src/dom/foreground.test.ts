@@ -5,7 +5,12 @@ import type { MaterialMaps } from "./maps.js";
 
 test("foreground optics use local coordinates and preserve transparent input outside the upper lens", () => {
   const target = { x: 100, y: 200, w: 200, h: 100 } as ForegroundLens;
-  const overlay = { x: 150, y: 220, w: 80, h: 60, opacity: .5,
+  const overlay = {
+    x: 150,
+    y: 220,
+    w: 80,
+    h: 60,
+    opacity: 0.5,
     options: { material: "regular", refraction: 8 },
     maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
@@ -31,11 +36,20 @@ test("foreground optics use local coordinates and preserve transparent input out
 });
 
 test("foreground refraction keeps the same pixel displacement across target aspect ratios", () => {
-  const overlay = { x: 50, y: 20, w: 80, h: 60, opacity: 1,
+  const overlay = {
+    x: 50,
+    y: 20,
+    w: 80,
+    h: 60,
+    opacity: 1,
     options: { material: "clear", refraction: 8 },
     maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
-  for (const [w, h] of [[200, 100], [100, 200], [400, 50]]) {
+  for (const [w, h] of [
+    [200, 100],
+    [100, 200],
+    [400, 50],
+  ]) {
     const target = { x: 0, y: 0, w, h } as ForegroundLens;
     const markup = foregroundFilter("test", target, [overlay]);
     expect(markup).toContain('x="48" y="18" width="84" height="64"');
@@ -46,7 +60,12 @@ test("foreground refraction keeps the same pixel displacement across target aspe
 
 test("upper lenses process the result of preceding foreground passes", () => {
   const target = { x: 0, y: 0, w: 200, h: 100 } as ForegroundLens;
-  const overlay = { ...target, opacity: 1, options: { material: "clear" }, maps: { field: "field" } } as ForegroundLens;
+  const overlay = {
+    ...target,
+    opacity: 1,
+    options: { material: "clear" },
+    maps: { field: "field" },
+  } as ForegroundLens;
   const filter = foregroundFilter("test", target, [overlay, overlay]);
   expect(filter).toContain('<feDisplacementMap in="f0result"');
   expect(filter).not.toContain("feGaussianBlur");
@@ -54,8 +73,19 @@ test("upper lenses process the result of preceding foreground passes", () => {
 });
 
 test("scaled foreground targets keep the glass in the same viewport location", () => {
-  const target = { x: 0, y: 0, w: 200, h: 100, element: { offsetWidth: 100, offsetHeight: 50 } } as ForegroundLens;
-  const overlay = { x: 50, y: 20, w: 80, h: 60, opacity: 1,
+  const target = {
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 100,
+    element: { offsetWidth: 100, offsetHeight: 50 },
+  } as ForegroundLens;
+  const overlay = {
+    x: 50,
+    y: 20,
+    w: 80,
+    h: 60,
+    opacity: 1,
     options: { material: "regular", refraction: 8 },
     maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
@@ -67,8 +97,19 @@ test("scaled foreground targets keep the glass in the same viewport location", (
 });
 
 test("unequal target scales preserve displacement on each viewport axis without clipping channels", () => {
-  const target = { x: 0, y: 0, w: 200, h: 50, element: { offsetWidth: 100, offsetHeight: 100 } } as ForegroundLens;
-  const overlay = { x: 50, y: 20, w: 80, h: 60, opacity: 1,
+  const target = {
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 50,
+    element: { offsetWidth: 100, offsetHeight: 100 },
+  } as ForegroundLens;
+  const overlay = {
+    x: 50,
+    y: 20,
+    w: 80,
+    h: 60,
+    opacity: 1,
     options: { material: "regular", refraction: 8 },
     maps: { field: "field.png" } as MaterialMaps,
   } as ForegroundLens;
@@ -76,9 +117,15 @@ test("unequal target scales preserve displacement on each viewport axis without 
   expect(markup).toContain('x="24" y="36" width="42" height="128"');
   expect(markup).toContain('stdDeviation="3.665 14.66"');
   const scale = Number(/<feDisplacementMap[^>]* scale="([^"]+)"/.exec(markup)![1]);
-  for (const [channel, cssScale] of [["R", 2], ["G", 0.5]] as const) {
-    const transfer = new RegExp(`<feFunc${channel} type="linear" slope="([^"]+)" intercept="([^"]+)"`).exec(markup)!;
-    const slope = Number(transfer[1]), intercept = Number(transfer[2]);
+  for (const [channel, cssScale] of [
+    ["R", 2],
+    ["G", 0.5],
+  ] as const) {
+    const transfer = new RegExp(
+      `<feFunc${channel} type="linear" slope="([^"]+)" intercept="([^"]+)"`,
+    ).exec(markup)!;
+    const slope = Number(transfer[1]),
+      intercept = Number(transfer[2]);
     for (const value of [0, 0.25, 0.5, 0.75, 1]) {
       const mapped = value * slope + intercept;
       expect(mapped).toBeGreaterThanOrEqual(0);
@@ -92,14 +139,27 @@ test("paint order respects positioner stacking before DOM order", () => {
   const originalStyle = globalThis.getComputedStyle;
   const originalNode = globalThis.Node;
   const root = { parentElement: null };
-  const a = { parentElement: root, style: { position: "absolute", zIndex: "20" }, compareDocumentPosition: () => 4 };
-  const b = { parentElement: root, style: { position: "relative", zIndex: "auto" }, compareDocumentPosition: () => 2 };
+  const a = {
+    parentElement: root,
+    style: { position: "absolute", zIndex: "20" },
+    compareDocumentPosition: () => 4,
+  };
+  const b = {
+    parentElement: root,
+    style: { position: "relative", zIndex: "auto" },
+    compareDocumentPosition: () => 2,
+  };
   try {
     globalThis.Node = { DOCUMENT_POSITION_FOLLOWING: 4 } as typeof Node;
-    globalThis.getComputedStyle = ((node: typeof a) => node.style) as unknown as typeof getComputedStyle;
-    expect(comparePaintOrder(a as unknown as HTMLElement, b as unknown as HTMLElement)).toBeGreaterThan(0);
+    globalThis.getComputedStyle = ((node: typeof a) =>
+      node.style) as unknown as typeof getComputedStyle;
+    expect(
+      comparePaintOrder(a as unknown as HTMLElement, b as unknown as HTMLElement),
+    ).toBeGreaterThan(0);
     a.style.zIndex = "0";
-    expect(comparePaintOrder(a as unknown as HTMLElement, b as unknown as HTMLElement)).toBeLessThan(0);
+    expect(
+      comparePaintOrder(a as unknown as HTMLElement, b as unknown as HTMLElement),
+    ).toBeLessThan(0);
   } finally {
     globalThis.getComputedStyle = originalStyle;
     globalThis.Node = originalNode;

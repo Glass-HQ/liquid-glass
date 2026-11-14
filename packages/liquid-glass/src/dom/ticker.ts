@@ -30,9 +30,33 @@ export interface TickerOptions {
 /** What a step found: whether it needs the next frame, and the writes to
  * apply after every ticker has measured. A bare boolean is "active". */
 export type StepResult = boolean | { active: boolean; write?: () => void };
-const inputEvents = ["pointerdown", "pointerup", "pointercancel", "pointermove", "pointerenter", "pointerleave", "keydown", "keyup", "focusin", "focusout"];
-const motionEvents = ["transitionrun", "transitionstart", "transitionend", "transitioncancel", "animationstart", "animationiteration", "animationend", "animationcancel"];
-interface Entry { step: (now: number) => StepResult; idle: number; disposed: boolean }
+const inputEvents = [
+  "pointerdown",
+  "pointerup",
+  "pointercancel",
+  "pointermove",
+  "pointerenter",
+  "pointerleave",
+  "keydown",
+  "keyup",
+  "focusin",
+  "focusout",
+];
+const motionEvents = [
+  "transitionrun",
+  "transitionstart",
+  "transitionend",
+  "transitioncancel",
+  "animationstart",
+  "animationiteration",
+  "animationend",
+  "animationcancel",
+];
+interface Entry {
+  step: (now: number) => StepResult;
+  idle: number;
+  disposed: boolean;
+}
 /** One frame per window for every ticker in it. */
 class Driver {
   private raf = 0;
@@ -51,7 +75,14 @@ class Driver {
     for (const entry of entries) {
       if (entry.disposed) continue;
       let result: StepResult;
-      try { result = entry.step(now); } catch (error) { queueMicrotask(() => { throw error; }); continue; }
+      try {
+        result = entry.step(now);
+      } catch (error) {
+        queueMicrotask(() => {
+          throw error;
+        });
+        continue;
+      }
       const active = typeof result === "boolean" ? result : result.active;
       if (typeof result !== "boolean" && result.write) writes.push(result.write);
       // A couple of quiet frames let late layout settle before sleeping.
@@ -59,7 +90,13 @@ class Driver {
       if (entry.idle < 3) this.schedule(entry);
     }
     for (const write of writes) {
-      try { write(); } catch (error) { queueMicrotask(() => { throw error; }); }
+      try {
+        write();
+      } catch (error) {
+        queueMicrotask(() => {
+          throw error;
+        });
+      }
     }
   }
 }
@@ -67,20 +104,33 @@ const drivers = new WeakMap<Window, Driver>();
 export function createTicker(step: (now: number) => StepResult, options: TickerOptions): Ticker {
   const { root, ignore, onMutation } = options;
   const view = (root.ownerDocument ?? (root as Document)).defaultView ?? window;
-  const driver = drivers.get(view) ?? (() => { const d = new Driver(view); drivers.set(view, d); return d; })();
+  const driver =
+    drivers.get(view) ??
+    (() => {
+      const d = new Driver(view);
+      drivers.set(view, d);
+      return d;
+    })();
   const entry: Entry = { step, idle: 0, disposed: false };
   const wake = () => driver.schedule(entry);
   const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(wake) : undefined;
-  const mutations = typeof MutationObserver === "function"
-    ? new MutationObserver((records) => {
-      if (ignore && !records.some((record) => !ignore(record.target, record))) return;
-      onMutation?.();
-      wake();
-    })
-    : undefined;
-  mutations?.observe(root, { subtree: true, attributes: true, childList: true, characterData: false });
+  const mutations =
+    typeof MutationObserver === "function"
+      ? new MutationObserver((records) => {
+          if (ignore && !records.some((record) => !ignore(record.target, record))) return;
+          onMutation?.();
+          wake();
+        })
+      : undefined;
+  mutations?.observe(root, {
+    subtree: true,
+    attributes: true,
+    childList: true,
+    characterData: false,
+  });
   const target = root as unknown as EventTarget;
-  for (const type of [...inputEvents, ...motionEvents]) target.addEventListener(type, wake, { capture: true, passive: true });
+  for (const type of [...inputEvents, ...motionEvents])
+    target.addEventListener(type, wake, { capture: true, passive: true });
   view.addEventListener("scroll", wake, { capture: true, passive: true });
   view.addEventListener("resize", wake, { passive: true });
   view.document.addEventListener("visibilitychange", wake);
@@ -88,13 +138,18 @@ export function createTicker(step: (now: number) => StepResult, options: TickerO
   wake();
   return {
     wake,
-    observe(element) { sizes?.observe(element); },
-    unobserve(element) { sizes?.unobserve(element); },
+    observe(element) {
+      sizes?.observe(element);
+    },
+    unobserve(element) {
+      sizes?.unobserve(element);
+    },
     dispose() {
       entry.disposed = true;
       sizes?.disconnect();
       mutations?.disconnect();
-      for (const type of [...inputEvents, ...motionEvents]) target.removeEventListener(type, wake, { capture: true });
+      for (const type of [...inputEvents, ...motionEvents])
+        target.removeEventListener(type, wake, { capture: true });
       view.removeEventListener("scroll", wake, { capture: true });
       view.removeEventListener("resize", wake);
       view.document.removeEventListener("visibilitychange", wake);

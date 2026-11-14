@@ -67,18 +67,47 @@ export function GlassSurface({
   // The source is read when the surface mounts or leaves; a new function or
   // ref identity must not register the surface again.
   const source = useRef(morphFrom);
-  useLayoutEffect(() => { source.current = morphFrom; });
+  useLayoutEffect(() => {
+    source.current = morphFrom;
+  });
   const morphs = Boolean(morphFrom);
   const options = useMemo(
     () => ({
-      material, appearance, radius, concentric: relative ? { inset } : undefined, refraction, tint,
-      interactive, fluid, motion, morph, neck, morphEnter,
-      morphFrom: morphs ? () => {
-        const from = source.current;
-        return typeof from === "function" ? from() : from?.current;
-      } : undefined,
+      material,
+      appearance,
+      radius,
+      concentric: relative ? { inset } : undefined,
+      refraction,
+      tint,
+      interactive,
+      fluid,
+      motion,
+      morph,
+      neck,
+      morphEnter,
+      morphFrom: morphs
+        ? () => {
+            const from = source.current;
+            return typeof from === "function" ? from() : from?.current;
+          }
+        : undefined,
     }),
-    [material, appearance, radius, relative, inset, refraction, tint, interactive, fluid, motion, morph, neck, morphEnter, morphs],
+    [
+      material,
+      appearance,
+      radius,
+      relative,
+      inset,
+      refraction,
+      tint,
+      interactive,
+      fluid,
+      motion,
+      morph,
+      neck,
+      morphEnter,
+      morphs,
+    ],
   );
   const attach = useCallback(
     (element: HTMLElement | null) => {

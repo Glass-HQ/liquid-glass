@@ -5,7 +5,14 @@ import type { MapGeometry } from "../gpu/geometry.js";
 import materialShader from "../gpu/maps.wgsl";
 import { capsuleMapGeometry, releaseMapToken } from "./map-image.js";
 import type { MapPlane } from "./map-image.js";
-import { claimFirstPaint, loadStoredMaps, peekStoredMaps, preloadStoredMaps, preloadedKeys, saveStoredMaps } from "./map-store.js";
+import {
+  claimFirstPaint,
+  loadStoredMaps,
+  peekStoredMaps,
+  preloadStoredMaps,
+  preloadedKeys,
+  saveStoredMaps,
+} from "./map-store.js";
 export interface MaterialMaps {
   /** Displacement in red and green, shape coverage in alpha. */
   field: string;
@@ -22,7 +29,8 @@ export interface MaterialMaps {
 /** Stored maps are only valid for the shader and encoder that produced them. */
 const version = (() => {
   let hash = 2166136261;
-  for (const char of `${materialShader.wgsl}|png-sub-2`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+  for (const char of `${materialShader.wgsl}|png-sub-2`)
+    hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
   return (hash >>> 0).toString(36);
 })();
 const cache = new Map<string, Promise<MaterialMaps>>();
@@ -35,9 +43,20 @@ if (typeof indexedDB !== "undefined" && typeof Image !== "undefined") {
       const key = stored.slice(prefix.length);
       let g: MapGeometry, slice: boolean;
       try {
-        const [width, height, radius, dpr, appearance, outline, sliceCapsule] = JSON.parse(key) as [number, number, MapGeometry["radius"], number, MapGeometry["appearance"], MapGeometry["outline"], boolean];
-        g = { width, height, radius, dpr, appearance, outline }; slice = sliceCapsule;
-      } catch { continue; }
+        const [width, height, radius, dpr, appearance, outline, sliceCapsule] = JSON.parse(key) as [
+          number,
+          number,
+          MapGeometry["radius"],
+          number,
+          MapGeometry["appearance"],
+          MapGeometry["outline"],
+          boolean,
+        ];
+        g = { width, height, radius, dpr, appearance, outline };
+        slice = sliceCapsule;
+      } catch {
+        continue;
+      }
       if (!cache.has(key)) materialMaps(g, slice).catch(() => undefined);
     }
   });
@@ -84,8 +103,15 @@ function peek(g: MapGeometry, sliceCapsule: boolean): MaterialMaps | undefined {
 const keyOf = (g: MapGeometry, sliceCapsule: boolean) =>
   JSON.stringify([g.width, g.height, g.radius, g.dpr, g.appearance, g.outline, sliceCapsule]);
 const names: MapPlane[] = ["field", "overlay"];
-function assemble(g: MapGeometry, sliceCapsule: boolean, encoded: string[][], duration: number): MaterialMaps {
-  const planes = Object.fromEntries(names.map((name, index) => [name, encoded[index]!.slice(1)])) as Record<MapPlane, [string, string, string]>;
+function assemble(
+  g: MapGeometry,
+  sliceCapsule: boolean,
+  encoded: string[][],
+  duration: number,
+): MaterialMaps {
+  const planes = Object.fromEntries(
+    names.map((name, index) => [name, encoded[index]!.slice(1)]),
+  ) as Record<MapPlane, [string, string, string]>;
   return {
     field: encoded[0]![0]!,
     overlay: encoded[1]![0]!,
@@ -100,10 +126,18 @@ function materialMaps(g: MapGeometry, sliceCapsule = false, persist = true): Pro
   const stored = `${version}|${key}`;
   const result = (persist ? loadStoredMaps(stored) : Promise.resolve(peekStoredMaps(stored)))
     .then(async (found) => {
-      if (found) { claimFirstPaint(stored, found); return assemble(g, sliceCapsule, found.planes, found.duration); }
+      if (found) {
+        claimFirstPaint(stored, found);
+        return assemble(g, sliceCapsule, found.planes, found.duration);
+      }
       const renderer = await getMaterialRenderer();
       const { width, height, pixels, duration } = await renderer.render(g);
-      const encoded = await encodeMaterialPixels(pixels, width, height, sliceCapsule ? Math.round((g.height + 2) * mapScale(g)) : undefined);
+      const encoded = await encodeMaterialPixels(
+        pixels,
+        width,
+        height,
+        sliceCapsule ? Math.round((g.height + 2) * mapScale(g)) : undefined,
+      );
       if (persist) {
         saveStoredMaps(stored, { planes: encoded, duration });
         claimFirstPaint(stored, { planes: encoded, duration });
@@ -141,10 +175,16 @@ const settled = new Map<string, MaterialMaps>();
 export function touchMaps(maps: MaterialMaps): void {
   lastUse.set(maps, performance.now());
 }
-const urls = (maps: MaterialMaps) =>
-  [maps.field, maps.overlay, ...Object.values(maps.capsule?.planes ?? {}).flat()];
+const urls = (maps: MaterialMaps) => [
+  maps.field,
+  maps.overlay,
+  ...Object.values(maps.capsule?.planes ?? {}).flat(),
+];
 function release(maps: MaterialMaps) {
-  for (const url of urls(maps)) { releaseMapToken(url); decoded.delete(url); }
+  for (const url of urls(maps)) {
+    releaseMapToken(url);
+    decoded.delete(url);
+  }
 }
 /** Drop the oldest maps beyond the cache size that have not been drawn for 10s. */
 function evict() {

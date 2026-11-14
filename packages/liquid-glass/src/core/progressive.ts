@@ -20,10 +20,7 @@ export function validateProgressive(options: ProgressiveBlurOptions): void {
     if (!Number.isFinite(value) || value < 0 || value > max)
       throw new RangeError(`${name} must be finite and between 0 and ${max}.`);
   }
-  if (
-    options.edge &&
-    !["top", "bottom", "inline-start", "inline-end"].includes(options.edge)
-  )
+  if (options.edge && !["top", "bottom", "inline-start", "inline-end"].includes(options.edge))
     throw new RangeError("Unknown progressive blur edge.");
 }
 export function physicalEdge(edge: GlassBlurEdge, rtl: boolean): PhysicalEdge {
@@ -44,16 +41,7 @@ export function scrollEdgeStrength(
   const x = Math.max(0, Math.min(maxX, rtl ? maxX + left : left));
   const y = Math.max(0, Math.min(maxY, top));
   const distance =
-    edge === "top"
-      ? y
-      : edge === "bottom"
-        ? maxY - y
-        : edge === "left"
-          ? x
-          : maxX - x;
-  const t = Math.max(
-    0,
-    Math.min(1, distance / Math.max(1, Math.min(size, 32))),
-  );
+    edge === "top" ? y : edge === "bottom" ? maxY - y : edge === "left" ? x : maxX - x;
+  const t = Math.max(0, Math.min(1, distance / Math.max(1, Math.min(size, 32))));
   return t * t * (3 - 2 * t);
 }

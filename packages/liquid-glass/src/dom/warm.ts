@@ -26,16 +26,33 @@ export function createMapWarmer(root: HTMLElement) {
   svg.setAttribute("height", "0");
   svg.style.position = "absolute";
   root.append(svg);
-  const probes: { filter: SVGElement; merge: SVGElement; element: HTMLElement; count: number }[] = [];
+  const probes: { filter: SVGElement; merge: SVGElement; element: HTMLElement; count: number }[] =
+    [];
   const createProbe = () => {
     const filter = document.createElementNS(ns, "filter");
     filter.id = `${id}-${probes.length}`;
-    for (const [name, value] of Object.entries({ x: "0", y: "0", width: "1", height: "1", filterUnits: "objectBoundingBox", primitiveUnits: "objectBoundingBox" }))
+    for (const [name, value] of Object.entries({
+      x: "0",
+      y: "0",
+      width: "1",
+      height: "1",
+      filterUnits: "objectBoundingBox",
+      primitiveUnits: "objectBoundingBox",
+    }))
       filter.setAttribute(name, value);
     svg.append(filter);
     const element = document.createElement("div");
     element.setAttribute("aria-hidden", "true");
-    Object.assign(element.style, { position: "absolute", left: "0", top: "0", width: "1px", height: "1px", opacity: "0.004", pointerEvents: "none", filter: `url("#${filter.id}")` });
+    Object.assign(element.style, {
+      position: "absolute",
+      left: "0",
+      top: "0",
+      width: "1px",
+      height: "1px",
+      opacity: "0.004",
+      pointerEvents: "none",
+      filter: `url("#${filter.id}")`,
+    });
     root.append(element);
     const merge = document.createElementNS(ns, "feMerge");
     filter.append(merge);
@@ -45,7 +62,10 @@ export function createMapWarmer(root: HTMLElement) {
   };
   createProbe();
   // Each warmed image is one primitive and one merge input, oldest first.
-  const warmed = new Map<string, { image: SVGElement; node: SVGElement; probe: (typeof probes)[number] }>();
+  const warmed = new Map<
+    string,
+    { image: SVGElement; node: SVGElement; probe: (typeof probes)[number] }
+  >();
   // A live decoded map does not need a new probe every time its old probe
   // slot is reused. Only remember preparations that survived the same grace
   // period as their first use. A burst can evict maps before that happens.
@@ -57,13 +77,22 @@ export function createMapWarmer(root: HTMLElement) {
     if (warmed.has(url)) return;
     if (warmed.size >= retainedImages) {
       const [oldUrl, old] = warmed.entries().next().value!;
-      old.image.remove(); old.node.remove(); old.probe.count--;
+      old.image.remove();
+      old.node.remove();
+      old.probe.count--;
       warmed.delete(oldUrl);
     }
     const probe = probes.find((probe) => probe.count < imagesPerProbe) ?? createProbe();
     const name = `w${++next}`;
     const image = document.createElementNS(ns, "feImage");
-    for (const [key, value] of Object.entries({ x: "0", y: "0", width: "1", height: "1", preserveAspectRatio: "none", result: name }))
+    for (const [key, value] of Object.entries({
+      x: "0",
+      y: "0",
+      width: "1",
+      height: "1",
+      preserveAspectRatio: "none",
+      result: name,
+    }))
       image.setAttribute(key, value);
     const node = document.createElementNS(ns, "feMergeNode");
     node.setAttribute("in", name);
@@ -82,28 +111,39 @@ export function createMapWarmer(root: HTMLElement) {
     // on a page stalls for over a second; better here than on a gesture.
     const generation = ++touches;
     timers.forEach(clearTimeout);
-    timers = [16, 60, 150].map((delay) => setTimeout(() => {
-      if (touches === generation && !disposed)
-        for (const { filter } of probes) filter.setAttribute("x", filter.getAttribute("x") === "0" ? "0.000001" : "0");
-    }, delay));
+    timers = [16, 60, 150].map((delay) =>
+      setTimeout(() => {
+        if (touches === generation && !disposed)
+          for (const { filter } of probes)
+            filter.setAttribute("x", filter.getAttribute("x") === "0" ? "0.000001" : "0");
+      }, delay),
+    );
   };
-  const urls = (maps: MaterialMaps) => [maps.field, maps.overlay, ...Object.values(maps.capsule?.planes ?? {}).flat()];
+  const urls = (maps: MaterialMaps) => [
+    maps.field,
+    maps.overlay,
+    ...Object.values(maps.capsule?.planes ?? {}).flat(),
+  ];
   const completePreparations = () => {
     const now = performance.now();
-    for (const [maps, ready] of pending) if (ready <= now) {
-      if (urls(maps).every((url) => warmed.has(url))) prepared.add(maps);
-      pending.delete(maps);
-    }
+    for (const [maps, ready] of pending)
+      if (ready <= now) {
+        if (urls(maps).every((url) => warmed.has(url))) prepared.add(maps);
+        pending.delete(maps);
+      }
   };
   const schedulePreparation = () => {
     if (preparationTimer !== undefined || !pending.size) return;
     const next = Math.min(...pending.values());
-    preparationTimer = setTimeout(() => {
-      preparationTimer = undefined;
-      if (disposed) return;
-      completePreparations();
-      schedulePreparation();
-    }, Math.max(0, next - performance.now()));
+    preparationTimer = setTimeout(
+      () => {
+        preparationTimer = undefined;
+        if (disposed) return;
+        completePreparations();
+        schedulePreparation();
+      },
+      Math.max(0, next - performance.now()),
+    );
   };
   return {
     warm(maps: MaterialMaps) {

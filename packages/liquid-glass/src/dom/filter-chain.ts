@@ -19,26 +19,48 @@ function chainOf(element: HTMLElement): Chain {
     // CSS-wide keywords cannot be concatenated with filter functions. Keep
     // the authored declaration for cleanup and compose its resolved value.
     const base = /^(initial|inherit|unset|revert|revert-layer)$/i.test(original.trim())
-      ? element.ownerDocument.defaultView?.getComputedStyle(element).filter ?? "" : original;
-    chain = { original, base: base.trim().toLowerCase() === "none" ? "" : base, priority: element.style.getPropertyPriority("filter"), parts: new Map() };
+      ? (element.ownerDocument.defaultView?.getComputedStyle(element).filter ?? "")
+      : original;
+    chain = {
+      original,
+      base: base.trim().toLowerCase() === "none" ? "" : base,
+      priority: element.style.getPropertyPriority("filter"),
+      parts: new Map(),
+    };
     chains.set(element, chain);
   }
   return chain;
 }
 
 function write(element: HTMLElement, chain: Chain) {
-  const parts = [...chain.parts.values()].filter((part) => part.value).sort((a, b) => b.depth - a.depth).map((part) => part.value);
+  const parts = [...chain.parts.values()]
+    .filter((part) => part.value)
+    .sort((a, b) => b.depth - a.depth)
+    .map((part) => part.value);
   const next = parts.length ? [chain.base, ...parts].filter(Boolean).join(" ") : chain.original;
-  if (element.style.getPropertyValue("filter") !== next || element.style.getPropertyPriority("filter") !== chain.priority)
+  if (
+    element.style.getPropertyValue("filter") !== next ||
+    element.style.getPropertyPriority("filter") !== chain.priority
+  )
     element.style.setProperty("filter", next, chain.priority);
   chain.applied = element.style.getPropertyValue("filter");
 }
 
 /** Set one owner's filters on an element; an empty value draws nothing but keeps the claim. */
-export function setFilterPart(element: HTMLElement, owner: string, depth: number, value: string): void {
+export function setFilterPart(
+  element: HTMLElement,
+  owner: string,
+  depth: number,
+  value: string,
+): void {
   const chain = chainOf(element);
   const part = chain.parts.get(owner);
-  if (part?.value === value && part.depth === depth && chain.applied === element.style.getPropertyValue("filter")) return;
+  if (
+    part?.value === value &&
+    part.depth === depth &&
+    chain.applied === element.style.getPropertyValue("filter")
+  )
+    return;
   chain.parts.set(owner, { depth, value });
   write(element, chain);
 }
@@ -46,9 +68,16 @@ export function setFilterPart(element: HTMLElement, owner: string, depth: number
 export function releaseFilterPart(element: HTMLElement, owner: string): void {
   const chain = chains.get(element);
   if (!chain?.parts.delete(owner)) return;
-  if (chain.parts.size) { write(element, chain); return; }
+  if (chain.parts.size) {
+    write(element, chain);
+    return;
+  }
   chains.delete(element);
-  if (chain.applied !== undefined && element.style.getPropertyValue("filter") === chain.applied && element.style.getPropertyPriority("filter") === chain.priority) {
+  if (
+    chain.applied !== undefined &&
+    element.style.getPropertyValue("filter") === chain.applied &&
+    element.style.getPropertyPriority("filter") === chain.priority
+  ) {
     if (chain.original) element.style.setProperty("filter", chain.original, chain.priority);
     else element.style.removeProperty("filter");
   }

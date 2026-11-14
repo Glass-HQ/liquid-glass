@@ -35,11 +35,16 @@ export class Spring {
     this.configure(options);
   }
   configure({ duration, bounce }: SpringOptions): this {
-    if (!(duration > 0) || !Number.isFinite(duration)) throw new RangeError("Spring duration must be positive and finite.");
-    if (!(bounce > -1 && bounce < 1)) throw new RangeError("Spring bounce must be greater than -1 and less than 1.");
+    if (!(duration > 0) || !Number.isFinite(duration))
+      throw new RangeError("Spring duration must be positive and finite.");
+    if (!(bounce > -1 && bounce < 1))
+      throw new RangeError("Spring bounce must be greater than -1 and less than 1.");
     const omega = (2 * Math.PI) / duration;
     this.stiffness = omega * omega;
-    this.damping = bounce >= 0 ? 4 * Math.PI * (1 - bounce) / duration : 4 * Math.PI / (duration * (1 + bounce));
+    this.damping =
+      bounce >= 0
+        ? (4 * Math.PI * (1 - bounce)) / duration
+        : (4 * Math.PI) / (duration * (1 + bounce));
     return this;
   }
   /** Move to `value` immediately and stop. */
@@ -56,13 +61,16 @@ export class Spring {
     if (this.settled || !(dt > 0)) return this;
     const omega = Math.sqrt(this.stiffness);
     const zeta = this.damping / (2 * omega);
-    const x0 = this.value - this.target, v0 = this.velocity;
+    const x0 = this.value - this.target,
+      v0 = this.velocity;
     let x: number, v: number;
     if (zeta < 1) {
       const wd = omega * Math.sqrt(1 - zeta * zeta);
       const decay = Math.exp(-zeta * omega * dt);
-      const a = x0, b = (v0 + zeta * omega * x0) / wd;
-      const cos = Math.cos(wd * dt), sin = Math.sin(wd * dt);
+      const a = x0,
+        b = (v0 + zeta * omega * x0) / wd;
+      const cos = Math.cos(wd * dt),
+        sin = Math.sin(wd * dt);
       x = decay * (a * cos + b * sin);
       v = decay * ((b * wd - zeta * omega * a) * cos - (a * wd + zeta * omega * b) * sin);
     } else if (zeta === 1) {
@@ -72,9 +80,12 @@ export class Spring {
       v = decay * (b - omega * (x0 + b * dt));
     } else {
       const root = omega * Math.sqrt(zeta * zeta - 1);
-      const r1 = -zeta * omega + root, r2 = -zeta * omega - root;
-      const c2 = (v0 - r1 * x0) / (r2 - r1), c1 = x0 - c2;
-      const e1 = Math.exp(r1 * dt), e2 = Math.exp(r2 * dt);
+      const r1 = -zeta * omega + root,
+        r2 = -zeta * omega - root;
+      const c2 = (v0 - r1 * x0) / (r2 - r1),
+        c1 = x0 - c2;
+      const e1 = Math.exp(r1 * dt),
+        e2 = Math.exp(r2 * dt);
       x = c1 * e1 + c2 * e2;
       v = c1 * r1 * e1 + c2 * r2 * e2;
     }
@@ -92,14 +103,25 @@ export class Spring {
 
 /** Seconds until a spring released from `from` toward `to` with `velocity`
  * comes to rest, or stays within `precision` (a fraction of the travel). */
-export function settleTime(options: SpringOptions, from: number, to: number, velocity = 0, precision = 0): number {
+export function settleTime(
+  options: SpringOptions,
+  from: number,
+  to: number,
+  velocity = 0,
+  precision = 0,
+): number {
   const spring = new Spring(from, options);
   spring.target = to;
   spring.velocity = velocity;
   const tolerance = precision * Math.abs(from - to);
   let time = 0;
   while (!spring.settled && time < 5) {
-    if (tolerance && Math.abs(spring.value - to) <= tolerance && Math.abs(spring.velocity) <= tolerance * 10) break;
+    if (
+      tolerance &&
+      Math.abs(spring.value - to) <= tolerance &&
+      Math.abs(spring.velocity) <= tolerance * 10
+    )
+      break;
     spring.step(1 / 120);
     time += 1 / 120;
   }
@@ -110,5 +132,5 @@ export function settleTime(options: SpringOptions, from: number, to: number, vel
 export function rubberBand(offset: number, limit: number, coefficient = 0.55): number {
   if (limit <= 0) return 0;
   const magnitude = Math.abs(offset);
-  return Math.sign(offset) * limit * (1 - 1 / (magnitude * coefficient / limit + 1));
+  return Math.sign(offset) * limit * (1 - 1 / ((magnitude * coefficient) / limit + 1));
 }

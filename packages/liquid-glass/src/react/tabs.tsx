@@ -73,15 +73,20 @@ export function GlassTabsIndicator({
   ref,
   ...props
 }: Omit<ComponentPropsWithRef<typeof Tabs.Indicator>, "className" | "style"> &
-  MaterialOptions & Pick<GlassMotionProps, "motion"> & { className?: string; style?: CSSProperties }) {
+  MaterialOptions &
+  Pick<GlassMotionProps, "motion"> & { className?: string; style?: CSSProperties }) {
   const inherited = useContext(TabsMaterialContext);
   const { controller } = useScene();
   const level = useGlassMotion(motion ?? inherited.motion);
   // The indicator is the tab bar's selection lens: it springs between tabs,
   // lifts under a press, and can be dragged to choose a tab.
-  const lens = useCallback((element: HTMLElement | null) => {
-    if (element) return controller.addAnimator(attachSelectionLens(element, () => resolveMotion(level)));
-  }, [controller, level]);
+  const lens = useCallback(
+    (element: HTMLElement | null) => {
+      if (element)
+        return controller.addAnimator(attachSelectionLens(element, () => resolveMotion(level)));
+    },
+    [controller, level],
+  );
   return (
     <GlassSurface
       material={material}
@@ -102,22 +107,25 @@ export function GlassTabsTrigger({
   ...props
 }: ComponentPropsWithRef<typeof Tabs.Tab>) {
   return (
-    <GlassShape radius="capsule" concentric render={<Tabs.Tab
-      {...props}
-      className={(state) =>
-        `lg-tab ${typeof className === "function" ? className(state) : (className ?? "")}`
+    <GlassShape
+      radius="capsule"
+      concentric
+      render={
+        <Tabs.Tab
+          {...props}
+          className={(state) =>
+            `lg-tab ${typeof className === "function" ? className(state) : (className ?? "")}`
+          }
+        />
       }
-    />}>
+    >
       <span className="lg-tab-label">{children}</span>
     </GlassShape>
   );
 }
 export interface GlassTabsProps
   extends
-    Omit<
-      ComponentPropsWithRef<typeof Tabs.Root>,
-      "children" | "className" | "style"
-    >,
+    Omit<ComponentPropsWithRef<typeof Tabs.Root>, "children" | "className" | "style">,
     MaterialOptions,
     Pick<GlassMotionProps, "interactive" | "motion"> {
   items: readonly { value: string; label: ReactNode; disabled?: boolean }[];
@@ -160,11 +168,7 @@ export function GlassTabs({
       >
         <GlassTabsIndicator tint={tint} />
         {items.map((item) => (
-          <GlassTabsTrigger
-            key={item.value}
-            value={item.value}
-            disabled={item.disabled}
-          >
+          <GlassTabsTrigger key={item.value} value={item.value} disabled={item.disabled}>
             {item.label}
           </GlassTabsTrigger>
         ))}

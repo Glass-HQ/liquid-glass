@@ -1,6 +1,12 @@
 import {
-  acquirePosition, createDropShadow, createSvgEffects, extractAndStripEffects,
-  hasEffects, observeAnchor, releasePosition, restoreStyles,
+  acquirePosition,
+  createDropShadow,
+  createSvgEffects,
+  extractAndStripEffects,
+  hasEffects,
+  observeAnchor,
+  releasePosition,
+  restoreStyles,
 } from "@lisse/core";
 import type { SmoothCornerOptions } from "@lisse/core";
 
@@ -14,9 +20,15 @@ export function createShapeEffects(element: HTMLElement) {
   const shadow = anchor && extracted.effects.shadow ? createDropShadow(anchor, element) : null;
   const stopAnchor = anchor ? observeAnchor(anchor, element) : null;
   return {
-    update(options: SmoothCornerOptions, width: number, height: number, offset: { x: number; y: number }) {
+    update(
+      options: SmoothCornerOptions,
+      width: number,
+      height: number,
+      offset: { x: number; y: number },
+    ) {
       effects?.update(options, extracted.effects, width, height, offset);
-      if (shadow && extracted.effects.shadow) shadow.update(options, extracted.effects.shadow, width, height, offset);
+      if (shadow && extracted.effects.shadow)
+        shadow.update(options, extracted.effects.shadow, width, height, offset);
     },
     dispose() {
       stopAnchor?.();

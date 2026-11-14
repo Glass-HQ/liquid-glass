@@ -9,13 +9,33 @@
   width: 100%;
   height: 100%;
 }
-:where(.lg-content[data-layout="scroll"]) { overflow: auto; }
-:where([data-glass-blur-host]) { display: contents; }
+:where(.lg-content[data-layout="scroll"]) {
+  overflow: auto;
+}
+:where([data-glass-blur-host]) {
+  display: contents;
+}
 /* Gecko blurs this wrapper on the GPU, so glass copies the content unblurred. */
-:where([data-glass-blur-host][data-glass-blur-active]) { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
-:where([data-glass-blur-host][data-glass-blur-active][data-layout="flow"]) { position: relative; inset: auto; height: auto; }
-:where(.lg-scroll-paint-root) { position: absolute; inset: 0; overflow: visible; }
-:where(.lg-scroll-paint-root > foreignObject) { overflow: visible; }
+:where([data-glass-blur-host][data-glass-blur-active]) {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+:where([data-glass-blur-host][data-glass-blur-active][data-layout="flow"]) {
+  position: relative;
+  inset: auto;
+  height: auto;
+}
+:where(.lg-scroll-paint-root) {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+:where(.lg-scroll-paint-root > foreignObject) {
+  overflow: visible;
+}
 /* Gecko draws each surface's glass in a layer beneath its children. */
 .lg-glass-layer {
   position: absolute;
@@ -75,7 +95,9 @@
   padding: var(--lg-toolbar-inset, 3px);
   flex: 1 0 auto;
 }
-:where(.lg-toolbar)[data-segmented] > :where(.lg-toolbar-cluster) { flex: 0 0 auto; }
+:where(.lg-toolbar)[data-segmented] > :where(.lg-toolbar-cluster) {
+  flex: 0 0 auto;
+}
 :where(.lg-toolbar) :where(.lg-button) {
   min-height: 22px;
   padding: 0 8px;
@@ -132,8 +154,7 @@
   outline: none;
   overscroll-behavior: contain;
 }
-:where(.lg-menu)
-  :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) {
+:where(.lg-menu) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) {
   box-sizing: border-box;
   min-height: 28px;
   padding: 4px 8px;
@@ -147,23 +168,10 @@
   outline: none;
 }
 :where(.lg-menu)
-  :is(
-    [role="menuitem"],
-    [role="menuitemcheckbox"],
-    [role="menuitemradio"]
-  )[data-highlighted],
+  :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"])[data-highlighted],
 :where(.lg-menu)
-  :is(
-    [role="menuitem"],
-    [role="menuitemcheckbox"],
-    [role="menuitemradio"]
-  ):focus-visible,
-:where(.lg-menu)
-  :is(
-    [role="menuitem"],
-    [role="menuitemcheckbox"],
-    [role="menuitemradio"]
-  ):active {
+  :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):focus-visible,
+:where(.lg-menu) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):active {
   background: var(--lg-menu-highlight);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -185,7 +193,10 @@
 :where(.lg-surface[data-glass-interactive][data-glass-appearance="dark"]) {
   --lg-glow-color: rgb(255 255 255 / 0.16);
 }
-:where(.lg-surface[data-glass-interactive]) { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+:where(.lg-surface[data-glass-interactive]) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
 
 /* While glass grows out of, or back into, another shape, its content waits
    for room: it condenses out of a blur as the outline opens, and dissolves
@@ -216,23 +227,58 @@
 }
 
 :where(.lg-button)[data-size="xs"],
-:where(.lg-button)[data-size="icon-xs"] { min-height: 20px; }
+:where(.lg-button)[data-size="icon-xs"] {
+  min-height: 20px;
+}
 :where(.lg-button)[data-size="sm"],
-:where(.lg-button)[data-size="icon-sm"] { min-height: 24px; }
+:where(.lg-button)[data-size="icon-sm"] {
+  min-height: 24px;
+}
 :where(.lg-button)[data-size="lg"],
-:where(.lg-button)[data-size="icon-lg"] { min-height: 32px; padding-inline: 10px; }
-:where(.lg-button)[data-size="xs"] { font-size: 10px; }
-:where(.lg-button)[data-size^="icon"] { width: 28px; height: 28px; padding: 0; }
-:where(.lg-button)[data-size="icon-xs"] { width: 20px; height: 20px; }
-:where(.lg-button)[data-size="icon-sm"] { width: 24px; height: 24px; }
-:where(.lg-button)[data-size="icon-lg"] { width: 32px; height: 32px; }
-:where(.lg-button) > svg, :where(.lg-toolbar-button) > svg { width: 14px; height: 14px; }
+:where(.lg-button)[data-size="icon-lg"] {
+  min-height: 32px;
+  padding-inline: 10px;
+}
+:where(.lg-button)[data-size="xs"] {
+  font-size: 10px;
+}
+:where(.lg-button)[data-size^="icon"] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+:where(.lg-button)[data-size="icon-xs"] {
+  width: 20px;
+  height: 20px;
+}
+:where(.lg-button)[data-size="icon-sm"] {
+  width: 24px;
+  height: 24px;
+}
+:where(.lg-button)[data-size="icon-lg"] {
+  width: 32px;
+  height: 32px;
+}
+:where(.lg-button) > svg,
+:where(.lg-toolbar-button) > svg {
+  width: 14px;
+  height: 14px;
+}
 :where(.lg-button)[data-size="xs"] > svg,
-:where(.lg-button)[data-size="icon-xs"] > svg { width: 10px; height: 10px; }
+:where(.lg-button)[data-size="icon-xs"] > svg {
+  width: 10px;
+  height: 10px;
+}
 :where(.lg-button)[data-size="sm"] > svg,
-:where(.lg-button)[data-size="icon-sm"] > svg { width: 12px; height: 12px; }
+:where(.lg-button)[data-size="icon-sm"] > svg {
+  width: 12px;
+  height: 12px;
+}
 :where(.lg-button)[data-size="lg"] > svg,
-:where(.lg-button)[data-size="icon-lg"] > svg { width: 16px; height: 16px; }
+:where(.lg-button)[data-size="icon-lg"] > svg {
+  width: 16px;
+  height: 16px;
+}
 
 :where(.lg-toolbar-button) {
   display: inline-flex;
@@ -255,14 +301,24 @@
   font-size: 12px;
   font-weight: 500;
 }
-:where(.lg-toolbar, .lg-toolbar-cluster)[data-orientation="vertical"] { flex-direction: column; }
+:where(.lg-toolbar, .lg-toolbar-cluster)[data-orientation="vertical"] {
+  flex-direction: column;
+}
 :where(.lg-toolbar-spacer) {
   flex: 1 0 var(--lg-toolbar-space, 8px);
   align-self: stretch;
   pointer-events: none;
 }
-:where(.lg-toolbar-spacer)[data-sizing="fixed"] { flex-grow: 0; }
-:where(.lg-toolbar-button):is(:hover, :focus-visible, :active, [aria-pressed="true"], [data-popup-open]):not([data-disabled]):not(:disabled) {
+:where(.lg-toolbar-spacer)[data-sizing="fixed"] {
+  flex-grow: 0;
+}
+:where(.lg-toolbar-button):is(
+    :hover,
+    :focus-visible,
+    :active,
+    [aria-pressed="true"],
+    [data-popup-open]
+  ):not([data-disabled]):not(:disabled) {
   background: var(--lg-control-highlight);
 }
 :where(.lg-toolbar-button):focus-visible {
@@ -272,7 +328,9 @@
   opacity: 0.45;
   cursor: default;
 }
-:where(.lg-tabs-list)[data-size="sm"] :where(.lg-tab) { height: 22px; }
+:where(.lg-tabs-list)[data-size="sm"] :where(.lg-tab) {
+  height: 22px;
+}
 :where(.lg-tabs-list)[data-size="lg"] :where(.lg-tab) {
   height: 30px;
   padding-inline: 12px;
@@ -284,7 +342,6 @@
 :where(.lg-tabs-list)[data-orientation="vertical"] :where(.lg-tab-indicator) {
   left: var(--active-tab-left);
   top: var(--active-tab-top);
-
 }
 :where(.lg-tab)[data-disabled],
 :where(.lg-menu) [data-disabled] {
@@ -298,63 +355,227 @@
   opacity: 0.15;
 }
 
-:where(.lg-menu) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) > svg { width: 14px; height: 14px; }
+:where(.lg-menu) :is([role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) > svg {
+  width: 14px;
+  height: 14px;
+}
 
 /* Open popups and their optical layer share a stacking context above nearby content. */
 /* Set by the scene while a popup surface is registered in it. A `:has()` rule
    here would re-style the whole scene on every inline style change inside it. */
-:where(.lg-scene[data-glass-popup]) { z-index: 20; }
+:where(.lg-scene[data-glass-popup]) {
+  z-index: 20;
+}
 
-:where(.lg-content[data-layout="flow"]) { position: relative; inset: auto; height: auto; }
-:where(.lg-progressive-blur) { position: absolute; pointer-events: none; }
-:where(.lg-progressive-blur[data-edge="top"]) { inset: 0 0 auto; height: var(--lg-blur-size); }
-:where(.lg-progressive-blur[data-edge="bottom"]) { inset: auto 0 0; height: var(--lg-blur-size); }
-:where(.lg-progressive-blur[data-edge="inline-start"]) { inset-block: 0; inset-inline-start: 0; width: var(--lg-blur-size); }
-:where(.lg-progressive-blur[data-edge="inline-end"]) { inset-block: 0; inset-inline-end: 0; width: var(--lg-blur-size); }
+:where(.lg-content[data-layout="flow"]) {
+  position: relative;
+  inset: auto;
+  height: auto;
+}
+:where(.lg-progressive-blur) {
+  position: absolute;
+  pointer-events: none;
+}
+:where(.lg-progressive-blur[data-edge="top"]) {
+  inset: 0 0 auto;
+  height: var(--lg-blur-size);
+}
+:where(.lg-progressive-blur[data-edge="bottom"]) {
+  inset: auto 0 0;
+  height: var(--lg-blur-size);
+}
+:where(.lg-progressive-blur[data-edge="inline-start"]) {
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: var(--lg-blur-size);
+}
+:where(.lg-progressive-blur[data-edge="inline-end"]) {
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: var(--lg-blur-size);
+}
 
-:where(.lg-slider) { position: relative; width: 280px; max-width: 100%; touch-action: none; }
-:where(.lg-slider-control) { position: relative; display: flex; align-items: center; height: 28px; user-select: none; }
-:where(.lg-slider-track) { position: relative; width: 100%; height: 6px;  background: rgb(128 128 128 / 0.3); }
-:where(.lg-slider-fill) { height: 100%;  background: var(--lg-accent); }
-:where(.lg-slider-thumb) { width: 20px; height: 16px; translate: -50% -50%;  cursor: grab; z-index: 1; outline: none; }
-:where(.lg-slider-thumb):dir(rtl) { translate: 50% -50%; }
-:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-thumb) { translate: -50% 50%; }
-:where(.lg-slider-thumb)[data-press-phase="pressed"] { cursor: grabbing; }
-:where(.lg-control-thumb) { --lg-control-progress: 0; --lg-control-grow-x: 2.5px; --lg-control-grow-y: 2px; }
-:where(.lg-switch-thumb) { --lg-control-grow-x: 9px; --lg-control-grow-y: 5.5px; }
-:where(.lg-control-lens, .lg-control-face) { position: absolute; inset: calc(-1 * var(--lg-control-grow-y) * var(--lg-control-progress)) calc(-1 * var(--lg-control-grow-x) * var(--lg-control-progress));  pointer-events: none; }
-:where(.lg-control-face) { background: #fff; opacity: calc(1 - var(--lg-control-progress)); box-shadow: 0 1px 2px rgb(0 0 0 / 0.1), 0 3px 12px rgb(0 0 0 / 0.1); }
-:where(.lg-control-lens) { opacity: var(--lg-control-progress); }
+:where(.lg-slider) {
+  position: relative;
+  width: 280px;
+  max-width: 100%;
+  touch-action: none;
+}
+:where(.lg-slider-control) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  user-select: none;
+}
+:where(.lg-slider-track) {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: rgb(128 128 128 / 0.3);
+}
+:where(.lg-slider-fill) {
+  height: 100%;
+  background: var(--lg-accent);
+}
+:where(.lg-slider-thumb) {
+  width: 20px;
+  height: 16px;
+  translate: -50% -50%;
+  cursor: grab;
+  z-index: 1;
+  outline: none;
+}
+:where(.lg-slider-thumb):dir(rtl) {
+  translate: 50% -50%;
+}
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-thumb) {
+  translate: -50% 50%;
+}
+:where(.lg-slider-thumb)[data-press-phase="pressed"] {
+  cursor: grabbing;
+}
+:where(.lg-control-thumb) {
+  --lg-control-progress: 0;
+  --lg-control-grow-x: 2.5px;
+  --lg-control-grow-y: 2px;
+}
+:where(.lg-switch-thumb) {
+  --lg-control-grow-x: 9px;
+  --lg-control-grow-y: 5.5px;
+}
+:where(.lg-control-lens, .lg-control-face) {
+  position: absolute;
+  inset: calc(-1 * var(--lg-control-grow-y) * var(--lg-control-progress))
+    calc(-1 * var(--lg-control-grow-x) * var(--lg-control-progress));
+  pointer-events: none;
+}
+:where(.lg-control-face) {
+  background: #fff;
+  opacity: calc(1 - var(--lg-control-progress));
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.1),
+    0 3px 12px rgb(0 0 0 / 0.1);
+}
+:where(.lg-control-lens) {
+  opacity: var(--lg-control-progress);
+}
 
-:where(.lg-slider-thumb):focus-within { outline: none; }
-:where(.lg-slider-ticks) { display: flex; justify-content: space-between; position: absolute; inset-inline: 0; top: 23px; pointer-events: none; }
-:where(.lg-slider-ticks) > span { width: 2px; height: 2px; border-radius: 50%; background: rgb(128 128 128 / 0.65); }
-:where(.lg-slider)[data-orientation="vertical"] { width: 28px; height: 200px; }
-:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-control) { width: 28px; height: 100%; justify-content: center; }
-:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-track) { width: 6px; height: 100%; }
-:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-fill) { width: 100%; }
-:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-ticks) { inset: 0 auto 0 23px; flex-direction: column-reverse; }
-:where(.lg-switch) { --lg-switch-travel: 18px; position: relative; display: inline-flex; align-items: center; flex-shrink: 0; box-sizing: border-box; width: 54px; height: 24px; padding: 2px; border: 0;  cursor: pointer; touch-action: none; user-select: none; outline: none; transition: background-color 200ms ease-in-out; }
-:where(.lg-switch-track) { position: absolute; inset: 0; pointer-events: none; background: rgb(128 128 128 / 0.4); transition: background-color 200ms ease-in-out; }
-:where(.lg-switch)[data-checked] > .lg-switch-track, :where(.lg-switch)[data-presentation-checked="true"] > .lg-switch-track { background: var(--lg-accent); }
-:where(.lg-switch)[data-presentation-checked="false"] > .lg-switch-track { background: rgb(128 128 128 / 0.4); }
-:where(.lg-switch):dir(rtl) { --lg-switch-travel: -18px; }
-:where(.lg-switch-thumb) { position: relative; display: block; width: 32px; height: 20px;  flex-shrink: 0; left: calc(var(--lg-switch-position, 0) * var(--lg-switch-travel)); }
+:where(.lg-slider-thumb):focus-within {
+  outline: none;
+}
+:where(.lg-slider-ticks) {
+  display: flex;
+  justify-content: space-between;
+  position: absolute;
+  inset-inline: 0;
+  top: 23px;
+  pointer-events: none;
+}
+:where(.lg-slider-ticks) > span {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: rgb(128 128 128 / 0.65);
+}
+:where(.lg-slider)[data-orientation="vertical"] {
+  width: 28px;
+  height: 200px;
+}
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-control) {
+  width: 28px;
+  height: 100%;
+  justify-content: center;
+}
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-track) {
+  width: 6px;
+  height: 100%;
+}
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-fill) {
+  width: 100%;
+}
+:where(.lg-slider)[data-orientation="vertical"] :where(.lg-slider-ticks) {
+  inset: 0 auto 0 23px;
+  flex-direction: column-reverse;
+}
+:where(.lg-switch) {
+  --lg-switch-travel: 18px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 54px;
+  height: 24px;
+  padding: 2px;
+  border: 0;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  transition: background-color 200ms ease-in-out;
+}
+:where(.lg-switch-track) {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgb(128 128 128 / 0.4);
+  transition: background-color 200ms ease-in-out;
+}
+:where(.lg-switch)[data-checked] > .lg-switch-track,
+:where(.lg-switch)[data-presentation-checked="true"] > .lg-switch-track {
+  background: var(--lg-accent);
+}
+:where(.lg-switch)[data-presentation-checked="false"] > .lg-switch-track {
+  background: rgb(128 128 128 / 0.4);
+}
+:where(.lg-switch):dir(rtl) {
+  --lg-switch-travel: -18px;
+}
+:where(.lg-switch-thumb) {
+  position: relative;
+  display: block;
+  width: 32px;
+  height: 20px;
+  flex-shrink: 0;
+  left: calc(var(--lg-switch-position, 0) * var(--lg-switch-travel));
+}
 
-
-:where(.lg-switch):focus-visible { outline: none; }
-:where(.lg-switch)[data-readonly] { cursor: default; }
+:where(.lg-switch):focus-visible {
+  outline: none;
+}
+:where(.lg-switch)[data-readonly] {
+  cursor: default;
+}
 @media (prefers-reduced-motion: reduce) {
   :where(.lg-slider-thumb, .lg-switch, .lg-switch-track, .lg-switch-thumb, .lg-control-face),
-  :where(.lg-switch)[data-dragging] :where(.lg-switch-thumb) { transition: none; }
+  :where(.lg-switch)[data-dragging] :where(.lg-switch-thumb) {
+    transition: none;
+  }
 }
 @media (forced-colors: active) {
-  :where(.lg-slider-track, .lg-switch-track) { background: Canvas; border: 1px solid ButtonText; }
-  :where(.lg-slider-fill), :where(.lg-switch)[data-checked] > .lg-switch-track { background: Highlight; }
-  :where(.lg-slider-thumb, .lg-switch-thumb) { background: ButtonText; }
+  :where(.lg-slider-track, .lg-switch-track) {
+    background: Canvas;
+    border: 1px solid ButtonText;
+  }
+  :where(.lg-slider-fill),
+  :where(.lg-switch)[data-checked] > .lg-switch-track {
+    background: Highlight;
+  }
+  :where(.lg-slider-thumb, .lg-switch-thumb) {
+    background: ButtonText;
+  }
 }
 
-:where(.lg-switch:has([data-glass-motion="none"]), .lg-switch:has([data-glass-motion="none"]) > .lg-switch-track) { transition: none; }
+:where(
+  .lg-switch:has([data-glass-motion="none"]),
+  .lg-switch:has([data-glass-motion="none"]) > .lg-switch-track
+) {
+  transition: none;
+}
 
 /* No rounded-rectangle first paint while Lisse measures the shape. */
-[data-lg-shape]:not([style*="clip-path"]), .lg-surface:not([style*="clip-path"]) { visibility: hidden; }
+[data-lg-shape]:not([style*="clip-path"]),
+.lg-surface:not([style*="clip-path"]) {
+  visibility: hidden;
+}

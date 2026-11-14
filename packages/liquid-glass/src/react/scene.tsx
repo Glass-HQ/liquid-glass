@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ComponentPropsWithRef, HTMLAttributes, Ref } from "react";
 import { useRender } from "@base-ui/react/use-render";
 import { webkit } from "../dom/filter-budget.js";
@@ -15,10 +23,18 @@ interface SceneContextValue {
 }
 const inertController: GlassSceneController = {
   setContent() {},
-  addForeground() { return () => {}; },
-  addAnimator() { return () => {}; },
-  addProgressiveBlur() { return () => {}; },
-  addScrollEdges() { return () => {}; },
+  addForeground() {
+    return () => {};
+  },
+  addAnimator() {
+    return () => {};
+  },
+  addProgressiveBlur() {
+    return () => {};
+  },
+  addScrollEdges() {
+    return () => {};
+  },
   addSurface() {
     return () => {};
   },
@@ -38,9 +54,12 @@ export function useScene() {
 /** Ref for live foreground DOM; registration adds no material or GPU maps. */
 export function useGlassForeground() {
   const { controller } = useScene();
-  return useCallback((element: HTMLElement | null) => {
-    if (element) return controller.addForeground(element);
-  }, [controller]);
+  return useCallback(
+    (element: HTMLElement | null) => {
+      if (element) return controller.addForeground(element);
+    },
+    [controller],
+  );
 }
 export interface GlassForegroundProps extends HTMLAttributes<HTMLElement> {
   render?: Parameters<typeof useRender>[0]["render"];
@@ -72,8 +91,7 @@ export function GlassScene({
   ...props
 }: GlassSceneProps) {
   const capacity = Math.max(1, Math.min(64, Math.floor(maxSurfaces)));
-  if (!Number.isFinite(capacity))
-    throw new RangeError("maxSurfaces must be finite.");
+  if (!Number.isFinite(capacity)) throw new RangeError("maxSurfaces must be finite.");
   const [scene, setScene] = useState<SceneContextValue>({
     controller: inertController,
     root: null,
@@ -130,7 +148,8 @@ export function GlassContent({
   ...props
 }: GlassContentProps) {
   const { controller } = useScene();
-  const isolateScroll = useSyncExternalStore(subscribeEngine, clientWebKit, serverWebKit) && layout === "scroll";
+  const isolateScroll =
+    useSyncExternalStore(subscribeEngine, clientWebKit, serverWebKit) && layout === "scroll";
   const attach = useCallback(
     (element: HTMLDivElement | null) => {
       controller.setContent(element);
@@ -145,13 +164,22 @@ export function GlassContent({
     props: { ...props, "data-layout": layout, className: `lg-content ${className}` },
   });
   // Gecko draws progressive blur on this wrapper; elsewhere it has no box.
-  rendered = <div data-glass-blur-host="" data-layout={layout}>{rendered}</div>;
+  rendered = (
+    <div data-glass-blur-host="" data-layout={layout}>
+      {rendered}
+    </div>
+  );
   // WebKit otherwise translates the entire cached reference-filter image
   // during asynchronous overflow scrolling, including stationary glass and
   // blur masks. A foreignObject keeps this live DOM scrollport and its filter
   // in the same paint pass. Input, selection and scrolling remain native.
-  if (isolateScroll) rendered = <svg className="lg-scroll-paint-root" width="100%" height="100%">
-    <foreignObject width="100%" height="100%">{rendered}</foreignObject>
-  </svg>;
+  if (isolateScroll)
+    rendered = (
+      <svg className="lg-scroll-paint-root" width="100%" height="100%">
+        <foreignObject width="100%" height="100%">
+          {rendered}
+        </foreignObject>
+      </svg>
+    );
   return rendered;
 }

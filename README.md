@@ -18,13 +18,16 @@ import "@glass-sdk/liquid-glass/styles.css";
 
 <GlassScene style={{ height: 240 }}>
   <GlassContent>
-    <img src="/landscape.jpg" alt="Mountain lake"
-      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    <img
+      src="/landscape.jpg"
+      alt="Mountain lake"
+      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+    />
   </GlassContent>
   <GlassButton material="regular" style={{ position: "absolute", left: 24, top: 24 }}>
     Get started
   </GlassButton>
-</GlassScene>
+</GlassScene>;
 ```
 
 React components require React 19+. Rendering requires HTTPS or localhost and an available WebGPU adapter. Safari has known rendering issues; see [requirements and limitations](packages/liquid-glass/README.md#requirements-and-limitations).

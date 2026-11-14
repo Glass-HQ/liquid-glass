@@ -7,17 +7,36 @@ test("wide capsules share one GPU geometry across animated widths", () => {
   expect(capsuleMapGeometry(geometry)).toEqual(capsuleMapGeometry({ ...geometry, width: 118 }));
   expect(capsuleMapGeometry({ ...geometry, width: 55 })).toBeUndefined();
   expect(capsuleMapGeometry({ ...geometry, radius: 12 })).toBeUndefined();
-  expect(capsuleMapGeometry({ ...geometry, outline: [[0, 0], [75, 0], [0, 30]] })).toBeUndefined();
+  expect(
+    capsuleMapGeometry({
+      ...geometry,
+      outline: [
+        [0, 0],
+        [75, 0],
+        [0, 30],
+      ],
+    }),
+  ).toBeUndefined();
 });
 
 /** Image placements by result name, with tokens read back as URLs. */
 function images(markup: string) {
-  const result = new Map<string, { url: string; x: number; y: number; width: number; height: number }>();
+  const result = new Map<
+    string,
+    { url: string; x: number; y: number; width: number; height: number }
+  >();
   for (const [, attributes] of markup.matchAll(/<feImage ([^>]*)\/>/g)) {
-    const read = (name: string) => Number(new RegExp(`\\b${name}="([-\\d.]+)"`).exec(attributes!)?.[1]);
+    const read = (name: string) =>
+      Number(new RegExp(`\\b${name}="([-\\d.]+)"`).exec(attributes!)?.[1]);
     const name = /result="([^"]+)"/.exec(attributes!)![1]!;
     const url = mapUrl(/data-map="([^"]+)"/.exec(attributes!)![1]!)!;
-    result.set(name, { url, x: read("x"), y: read("y"), width: read("width"), height: read("height") });
+    result.set(name, {
+      url,
+      x: read("x"),
+      y: read("y"),
+      width: read("width"),
+      height: read("height"),
+    });
   }
   return result;
 }
@@ -29,8 +48,20 @@ test("animated capsule keeps both cap widths and moves the right cap with its ed
     const b = images(mapImage(maps, "field", "mask", 10, 20, width, 34));
     expect(b.get("maskL")).toEqual({ url: "left", x: 10, y: 20, width: 32, height: 34 });
     // The uniform middle tucks half a pixel under each cap to avoid seams.
-    expect(b.get("maskM")).toEqual({ url: "middle", x: 41.5, y: 20, width: width - 63, height: 34 });
-    expect(b.get("maskR")).toEqual({ url: "right", x: 10 + width - 32, y: 20, width: 32, height: 34 });
+    expect(b.get("maskM")).toEqual({
+      url: "middle",
+      x: 41.5,
+      y: 20,
+      width: width - 63,
+      height: 34,
+    });
+    expect(b.get("maskR")).toEqual({
+      url: "right",
+      x: 10 + width - 32,
+      y: 20,
+      width: 32,
+      height: 34,
+    });
   }
   expect(images(mapImage(maps, "field", "mask", 0, 0, 50, 34)).get("mask")?.url).toBe("full");
 });

@@ -3,7 +3,15 @@ import { Button } from "@base-ui/react/button";
 import type { MaterialOptions } from "../core/materials.js";
 import { GlassSurface } from "./surface.js";
 import type { GlassMotionProps } from "./surface.js";
-export type GlassButtonSize = "default" | "xs" | "sm" | "lg" | "icon" | "icon-xs" | "icon-sm" | "icon-lg";
+export type GlassButtonSize =
+  | "default"
+  | "xs"
+  | "sm"
+  | "lg"
+  | "icon"
+  | "icon-xs"
+  | "icon-sm"
+  | "icon-lg";
 export interface GlassButtonProps
   extends
     Omit<ComponentPropsWithRef<typeof Button>, "className" | "style">,

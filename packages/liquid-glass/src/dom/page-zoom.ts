@@ -18,7 +18,9 @@ const pinch = () => {
     pinchScale = visualViewport.scale > 0 ? visualViewport.scale : 1;
     if (!watching && typeof visualViewport.addEventListener === "function") {
       watching = true;
-      visualViewport.addEventListener("resize", () => { pinchScale = undefined; });
+      visualViewport.addEventListener("resize", () => {
+        pinchScale = undefined;
+      });
     }
   }
   return pinchScale;
@@ -56,13 +58,14 @@ export function pageZoom(): number {
   const ratio = typeof devicePixelRatio === "number" && devicePixelRatio > 0 ? devicePixelRatio : 1;
   const magnification = pinch();
   if (ratio === measured.ratio && magnification === measured.pinch) return measured.zoom;
-  let low = 0.25, high = 16;
+  let low = 0.25,
+    high = 16;
   for (let step = 0; step < 24; step++) {
     const middle = (low + high) / 2;
     if (matchMedia(`(min-resolution: ${middle}dppx)`).matches) low = middle;
     else high = middle;
   }
-  const zoom = Math.round(ratio / magnification / low * 1000) / 1000;
+  const zoom = Math.round((ratio / magnification / low) * 1000) / 1000;
   measured = { ratio, pinch: magnification, zoom: Math.abs(zoom - 1) < 0.005 ? 1 : zoom };
   return measured.zoom;
 }
@@ -72,7 +75,17 @@ const lengths = new Set(["x", "y", "width", "height", "dx", "dy", "stdDeviation"
  * own bounding-box region alone. */
 export function zoomFilterMarkup(markup: string, zoom: number): string {
   if (zoom === 1) return markup;
-  return markup.replace(/<(fe\w+)\b([^>]*)>/g, (_, tag: string, attributes: string) =>
-    `<${tag}${attributes.replace(/([\w-]+)="([^"]*)"/g, (whole, name: string, value: string) =>
-      lengths.has(name) ? `${name}="${value.split(/[\s,]+/).filter(Boolean).map((part) => Number(part) * zoom).join(" ")}"` : whole)}>`);
+  return markup.replace(
+    /<(fe\w+)\b([^>]*)>/g,
+    (_, tag: string, attributes: string) =>
+      `<${tag}${attributes.replace(/([\w-]+)="([^"]*)"/g, (whole, name: string, value: string) =>
+        lengths.has(name)
+          ? `${name}="${value
+              .split(/[\s,]+/)
+              .filter(Boolean)
+              .map((part) => Number(part) * zoom)
+              .join(" ")}"`
+          : whole,
+      )}>`,
+  );
 }

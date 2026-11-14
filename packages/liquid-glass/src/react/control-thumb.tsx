@@ -24,23 +24,56 @@ interface ControlThumbProps extends HTMLAttributes<HTMLElement>, ControlMotionOp
   tag?: "div" | "span";
   ref?: Ref<HTMLElement>;
 }
-export function ControlThumb({ pressed, options, tag = "div", ref, children, motion, interactive = true, ...props }: ControlThumbProps) {
+export function ControlThumb({
+  pressed,
+  options,
+  tag = "div",
+  ref,
+  children,
+  motion,
+  interactive = true,
+  ...props
+}: ControlThumbProps) {
   const animatedPhase = usePressPhase(pressed);
   const phase = motion === "none" ? (pressed ? "pressed" : "idle") : animatedPhase;
   const resolvedMotion = useGlassMotion(motion);
-  const motionRef = useCallback((element: HTMLElement | null) => {
-    if (element) return attachNativeControlMotion(element, resolvedMotion, interactive);
-  }, [resolvedMotion, interactive]);
-  return useRender({ defaultTagName: tag, ref: [motionRef, ref ?? null], props: {
-    ...props,
-    className: `lg-control-thumb ${props.className ?? ""}`,
-    "data-press-phase": phase,
-    children: <>
-      {children}
-      {phase !== "idle" && <GlassSurface {...options} material={options.material ?? "clear"}
-        refraction={options.refraction ?? (props.className?.includes("lg-switch-thumb") ? 7.75 : 5)}
-        radius={options.radius ?? "capsule"} render={<span />} className="lg-control-lens" aria-hidden="true" />}
-      <GlassShape radius={options.radius ?? "capsule"} render={<span />} className="lg-control-face" aria-hidden="true" />
-    </>,
-  } });
+  const motionRef = useCallback(
+    (element: HTMLElement | null) => {
+      if (element) return attachNativeControlMotion(element, resolvedMotion, interactive);
+    },
+    [resolvedMotion, interactive],
+  );
+  return useRender({
+    defaultTagName: tag,
+    ref: [motionRef, ref ?? null],
+    props: {
+      ...props,
+      className: `lg-control-thumb ${props.className ?? ""}`,
+      "data-press-phase": phase,
+      children: (
+        <>
+          {children}
+          {phase !== "idle" && (
+            <GlassSurface
+              {...options}
+              material={options.material ?? "clear"}
+              refraction={
+                options.refraction ?? (props.className?.includes("lg-switch-thumb") ? 7.75 : 5)
+              }
+              radius={options.radius ?? "capsule"}
+              render={<span />}
+              className="lg-control-lens"
+              aria-hidden="true"
+            />
+          )}
+          <GlassShape
+            radius={options.radius ?? "capsule"}
+            render={<span />}
+            className="lg-control-face"
+            aria-hidden="true"
+          />
+        </>
+      ),
+    },
+  });
 }

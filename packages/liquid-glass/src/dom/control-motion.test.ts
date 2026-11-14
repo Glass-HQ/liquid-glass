@@ -8,17 +8,24 @@ test("optical sampling sees the spring position before paint, once per frame", (
     disconnect() {}
   } as unknown as typeof MutationObserver;
   const callbacks = new Map<number, FrameRequestCallback>();
-  let id = 0, layoutX = 100;
+  let id = 0,
+    layoutX = 100;
   const style = {
     translate: "",
     setProperty() {},
     removeProperty() {},
   };
   const view = {
-    requestAnimationFrame: (callback: FrameRequestCallback) => { callbacks.set(++id, callback); return id; },
-    cancelAnimationFrame: (key: number) => { callbacks.delete(key); },
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      callbacks.set(++id, callback);
+      return id;
+    },
+    cancelAnimationFrame: (key: number) => {
+      callbacks.delete(key);
+    },
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
-    addEventListener() {}, removeEventListener() {},
+    addEventListener() {},
+    removeEventListener() {},
   };
   const element = {
     ownerDocument: { defaultView: view },
@@ -49,7 +56,8 @@ test("optical sampling sees the spring position before paint, once per frame", (
     updateControlMotion(root, 133.334);
     expect(element.getBoundingClientRect().left).toBe(nextX);
     expect(nextX).toBeGreaterThan(sampledX);
-    dispose(); dispose = undefined;
+    dispose();
+    dispose = undefined;
     expect(callbacks.size).toBe(0);
   } finally {
     dispose?.();

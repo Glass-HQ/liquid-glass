@@ -7,7 +7,10 @@ export interface StoredMaps {
   planes: string[][];
   duration: number;
 }
-interface Entry extends StoredMaps { key: string; used: number }
+interface Entry extends StoredMaps {
+  key: string;
+  used: number;
+}
 const name = "liquid-glass";
 const store = "maps";
 /** Entries beyond this are evicted least recently used first. Only resting
@@ -16,7 +19,7 @@ const capacity = 256;
 let opening: Promise<IDBDatabase | undefined> | undefined;
 function open(): Promise<IDBDatabase | undefined> {
   if (opening) return opening;
-  return opening = new Promise((resolve) => {
+  return (opening = new Promise((resolve) => {
     let db: IDBOpenDBRequest;
     try {
       if (typeof indexedDB === "undefined") return resolve(undefined);
@@ -29,12 +32,15 @@ function open(): Promise<IDBDatabase | undefined> {
       maps.createIndex("used", "used");
     };
     db.onsuccess = () => {
-      db.result.onversionchange = () => { db.result.close(); opening = undefined; };
+      db.result.onversionchange = () => {
+        db.result.close();
+        opening = undefined;
+      };
       resolve(db.result);
     };
     db.onerror = () => resolve(undefined);
     db.onblocked = () => resolve(undefined);
-  });
+  }));
 }
 const reads = new Map<string, { resolve: (maps: StoredMaps | undefined) => void }[]>();
 let reading = false;
@@ -45,7 +51,7 @@ let preloaded: Map<string, StoredMaps> | undefined;
 let preloading: Promise<void> | undefined;
 export function preloadStoredMaps(prefix: string): Promise<void> {
   readFirstPaint(prefix);
-  return preloading ??= (async () => {
+  return (preloading ??= (async () => {
     const db = await open();
     if (!db) return;
     const all = await new Promise<Entry[]>((resolve) => {
@@ -53,21 +59,30 @@ export function preloadStoredMaps(prefix: string): Promise<void> {
         const request = db.transaction(store, "readonly").objectStore(store).getAll();
         request.onsuccess = () => resolve(request.result as Entry[]);
         request.onerror = () => resolve([]);
-      } catch { resolve([]); }
+      } catch {
+        resolve([]);
+      }
     });
     const found = all.filter((entry) => entry.key.startsWith(prefix));
-    preloaded = new Map(found.map((entry) => [entry.key, { planes: entry.planes, duration: entry.duration }]));
+    preloaded = new Map(
+      found.map((entry) => [entry.key, { planes: entry.planes, duration: entry.duration }]),
+    );
     // Maps from an earlier renderer version are never read again; drop them
     // once startup is over, so they stop weighing on the next load.
     const stale = all.filter((entry) => !entry.key.startsWith(prefix)).map((entry) => entry.key);
-    if (stale.length) setTimeout(() => {
-      try {
-        const maps = db.transaction(store, "readwrite").objectStore(store);
-        for (const key of stale) maps.delete(key);
-      } catch { /* The store answers again on the next load. */ }
-    }, 5000);
-    setTimeout(() => { preloaded = undefined; }, 30_000);
-  })();
+    if (stale.length)
+      setTimeout(() => {
+        try {
+          const maps = db.transaction(store, "readwrite").objectStore(store);
+          for (const key of stale) maps.delete(key);
+        } catch {
+          /* The store answers again on the next load. */
+        }
+      }, 5000);
+    setTimeout(() => {
+      preloaded = undefined;
+    }, 30_000);
+  })());
 }
 /** Maps stored for `key`, or undefined when absent or storage is unavailable. */
 export function loadStoredMaps(key: string): Promise<StoredMaps | undefined> {
@@ -107,9 +122,12 @@ function readFirstPaint(prefix: string): Map<string, StoredMaps> {
     const raw = localStorage.getItem(firstPaintKey);
     if (raw) {
       const parsed = JSON.parse(raw) as { prefix: string; entries: [string, StoredMaps][] };
-      if (parsed.prefix === prefix) for (const [key, maps] of parsed.entries) firstPaint.set(key, maps);
+      if (parsed.prefix === prefix)
+        for (const [key, maps] of parsed.entries) firstPaint.set(key, maps);
     }
-  } catch { /* Storage may be unavailable or corrupt; the store still answers. */ }
+  } catch {
+    /* Storage may be unavailable or corrupt; the store still answers. */
+  }
   return firstPaint;
 }
 /** Maps available without waiting: the first-paint set, then the preloaded store. */
@@ -135,8 +153,11 @@ export function claimFirstPaint(key: string, maps: StoredMaps): void {
       if (size > firstPaintLimit) break;
       entries.push([key, maps]);
     }
-    try { localStorage.setItem(firstPaintKey, JSON.stringify({ prefix: firstPaintPrefix, entries })); }
-    catch { /* Quota or availability; the store remains the source of truth. */ }
+    try {
+      localStorage.setItem(firstPaintKey, JSON.stringify({ prefix: firstPaintPrefix, entries }));
+    } catch {
+      /* Quota or availability; the store remains the source of truth. */
+    }
   }, 2500);
 }
 async function flushReads() {
@@ -149,15 +170,29 @@ async function flushReads() {
     const loaded = preloaded as Map<string, StoredMaps> | undefined;
     for (const [key, waiting] of [...batch]) {
       const ready = loaded?.get(key);
-      if (ready) { for (const w of waiting) w.resolve(ready); batch.delete(key); touch(key); }
+      if (ready) {
+        for (const w of waiting) w.resolve(ready);
+        batch.delete(key);
+        touch(key);
+      }
     }
     if (!batch.size) return;
   }
   const db = await open();
-  const settle = (key: string, value: StoredMaps | undefined) => { for (const w of batch.get(key)!) w.resolve(value); };
-  if (!db) { for (const key of batch.keys()) settle(key, undefined); return; }
+  const settle = (key: string, value: StoredMaps | undefined) => {
+    for (const w of batch.get(key)!) w.resolve(value);
+  };
+  if (!db) {
+    for (const key of batch.keys()) settle(key, undefined);
+    return;
+  }
   let transaction: IDBTransaction;
-  try { transaction = db.transaction(store, "readonly"); } catch { for (const key of batch.keys()) settle(key, undefined); return; }
+  try {
+    transaction = db.transaction(store, "readonly");
+  } catch {
+    for (const key of batch.keys()) settle(key, undefined);
+    return;
+  }
   const maps = transaction.objectStore(store);
   for (const key of batch.keys()) {
     const request = maps.get(key);
@@ -197,13 +232,19 @@ async function flushWrites() {
   const db = await open();
   if (!db) return;
   let transaction: IDBTransaction;
-  try { transaction = db.transaction(store, "readwrite"); } catch { return; }
+  try {
+    transaction = db.transaction(store, "readwrite");
+  } catch {
+    return;
+  }
   const maps = transaction.objectStore(store);
   const now = Date.now();
   for (const [key, value] of pending) maps.put({ key, used: now, ...value } satisfies Entry);
   for (const key of refresh) {
     const request = maps.get(key);
-    request.onsuccess = () => { if (request.result) maps.put({ ...request.result, used: now }); };
+    request.onsuccess = () => {
+      if (request.result) maps.put({ ...request.result, used: now });
+    };
   }
   transaction.onerror = () => undefined;
   if (pending.size) {

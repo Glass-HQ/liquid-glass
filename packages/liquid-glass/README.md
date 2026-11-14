@@ -20,11 +20,13 @@ export function Example() {
   return (
     <GlassScene material="regular" appearance="light" style={{ height: 320 }}>
       <GlassContent>
-        <img src="/landscape.jpg" alt="Mountain lake"
-          style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img
+          src="/landscape.jpg"
+          alt="Mountain lake"
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
       </GlassContent>
-      <GlassSurface radius={28}
-        style={{ position: "absolute", left: 24, top: 100, padding: 20 }}>
+      <GlassSurface radius={28} style={{ position: "absolute", left: 24, top: 100, padding: 20 }}>
         <GlassButton onClick={() => console.log("Saved")}>Save</GlassButton>
       </GlassSurface>
     </GlassScene>
@@ -38,19 +40,19 @@ Import the stylesheet once. It requires neither Tailwind nor a CSS reset. Put gl
 
 ## Components
 
-| Component | Purpose |
-| --- | --- |
-| `GlassScene`, `GlassContent` | Scene and live background layer. |
-| `GlassSurface`, `GlassButton` | Glass container and button. |
-| `GlassToolbar`, `GlassToolbarButton`, `GlassToolbarLink`, `GlassToolbarGroup`, `GlassToolbarSpacer` | Keyboard-navigable toolbar. |
-| `GlassTabs` | Tab bar with a moving selection indicator. |
-| `GlassTabsRoot`, `GlassTabsList`, `GlassTabsTrigger`, `GlassTabsIndicator`, `GlassTabsContent` | Composable tabs and panels. |
-| `GlassMenu`, `GlassMenuTrigger`, `GlassMenuContent`, `GlassMenuItem` | Menu with positioning and focus restoration. |
-| `GlassMenuSubmenu`, `GlassMenuSubmenuTrigger`, `GlassMenuSubmenuContent` | Nested menus. |
-| `GlassSlider`, `GlassSwitch` | Slider and switch. |
-| `GlassForeground`, `useGlassForeground` | Foreground content that higher glass surfaces can refract. |
-| `GlassShape`, `GlassShapeContainer`, `GlassCorner` | Continuous corners and container-relative geometry. |
-| `GlassProgressiveBlur`, `GlassScrollEdges` | Progressive blur over background content and scroll edges. |
+| Component                                                                                           | Purpose                                                    |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `GlassScene`, `GlassContent`                                                                        | Scene and live background layer.                           |
+| `GlassSurface`, `GlassButton`                                                                       | Glass container and button.                                |
+| `GlassToolbar`, `GlassToolbarButton`, `GlassToolbarLink`, `GlassToolbarGroup`, `GlassToolbarSpacer` | Keyboard-navigable toolbar.                                |
+| `GlassTabs`                                                                                         | Tab bar with a moving selection indicator.                 |
+| `GlassTabsRoot`, `GlassTabsList`, `GlassTabsTrigger`, `GlassTabsIndicator`, `GlassTabsContent`      | Composable tabs and panels.                                |
+| `GlassMenu`, `GlassMenuTrigger`, `GlassMenuContent`, `GlassMenuItem`                                | Menu with positioning and focus restoration.               |
+| `GlassMenuSubmenu`, `GlassMenuSubmenuTrigger`, `GlassMenuSubmenuContent`                            | Nested menus.                                              |
+| `GlassSlider`, `GlassSwitch`                                                                        | Slider and switch.                                         |
+| `GlassForeground`, `useGlassForeground`                                                             | Foreground content that higher glass surfaces can refract. |
+| `GlassShape`, `GlassShapeContainer`, `GlassCorner`                                                  | Continuous corners and container-relative geometry.        |
+| `GlassProgressiveBlur`, `GlassScrollEdges`                                                          | Progressive blur over background content and scroll edges. |
 
 Buttons, toolbars, tabs, menus, sliders, and switches use Base UI behavior. Standard props, refs, accessible names, and state callbacks remain available. See the [component examples](https://liquid-glass.glassapp.dev/#examples) for usage and the [Base UI reference](https://base-ui.com/react/overview/quick-start) for inherited props.
 
@@ -58,18 +60,18 @@ Buttons, toolbars, tabs, menus, sliders, and switches use Base UI behavior. Stan
 
 Set defaults on `GlassScene`; individual surfaces can override them. Menu popups default to Regular.
 
-| Prop | Default | Usage |
-| --- | --- | --- |
-| `material` | `"clear"` | `"clear"` or `"regular"`. |
-| `appearance` | `"light"` | `"light"` or `"dark"`. |
-| `radius` | Component-specific | Continuous corner radius in CSS pixels, `"capsule"`, or `"circle"`. Generic surfaces default to 8px. |
-| `refraction` | `60` | Nonnegative displacement in CSS pixels. Nested surfaces limit their default to the parent inset. |
-| `tint` | None | Six-digit hex color. Colors the glass without changing text or icons. |
+| Prop          | Default            | Usage                                                                                                                                                                                               |
+| ------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `material`    | `"clear"`          | `"clear"` or `"regular"`.                                                                                                                                                                           |
+| `appearance`  | `"light"`          | `"light"` or `"dark"`.                                                                                                                                                                              |
+| `radius`      | Component-specific | Continuous corner radius in CSS pixels, `"capsule"`, or `"circle"`. Generic surfaces default to 8px.                                                                                                |
+| `refraction`  | `60`               | Nonnegative displacement in CSS pixels. Nested surfaces limit their default to the parent inset.                                                                                                    |
+| `tint`        | None               | Six-digit hex color. Colors the glass without changing text or icons.                                                                                                                               |
 | `interactive` | Component-specific | Press and drag feedback; on by default for buttons, toolbars, and tab bars. While pressed, links and images inside stop starting a native browser drag; mark content `draggable="true"` to keep it. |
-| `fluid` | `false` | Animate the outline when layout dimensions change. |
-| `morphFrom` | None | Element ref or getter for a surface's opening and closing shape. |
-| `morph` | By context | `"become"` replaces its source; `"detach"` separates from it. |
-| `motion` | `"full"` | `"full"`, `"reduced"`, or `"none"`; inherited from the scene. |
+| `fluid`       | `false`            | Animate the outline when layout dimensions change.                                                                                                                                                  |
+| `morphFrom`   | None               | Element ref or getter for a surface's opening and closing shape.                                                                                                                                    |
+| `morph`       | By context         | `"become"` replaces its source; `"detach"` separates from it.                                                                                                                                       |
+| `motion`      | `"full"`           | `"full"`, `"reduced"`, or `"none"`; inherited from the scene.                                                                                                                                       |
 
 Slider and switch pressed thumbs default to Clear, with refraction of 5px and 7.75px respectively. Their `tint` sets the track color.
 
@@ -147,8 +149,11 @@ Switches accept Base UI switch props, including `checked`, `defaultChecked`, `on
 ```tsx
 <GlassScene style={{ height: 320, overflow: "hidden" }}>
   <GlassContent>
-    <img src="/landscape.jpg" alt="Mountain lake"
-      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    <img
+      src="/landscape.jpg"
+      alt="Mountain lake"
+      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+    />
   </GlassContent>
   <GlassProgressiveBlur edge="bottom" size={80} blur={20} />
 </GlassScene>
@@ -160,23 +165,29 @@ For scrolling content, use `GlassContent layout="scroll"` as the viewport and pa
 const viewport = useRef<HTMLDivElement>(null);
 
 <GlassScene style={{ height: 320, overflow: "hidden" }}>
-  <GlassContent layout="scroll" ref={viewport} tabIndex={0} role="region"
-    aria-label="Reading list" style={{ scrollPaddingBlock: 80 }}>
+  <GlassContent
+    layout="scroll"
+    ref={viewport}
+    tabIndex={0}
+    role="region"
+    aria-label="Reading list"
+    style={{ scrollPaddingBlock: 80 }}
+  >
     {children}
   </GlassContent>
   <GlassScrollEdges target={viewport} size={80} blur={20} />
-</GlassScene>
+</GlassScene>;
 ```
 
-| Prop | Default | Usage |
-| --- | --- | --- |
-| `edge` | `"bottom"` | Primitive edge: `top`, `bottom`, `inline-start`, or `inline-end`. |
-| `edges` | `["top", "bottom"]` | Scroll helper edges. Logical edges follow direction. |
-| `target` | Required on scroll helper | Ref to the scrolling viewport. |
-| `size` | `80` | Edge depth in pixels, 0–4096; scroll edges clamp to half the viewport. |
-| `blur` | `20` | Gaussian standard deviation in pixels, 0–64. |
-| `refraction` | `0` | Optical displacement in pixels, 0–32. |
-| `disabled` | `false` | Remove the effect. |
+| Prop         | Default                   | Usage                                                                  |
+| ------------ | ------------------------- | ---------------------------------------------------------------------- |
+| `edge`       | `"bottom"`                | Primitive edge: `top`, `bottom`, `inline-start`, or `inline-end`.      |
+| `edges`      | `["top", "bottom"]`       | Scroll helper edges. Logical edges follow direction.                   |
+| `target`     | Required on scroll helper | Ref to the scrolling viewport.                                         |
+| `size`       | `80`                      | Edge depth in pixels, 0–4096; scroll edges clamp to half the viewport. |
+| `blur`       | `20`                      | Gaussian standard deviation in pixels, 0–64.                           |
+| `refraction` | `0`                       | Optical displacement in pixels, 0–32.                                  |
+| `disabled`   | `false`                   | Remove the effect.                                                     |
 
 The viewport needs an explicit height and scrolling overflow. Keep fixed headers and controls outside it, and use scroll padding so focused content can enter the clear area. Blur clears at reached edges and when there is no overflow. Reduced transparency and forced colors disable the effect. If map preparation fails, content remains readable and `onDiagnostic` reports the error.
 
@@ -204,7 +215,8 @@ import "@glass-sdk/liquid-glass/styles.css";
 const scene = createGlassScene(document.querySelector<HTMLElement>(".lg-scene")!);
 scene.setContent(document.querySelector<HTMLElement>(".lg-content")!);
 const remove = scene.addSurface(document.querySelector<HTMLElement>(".lg-surface")!, {
-  material: "regular", radius: 28,
+  material: "regular",
+  radius: 28,
 });
 
 // On teardown:

@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  physicalEdge,
-  scrollEdgeStrength,
-  validateProgressive,
-} from "./progressive";
+import { physicalEdge, scrollEdgeStrength, validateProgressive } from "./progressive";
 
 test("logical edges follow direction", () => {
   expect(physicalEdge("inline-start", false)).toBe("left");
@@ -28,12 +24,8 @@ test("rejects invalid or unbounded effects before registering them", () => {
   for (const value of [NaN, Infinity, -1]) {
     expect(() => validateProgressive({ size: value })).toThrow(RangeError);
     expect(() => validateProgressive({ blur: value })).toThrow(RangeError);
-    expect(() => validateProgressive({ refraction: value })).toThrow(
-      RangeError,
-    );
+    expect(() => validateProgressive({ refraction: value })).toThrow(RangeError);
   }
   expect(() => validateProgressive({ blur: 65 })).toThrow(RangeError);
-  expect(() =>
-    validateProgressive({ size: 0, blur: 0, refraction: 0 }),
-  ).not.toThrow();
+  expect(() => validateProgressive({ size: 0, blur: 0, refraction: 0 })).not.toThrow();
 });

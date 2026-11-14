@@ -6,34 +6,69 @@ function surface() {
   const listeners = new Map<string, (event: unknown) => void>();
   let writes = 0;
   const style = {
-    get translate() { return values.get("translate") ?? ""; },
-    set translate(value: string) { writes++; values.set("translate", value); },
-    get scale() { return values.get("scale") ?? ""; },
-    set scale(value: string) { writes++; values.set("scale", value); },
+    get translate() {
+      return values.get("translate") ?? "";
+    },
+    set translate(value: string) {
+      writes++;
+      values.set("translate", value);
+    },
+    get scale() {
+      return values.get("scale") ?? "";
+    },
+    set scale(value: string) {
+      writes++;
+      values.set("scale", value);
+    },
     getPropertyValue: (name: string) => values.get(name) ?? "",
-    setProperty(name: string, value: string) { writes++; values.set(name, value); },
-    removeProperty(name: string) { writes++; values.delete(name); },
+    setProperty(name: string, value: string) {
+      writes++;
+      values.set(name, value);
+    },
+    removeProperty(name: string) {
+      writes++;
+      values.delete(name);
+    },
   };
   const element = {
-    ownerDocument: { defaultView: {
-      matchMedia: () => ({ matches: true }),
-      addEventListener() {}, removeEventListener() {},
-    } },
-    offsetWidth: 40, offsetHeight: 28,
+    ownerDocument: {
+      defaultView: {
+        matchMedia: () => ({ matches: true }),
+        addEventListener() {},
+        removeEventListener() {},
+      },
+    },
+    offsetWidth: 40,
+    offsetHeight: 28,
     style,
-    dataset: new Proxy<Record<string, string>>({}, {
-      set(target, name: string, value: string) { writes++; target[name] = value; return true; },
-      deleteProperty(target, name: string) { writes++; delete target[name]; return true; },
-    }),
+    dataset: new Proxy<Record<string, string>>(
+      {},
+      {
+        set(target, name: string, value: string) {
+          writes++;
+          target[name] = value;
+          return true;
+        },
+        deleteProperty(target, name: string) {
+          writes++;
+          delete target[name];
+          return true;
+        },
+      },
+    ),
     matches: () => false,
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 40, height: 28 }),
-    addEventListener: (type: string, listener: (event: unknown) => void) => listeners.set(type, listener),
+    addEventListener: (type: string, listener: (event: unknown) => void) =>
+      listeners.set(type, listener),
     removeEventListener: (type: string) => listeners.delete(type),
   } as unknown as HTMLElement;
   return {
-    element, style,
+    element,
+    style,
     writes: () => writes,
-    fire(type: string, detail: object = {}) { listeners.get(type)?.({ type, ...detail }); },
+    fire(type: string, detail: object = {}) {
+      listeners.get(type)?.({ type, ...detail });
+    },
   };
 }
 
@@ -60,15 +95,20 @@ test("a settled hover keeps its light without keeping the scene awake or rewriti
 });
 
 test("press springs advance by elapsed time when rendering drops frames", () => {
-  const fine = surface(), coarse = surface();
-  const a = attachInteraction(fine.element, () => "full"), b = attachInteraction(coarse.element, () => "full");
-  fine.fire("keydown", { key: "Enter" }); coarse.fire("keydown", { key: "Enter" });
-  a.frame(100); b.frame(100);
+  const fine = surface(),
+    coarse = surface();
+  const a = attachInteraction(fine.element, () => "full"),
+    b = attachInteraction(coarse.element, () => "full");
+  fine.fire("keydown", { key: "Enter" });
+  coarse.fire("keydown", { key: "Enter" });
+  a.frame(100);
+  b.frame(100);
   for (let now = 110; now <= 300; now += 10) a.frame(now);
   b.frame(300);
   expect(coarse.style.scale).toBe(fine.style.scale);
   expect(coarse.style.getPropertyValue("--lg-glow")).toBe(fine.style.getPropertyValue("--lg-glow"));
-  a.dispose(); b.dispose();
+  a.dispose();
+  b.dispose();
 });
 
 test("a new press after idle does not consume the time spent asleep", () => {
@@ -98,16 +138,29 @@ test("requested and system motion preferences apply in Safari too", () => {
   `;
   const result = Bun.spawnSync([process.execPath, "--eval", script]);
   expect(result.exitCode).toBe(0);
-  expect(JSON.parse(result.stdout.toString())).toEqual(["full", "full", "reduced", "none", "reduced", "reduced", "none"]);
+  expect(JSON.parse(result.stdout.toString())).toEqual([
+    "full",
+    "full",
+    "reduced",
+    "none",
+    "reduced",
+    "reduced",
+    "none",
+  ]);
 });
 
 test("a press keeps native link and image drags from taking over, unless content opts in", () => {
   const target = surface();
   const animator = attachInteraction(target.element, () => "full");
-  const node = (draggable: boolean) => ({ nodeType: 1, closest: () => draggable ? {} : null });
+  const node = (draggable: boolean) => ({ nodeType: 1, closest: () => (draggable ? {} : null) });
   const dragFrom = (origin: object) => {
     let prevented = false;
-    target.fire("dragstart", { target: origin, preventDefault: () => { prevented = true; } });
+    target.fire("dragstart", {
+      target: origin,
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
     return prevented;
   };
   expect(dragFrom(node(false))).toBe(false);

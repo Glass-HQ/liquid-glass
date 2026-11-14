@@ -8,10 +8,22 @@ const seconds = (time) => time.split(":").reduce((sum, part) => sum * 60 + Numbe
 
 /** Every process: pid, parent, resident memory in MB, CPU seconds used so far, command line. */
 export async function processes() {
-  const { stdout } = await exec("ps", ["-A", "-ww", "-o", "pid=,ppid=,rss=,time=,args="], { maxBuffer: 1 << 26 });
+  const { stdout } = await exec("ps", ["-A", "-ww", "-o", "pid=,ppid=,rss=,time=,args="], {
+    maxBuffer: 1 << 26,
+  });
   return stdout.split("\n").flatMap((line) => {
     const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
-    return match ? [{ pid: +match[1], parent: +match[2], memory: +match[3] / 1024, cpu: seconds(match[4]), command: match[5] }] : [];
+    return match
+      ? [
+          {
+            pid: +match[1],
+            parent: +match[2],
+            memory: +match[3] / 1024,
+            cpu: seconds(match[4]),
+            command: match[5],
+          },
+        ]
+      : [];
   });
 }
 /** GPU time every process on the machine has used, in ms. Browsers hand their
@@ -20,11 +32,16 @@ export async function processes() {
 export async function gpuTime() {
   if (process.platform !== "darwin") return undefined;
   try {
-    const { stdout } = await exec("ioreg", ["-r", "-c", "AGXDeviceUserClient", "-l", "-w0"], { maxBuffer: 1 << 26, timeout: 2000 });
+    const { stdout } = await exec("ioreg", ["-r", "-c", "AGXDeviceUserClient", "-l", "-w0"], {
+      maxBuffer: 1 << 26,
+      timeout: 2000,
+    });
     let total = 0;
     for (const match of stdout.matchAll(/"accumulatedGPUTime"=(\d+)/g)) total += Number(match[1]);
     return total / 1e6;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 /** CPU seconds and memory of one browser, split by what each process does. */
 export async function snapshot(browser) {
@@ -41,6 +58,11 @@ export async function snapshot(browser) {
 /** What happened between two snapshots: CPU ms per group, GPU ms, seconds. */
 export function between(start, end) {
   const cpu = {};
-  for (const group of Object.keys(end.groups)) cpu[group] = Math.max(0, Math.round((end.groups[group] - (start.groups[group] ?? 0)) * 1000));
-  return { seconds: (end.time - start.time) / 1000, cpu, gpu: end.gpu === undefined || start.gpu === undefined ? undefined : end.gpu - start.gpu };
+  for (const group of Object.keys(end.groups))
+    cpu[group] = Math.max(0, Math.round((end.groups[group] - (start.groups[group] ?? 0)) * 1000));
+  return {
+    seconds: (end.time - start.time) / 1000,
+    cpu,
+    gpu: end.gpu === undefined || start.gpu === undefined ? undefined : end.gpu - start.gpu,
+  };
 }

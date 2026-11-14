@@ -14,7 +14,10 @@ interface Retained {
   description: Description;
   children: Map<string, Retained>;
 }
-interface Filter extends Retained { markup: string; id: string }
+interface Filter extends Retained {
+  markup: string;
+  id: string;
+}
 const scenes = new WeakMap<Element, Map<string, Filter>>();
 const ns = "http://www.w3.org/2000/svg";
 let version = 0;
@@ -26,22 +29,34 @@ const weights = new Set(["k1", "k2", "k3", "k4", "slope", "intercept", "flood-op
  * below one 8-bit step, so those frames repeat the last markup exactly. */
 export function quantizeFilterMarkup(markup: string): string {
   if (!markup.includes('primitiveUnits="userSpaceOnUse"')) return markup;
-  return markup.replace(/<fe\w+\b[^>]*>/g, (tag) => tag.replace(/\s(x|y|width|height|dx|dy|scale|k1|k2|k3|k4|slope|intercept|flood-opacity)="(-?[\d.]+(?:e-?\d+)?)"/g,
-    (whole, name: string, value: string) => {
-      const precision = weights.has(name) ? 1024 : 16;
-      let rounded = Math.round(Number(value) * precision) / precision;
-      // An empty primitive region fails the whole filter in WebKit.
-      if ((name === "width" || name === "height") && Number(value) > 0) rounded = Math.max(rounded, 1 / precision);
-      return ` ${name}="${Object.is(rounded, -0) ? 0 : rounded}"`;
-    }));
+  return markup.replace(/<fe\w+\b[^>]*>/g, (tag) =>
+    tag.replace(
+      /\s(x|y|width|height|dx|dy|scale|k1|k2|k3|k4|slope|intercept|flood-opacity)="(-?[\d.]+(?:e-?\d+)?)"/g,
+      (whole, name: string, value: string) => {
+        const precision = weights.has(name) ? 1024 : 16;
+        let rounded = Math.round(Number(value) * precision) / precision;
+        // An empty primitive region fails the whole filter in WebKit.
+        if ((name === "width" || name === "height") && Number(value) > 0)
+          rounded = Math.max(rounded, 1 / precision);
+        return ` ${name}="${Object.is(rounded, -0) ? 0 : rounded}"`;
+      },
+    ),
+  );
 }
 
 /** Retain filter primitives and their loaded images across geometry changes.
  * The last description also owns the attribute values, avoiding live DOM
  * collection reads and redundant writes. Exact repeats do no parsing at all. */
-export function patchFilters(defs: Element, markup: readonly string[], resolve: (token: string) => string | undefined): (id: string) => string {
+export function patchFilters(
+  defs: Element,
+  markup: readonly string[],
+  resolve: (token: string) => string | undefined,
+): (id: string) => string {
   let live = scenes.get(defs);
-  if (!live) { live = new Map(); scenes.set(defs, live); }
+  if (!live) {
+    live = new Map();
+    scenes.set(defs, live);
+  }
   const remaining = new Set(live.keys());
   const ids = new Map<string, string>();
   const links: Element[] = [];
@@ -53,7 +68,10 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
     remaining.delete(base);
     let current = live.get(base);
     if (current?.element.parentElement !== defs) current = undefined;
-    if (current?.markup === source) { ids.set(base, current.id); continue; }
+    if (current?.markup === source) {
+      ids.set(base, current.id);
+      continue;
+    }
     const description = describe(source);
     if (current) {
       // WebKit rebuilds a filter on every mutation of its graph. Rewire it
@@ -78,7 +96,10 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
     }
     ids.set(base, current.id);
   }
-  for (const base of remaining) { live.get(base)!.element.remove(); live.delete(base); }
+  for (const base of remaining) {
+    live.get(base)!.element.remove();
+    live.delete(base);
+  }
   let linked = false;
   const relinked = new Set<Element>();
   // Images are linked only after the whole graph is connected. A detached
@@ -94,7 +115,8 @@ export function patchFilters(defs: Element, markup: readonly string[], resolve: 
   }
   // One settling sequence per graph update, not one for every map image.
   if (linked && chromium) settle(defs);
-  if (relinked.size && webkit) settleWebKit([...live.values()].filter((filter) => relinked.has(filter.element)));
+  if (relinked.size && webkit)
+    settleWebKit([...live.values()].filter((filter) => relinked.has(filter.element)));
   return (id) => ids.get(id) ?? id;
 }
 
@@ -112,14 +134,16 @@ function describe(markup: string): Description {
       continue;
     }
     const attributes: Record<string, string> = {};
-    for (const [, name, value] of source!.matchAll(/([\w:-]+)="([^"]*)"/g)) attributes[name!] = value!;
+    for (const [, name, value] of source!.matchAll(/([\w:-]+)="([^"]*)"/g))
+      attributes[name!] = value!;
     const node: Description = { tag: tag!, attributes, children: [] };
     if (stack.length) stack[stack.length - 1]!.children.push(node);
     else if (root) throw new Error("Expected one glass filter.");
     else root = node;
     if (!selfClosing) stack.push(node);
   }
-  if (!root || stack.length || root.tag !== "filter") throw new Error("Invalid glass filter markup.");
+  if (!root || stack.length || root.tag !== "filter")
+    throw new Error("Invalid glass filter markup.");
   // Result names are retained-node identities. Reusing one would leave
   // untracked DOM nodes behind and could change the filter's final output.
   const results = new Set<string>();
@@ -135,27 +159,47 @@ function describe(markup: string): Description {
   // retain their order, as must a graph whose final output is an image.
   const explicitInputs = root.children.every((child) => {
     if (["feImage", "feFlood", "feTurbulence"].includes(child.tag)) return true;
-    if (child.tag === "feMerge") return child.children.every((input) => Boolean(input.attributes.in));
-    return Boolean(child.attributes.in) &&
-      (!["feBlend", "feComposite", "feDisplacementMap"].includes(child.tag) || Boolean(child.attributes.in2));
+    if (child.tag === "feMerge")
+      return child.children.every((input) => Boolean(input.attributes.in));
+    return (
+      Boolean(child.attributes.in) &&
+      (!["feBlend", "feComposite", "feDisplacementMap"].includes(child.tag) ||
+        Boolean(child.attributes.in2))
+    );
   });
   if (explicitInputs && root.children.at(-1)?.tag !== "feImage") {
     const images = root.children.filter((child) => child.tag === "feImage");
-    images.sort((a, b) => (a.attributes.result ?? "") < (b.attributes.result ?? "") ? -1 : (a.attributes.result ?? "") > (b.attributes.result ?? "") ? 1 : 0);
+    images.sort((a, b) =>
+      (a.attributes.result ?? "") < (b.attributes.result ?? "")
+        ? -1
+        : (a.attributes.result ?? "") > (b.attributes.result ?? "")
+          ? 1
+          : 0,
+    );
     root.children = [...images, ...root.children.filter((child) => child.tag !== "feImage")];
   }
   return root;
 }
-const key = (description: Description, index: number) => description.attributes.result ?? `${description.tag}#${index}`;
+const key = (description: Description, index: number) =>
+  description.attributes.result ?? `${description.tag}#${index}`;
 /** Whether nodes or their inputs change, as opposed to attribute values only. */
 function graphStructureChanged(previous: Description, next: Description): boolean {
   if (previous.tag !== next.tag || previous.children.length !== next.children.length) return true;
-  if (previous.attributes.in !== next.attributes.in || previous.attributes.in2 !== next.attributes.in2) return true;
-  return previous.children.some((child, index) => key(child, index) !== key(next.children[index]!, index) || graphStructureChanged(child, next.children[index]!));
+  if (
+    previous.attributes.in !== next.attributes.in ||
+    previous.attributes.in2 !== next.attributes.in2
+  )
+    return true;
+  return previous.children.some(
+    (child, index) =>
+      key(child, index) !== key(next.children[index]!, index) ||
+      graphStructureChanged(child, next.children[index]!),
+  );
 }
 function create(document: Document, description: Description, links: Element[]): Retained {
   const element = document.createElementNS(ns, description.tag);
-  for (const [name, value] of Object.entries(description.attributes)) element.setAttribute(name, value);
+  for (const [name, value] of Object.entries(description.attributes))
+    element.setAttribute(name, value);
   const children = new Map<string, Retained>();
   description.children.forEach((child, index) => {
     const retained = create(document, child, links);
@@ -174,16 +218,22 @@ function reconcile(live: Retained, next: Description, links: Element[]): boolean
     live.element.setAttribute(name, value);
     if (name === "data-map") links.push(live.element);
   }
-  for (const name of Object.keys(previous)) if (name !== "id" && !(name in next.attributes)) live.element.removeAttribute(name);
+  for (const name of Object.keys(previous))
+    if (name !== "id" && !(name in next.attributes)) live.element.removeAttribute(name);
   const remaining = new Map(live.children);
   const children = new Map<string, Retained>();
   let structural = false;
   // A stale insertion cursor would move every surviving sibling past it.
   // Remove unused and tag-replaced nodes before ordering the survivors.
-  const wanted = new Map(next.children.map((description, index) => [key(description, index), description.tag]));
-  for (const [name, child] of remaining) if (wanted.get(name) !== child.description.tag) {
-    child.element.remove(); remaining.delete(name); structural = true;
-  }
+  const wanted = new Map(
+    next.children.map((description, index) => [key(description, index), description.tag]),
+  );
+  for (const [name, child] of remaining)
+    if (wanted.get(name) !== child.description.tag) {
+      child.element.remove();
+      remaining.delete(name);
+      structural = true;
+    }
   let cursor = live.element.firstElementChild;
   next.children.forEach((description, index) => {
     const name = key(description, index);
@@ -195,11 +245,17 @@ function reconcile(live: Retained, next: Description, links: Element[]): boolean
       child = create(live.element.ownerDocument, description, links);
       structural = true;
     }
-    if (child.element !== cursor) { live.element.insertBefore(child.element, cursor); structural = true; }
+    if (child.element !== cursor) {
+      live.element.insertBefore(child.element, cursor);
+      structural = true;
+    }
     cursor = child.element.nextElementSibling;
     children.set(name, child);
   });
-  for (const child of remaining.values()) { child.element.remove(); structural = true; }
+  for (const child of remaining.values()) {
+    child.element.remove();
+    structural = true;
+  }
   live.description = next;
   live.children = children;
   return structural;
@@ -227,11 +283,14 @@ function settleWebKit(filters: Filter[]) {
       const x = filter.description.attributes.x ?? "0";
       element.setAttribute("x", nudged ? String(Number(x) + 1e-6) : x);
     };
-    for (const delay of [100, 250]) setTimeout(() => {
-      if (!current()) return;
-      nudge(true);
-      view?.requestAnimationFrame(() => { if (current()) nudge(false); });
-    }, delay);
+    for (const delay of [100, 250])
+      setTimeout(() => {
+        if (!current()) return;
+        nudge(true);
+        view?.requestAnimationFrame(() => {
+          if (current()) nudge(false);
+        });
+      }, delay);
   }
 }
 
@@ -242,9 +301,10 @@ const settling = new WeakMap<Element, number>();
 function settle(defs: Element) {
   const generation = (settling.get(defs) ?? 0) + 1;
   settling.set(defs, generation);
-  for (const delay of [16, 100, 300, 700, 1500, 3000]) setTimeout(() => {
-    if (settling.get(defs) !== generation || !defs.isConnected) return;
-    const image = defs.querySelector("feImage");
-    image?.setAttribute("x", image.getAttribute("x")!);
-  }, delay);
+  for (const delay of [16, 100, 300, 700, 1500, 3000])
+    setTimeout(() => {
+      if (settling.get(defs) !== generation || !defs.isConnected) return;
+      const image = defs.querySelector("feImage");
+      image?.setAttribute("x", image.getAttribute("x")!);
+    }, delay);
 }

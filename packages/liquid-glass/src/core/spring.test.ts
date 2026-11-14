@@ -5,14 +5,16 @@ test("a critically damped spring reaches its target without overshoot", () => {
   const spring = new Spring(0, { duration: 0.4, bounce: 0 });
   spring.target = 1;
   let peak = 0;
-  for (let i = 0; i < 240 && !spring.settled; i++) peak = Math.max(peak, spring.step(1 / 120).value);
+  for (let i = 0; i < 240 && !spring.settled; i++)
+    peak = Math.max(peak, spring.step(1 / 120).value);
   expect(spring.settled).toBe(true);
   expect(spring.value).toBe(1);
   expect(peak).toBeLessThanOrEqual(1);
 });
 
 test("bounce overshoots, and the result does not depend on frame rate", () => {
-  const fine = new Spring(0, springs.release), coarse = new Spring(0, springs.release);
+  const fine = new Spring(0, springs.release),
+    coarse = new Spring(0, springs.release);
   fine.target = coarse.target = 100;
   for (let i = 0; i < 24; i++) fine.step(1 / 240);
   for (let i = 0; i < 6; i++) coarse.step(1 / 60);

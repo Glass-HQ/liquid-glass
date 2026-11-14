@@ -15,5 +15,7 @@ export function retainLatestExit(parent: Element, complete: () => void): () => v
   const previous = exits.get(parent);
   exits.set(parent, complete);
   previous?.();
-  return () => { if (exits.get(parent) === complete) exits.delete(parent); };
+  return () => {
+    if (exits.get(parent) === complete) exits.delete(parent);
+  };
 }

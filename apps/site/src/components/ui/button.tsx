@@ -1,10 +1,10 @@
-import { GlassShape } from "@glass-sdk/liquid-glass"
-import { Button as ButtonPrimitive } from "@base-ui/react/button"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "cn"
+import { GlassShape } from "@glass-sdk/liquid-glass";
+import { Button as ButtonPrimitive } from "@base-ui/react/button";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "cn";
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-xs/relaxed font-medium whitespace-nowrap transition-all outline-none focus-visible:bg-accent focus-visible:text-accent-foreground select-none active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-xs/relaxed font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:bg-accent focus-visible:text-accent-foreground active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive dark:aria-invalid:border-destructive/50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -16,7 +16,7 @@ const buttonVariants = cva(
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-dedark:bg-dedark:hover:bg-destructive/30",
+          "hover:bg-dedark:bg-dedark:hover:bg-destructive/30 bg-destructive/10 text-destructive",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
@@ -35,8 +35,8 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 function Button({
   className,
@@ -50,10 +50,13 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
+  );
   // An enclosing SDK shape owns clipping when this button is its render target.
-  return "data-lg-shape" in props || "data-glass-material" in props
-    ? button : <GlassShape radius={size?.startsWith("icon") ? "circle" : 6} render={button} />
+  return "data-lg-shape" in props || "data-glass-material" in props ? (
+    button
+  ) : (
+    <GlassShape radius={size?.startsWith("icon") ? "circle" : 6} render={button} />
+  );
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

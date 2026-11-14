@@ -8,8 +8,13 @@ function target(inline = "", priority = "") {
     style: {
       getPropertyValue: (name: string) => declarations.get(name)?.[0] ?? "",
       getPropertyPriority: (name: string) => declarations.get(name)?.[1] ?? "",
-      setProperty: (name: string, value: string, weight = "") => { declarations.set(name, [value, weight]); },
-      removeProperty: (name: string) => { declarations.delete(name); return ""; },
+      setProperty: (name: string, value: string, weight = "") => {
+        declarations.set(name, [value, weight]);
+      },
+      removeProperty: (name: string) => {
+        declarations.delete(name);
+        return "";
+      },
     },
     ownerDocument: { defaultView: { getComputedStyle: () => ({ filter: "none" }) } },
   } as unknown as HTMLElement;

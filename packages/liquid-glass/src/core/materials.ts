@@ -17,7 +17,7 @@ export const materials = {
     refraction: 60,
     // Selective shadow lift / highlight rolloff; preserve the middle tones.
     light: { shadowLift: 0.18, highlightRolloff: 0 },
-    dark: { shadowLift: 0.15, highlightRolloff: 0.20 },
+    dark: { shadowLift: 0.15, highlightRolloff: 0.2 },
   },
   regular: {
     blur: 7.33,

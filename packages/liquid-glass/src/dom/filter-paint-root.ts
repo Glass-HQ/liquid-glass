@@ -33,10 +33,15 @@ function acquirePaintHint(element: HTMLElement, hint: string): () => void {
   let claim = claims.get(element);
   if (!claim) {
     const style = element.style;
-    const resolved = element.ownerDocument.defaultView?.getComputedStyle(element).willChange ?? style.getPropertyValue("will-change");
+    const resolved =
+      element.ownerDocument.defaultView?.getComputedStyle(element).willChange ??
+      style.getPropertyValue("will-change");
     claim = {
       hints: new Map(),
-      tokens: resolved.split(",").map((token) => token.trim()).filter((token) => token && token !== "auto"),
+      tokens: resolved
+        .split(",")
+        .map((token) => token.trim())
+        .filter((token) => token && token !== "auto"),
       original: style.getPropertyValue("will-change"),
       priority: style.getPropertyPriority("will-change"),
       owned: null,
@@ -47,8 +52,12 @@ function acquirePaintHint(element: HTMLElement, hint: string): () => void {
   const sync = () => {
     const style = element.style;
     // Later author declarations take precedence over all outstanding claims.
-    if (style.getPropertyValue("will-change") !== (claim.owned ?? claim.original)
-      || style.getPropertyPriority("will-change") !== (claim.owned === null ? claim.priority : "important")) claim.superseded = true;
+    if (
+      style.getPropertyValue("will-change") !== (claim.owned ?? claim.original) ||
+      style.getPropertyPriority("will-change") !==
+        (claim.owned === null ? claim.priority : "important")
+    )
+      claim.superseded = true;
     if (claim.superseded) return;
     const additions = [...claim.hints.keys()].filter((token) => !claim.tokens.includes(token));
     if (additions.length) {
