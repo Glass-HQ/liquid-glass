@@ -1,12 +1,33 @@
 {
   "name": "@glass-sdk/liquid-glass",
   "version": "0.0.2",
-  "type": "module",
+  "description": "Liquid Glass materials and accessible React components for the web and Electron, built with vgpu and WGSL.",
+  "keywords": [
+    "electron",
+    "liquid-glass",
+    "react",
+    "refraction",
+    "vgpu",
+    "webgpu"
+  ],
+  "homepage": "https://liquid-glass.glassapp.dev",
+  "bugs": {
+    "url": "https://github.com/Glass-HQ/liquid-glass/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Glass-HQ/liquid-glass.git",
+    "directory": "packages/liquid-glass"
+  },
   "files": [
     "dist",
     "README.md",
     "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
   ],
   "exports": {
     ".": {
@@ -30,53 +51,38 @@
       "default": "./dist/styles.css"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.json && cp src/styles.css dist/styles.css && cp src/styles.d.css.ts dist/styles.d.css.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit --emitDeclarationOnly false",
-    "dev": "vite build --watch --emptyOutDir false",
-    "prepack": "bun run build",
+    "build": "vp build && tsc -p tsconfig.build.json && cp src/styles.css dist/styles.css && cp src/styles.d.css.ts dist/styles.d.css.ts",
+    "dev": "vp build --watch --emptyOutDir false",
+    "test": "bun test",
+    "check:size": "node scripts/check-size.mjs",
+    "check:gpu": "vgpu doctor && node scripts/check-shader.mjs && node scripts/gpu-smoke.mjs",
     "prepublishOnly": "node scripts/check-version.mjs"
   },
   "dependencies": {
-    "@base-ui/react": "^1.8.0",
-    "@lisse/core": "^0.7.2",
+    "@base-ui/react": "catalog:",
+    "@lisse/core": "catalog:",
     "vgpu": "^0.5.0"
   },
   "devDependencies": {
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
+    "@types/bun": "^1.4.4",
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@vgpu/wgsl": "^0.5.0",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.2",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "esbuild": "^0.28.2",
+    "pngjs": "^7.0.0",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   },
   "peerDependencies": {
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0"
-  },
-  "description": "Liquid Glass materials and accessible React components for the web and Electron, built with vgpu and WGSL.",
-  "homepage": "https://liquid-glass.glassapp.dev",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Glass-HQ/liquid-glass.git",
-    "directory": "packages/liquid-glass"
-  },
-  "bugs": {
-    "url": "https://github.com/Glass-HQ/liquid-glass/issues"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "sideEffects": [
-    "**/*.css"
-  ],
-  "keywords": [
-    "liquid-glass",
-    "vgpu",
-    "webgpu",
-    "react",
-    "electron",
-    "refraction"
-  ]
+  }
 }

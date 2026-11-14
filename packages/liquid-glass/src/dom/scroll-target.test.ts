@@ -8,24 +8,38 @@ test("scroll edges own only the target, preserve existing filters and release re
   const doc = {
     body: { append: (node: unknown) => attached.add(node) },
     createElementNS: () => {
-      const node = { style: {}, setAttribute() {}, append() {}, replaceChildren() {}, remove: () => attached.delete(node) };
+      const node = {
+        style: {},
+        setAttribute() {},
+        append() {},
+        replaceChildren() {},
+        remove: () => attached.delete(node),
+      };
       return node;
     },
   };
   globalThis.document = doc as unknown as Document;
   // Exercise registration and cleanup without requiring a GPU in unit tests.
-  globalThis.matchMedia = (() => ({ matches: true })) as typeof matchMedia;
+  globalThis.matchMedia = (() => ({ matches: true })) as unknown as typeof matchMedia;
   const root = { ownerDocument: doc, dataset: {} } as unknown as HTMLElement;
   let reads = 0;
-  const makeTarget = () => ({
-    get parentElement() { throw new Error("Scroll edges must not touch the parent"); },
-    get style() { reads++; return style; },
-  }) as unknown as HTMLElement;
+  const makeTarget = () =>
+    ({
+      get parentElement() {
+        throw new Error("Scroll edges must not touch the parent");
+      },
+      get style() {
+        reads++;
+        return style;
+      },
+    }) as unknown as HTMLElement;
   const style = { filter: "opacity(0.9)" };
   let target: HTMLElement | null = makeTarget();
   let layer: ReturnType<typeof createProgressiveLayer> | undefined;
   try {
-    layer = createProgressiveLayer(root, (error) => { throw error; });
+    layer = createProgressiveLayer(root, (error) => {
+      throw error;
+    });
     const remove = layer.addScroll({ target: () => target });
     layer.update(null);
     expect(reads).toBeGreaterThan(0);

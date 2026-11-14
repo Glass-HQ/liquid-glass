@@ -1,4 +1,6 @@
-const noEmDashCopy = {
+import { defineRule } from "vite-plus/lint/plugins";
+
+export default defineRule({
   meta: {
     type: "suggestion",
     docs: { description: "Keep em dashes out of written copy." },
@@ -9,10 +11,8 @@ const noEmDashCopy = {
   },
   create(context) {
     return {
-      Literal(node) {
-        if (typeof node.value === "string" && /\u2014|&(?:mdash|#8212|#x2014);/i.test(node.value)) {
-          context.report({ node, messageId: "noEmDash" });
-        }
+      "Literal[value=/\\u2014|&(?:mdash|#8212|#x2014);/i]"(node) {
+        context.report({ node, messageId: "noEmDash" });
       },
       TemplateElement(node) {
         if (/\u2014/.test(node.value.cooked ?? node.value.raw)) {
@@ -26,9 +26,4 @@ const noEmDashCopy = {
       },
     };
   },
-};
-
-export default {
-  meta: { name: "copy" },
-  rules: { "no-em-dash-copy": noEmDashCopy },
-};
+});

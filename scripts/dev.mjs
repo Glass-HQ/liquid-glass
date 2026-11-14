@@ -17,14 +17,21 @@ function stop(code = 0) {
   styleWatcher.close();
   for (const child of children) {
     try {
-      if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"]);
+      if (process.platform === "win32")
+        spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"]);
       else process.kill(-child.pid, "SIGTERM");
-    } catch { /* The child may already have exited. */ }
+    } catch {
+      /* The child may already have exited. */
+    }
   }
   process.exitCode = code;
 }
 function start(args, cwd = root) {
-  const child = spawn("bun", args, { cwd, stdio: "inherit", detached: process.platform !== "win32" });
+  const child = spawn("bun", args, {
+    cwd,
+    stdio: "inherit",
+    detached: process.platform !== "win32",
+  });
   children.add(child);
   child.on("error", (error) => {
     console.error(error.message);
@@ -35,22 +42,14 @@ function start(args, cwd = root) {
     if (!stopping) stop(code ?? 1);
   });
 }
-const styleWatcher = watch(
-  resolve(library, "src"),
-  { persistent: false },
-  (_event, name) => {
-    if (name === "styles.css")
-      copyFile(
-        resolve(library, "src/styles.css"),
-        resolve(library, "dist/styles.css"),
-      ).catch((error) => console.error(error.message));
-  },
-);
+const styleWatcher = watch(resolve(library, "src"), { persistent: false }, (_event, name) => {
+  if (name === "styles.css")
+    copyFile(resolve(library, "src/styles.css"), resolve(library, "dist/styles.css")).catch(
+      (error) => console.error(error.message),
+    );
+});
 start(["run", "--cwd", library, "dev"]);
-start(
-  ["x", "tsc", "-p", "tsconfig.json", "--watch", "--preserveWatchOutput"],
-  library,
-);
+start(["x", "tsc", "-p", "tsconfig.build.json", "--watch", "--preserveWatchOutput"], library);
 start(["run", "--cwd", "apps/site", "dev", ...process.argv.slice(2)]);
 process.on("SIGINT", () => stop());
 process.on("SIGTERM", () => stop());

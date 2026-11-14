@@ -1,7 +1,10 @@
 #!/bin/sh
-# There is no CI on everyday work, so this hook runs every check before anything leaves the machine.
-set -e
+# Liquid Glass has no CI on everyday work: this hook is the gate before anything
+# leaves the machine. Releases run the same checks again in release.yml.
+set -eu
 
+# What this push adds, read from the refs Git passes on stdin. A new branch is
+# compared with where it left main.
 zero=0000000000000000000000000000000000000000
 changed=""
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -21,25 +24,26 @@ if [ -z "$changed" ]; then
   exit 0
 fi
 if ! printf '%s\n' "$changed" | grep -qv '\.md$'; then
-  echo "pre-push: only Markdown changed, skipping checks"
+  echo "pre-push: only Markdown changed, checking formatting only"
+  vp check
   exit 0
 fi
 
-run() { echo "pre-push: $*"; "$@"; }
-run bun run check:version
+run() {
+  echo "pre-push: $*"
+  "$@"
+}
 run bun install --frozen-lockfile
-run bun run typecheck
-run bun run lint
-run bun run test
-run bun run build
-run bun run check:package
-run bun run check:publish
-run bun run check:size
+run vp check
+run vp run build
+run vp run test
+run node scripts/check-packages.ts
+run vp run --filter @glass-sdk/liquid-glass check:size
 
-# GPU checks need a real adapter, so they only run when rendering code changes.
-if printf '%s\n' "$changed" | grep -qE '^(packages/liquid-glass/src/(gpu|core)/|scripts/gpu-smoke\.mjs|packages/liquid-glass/package\.json|bun\.lock)'; then
-  run bun run check:gpu
-  run bun run check:shader
-  run bun run test:gpu
+# The GPU checks need a real adapter, so they only run when rendering code
+# changes: the vgpu doctor, device validation of the shader, and a GPU smoke
+# test of the built package.
+if printf '%s\n' "$changed" | grep -qE '^(packages/liquid-glass/(src/(gpu|core)/|scripts/gpu-smoke\.mjs|package\.json|vite\.config\.ts)|bun\.lock)'; then
+  run vp run --filter @glass-sdk/liquid-glass check:gpu
 fi
 echo "pre-push: all checks passed"

@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vite-plus";
 import { wgslVitePlugin } from "@vgpu/wgsl/loader-vite";
 export default defineConfig({
   plugins: [
@@ -34,7 +34,8 @@ export default defineConfig({
         preserveModules: true,
         preserveModulesRoot: "src",
         entryFileNames: "[name].js",
-        banner: (chunk) => (chunk.name === "index" || chunk.name.startsWith("react/") ? '"use client";' : ""),
+        banner: (chunk) =>
+          chunk.name === "index" || chunk.name.startsWith("react/") ? '"use client";' : "",
       },
     },
   },

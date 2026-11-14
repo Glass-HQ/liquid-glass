@@ -1,11 +1,24 @@
 import { expect, test } from "bun:test";
-import { morphDraw, morphShape, neckWidth, openingAxis, planMorph, radiusPixels } from "./morph-path.js";
+import {
+  morphDraw,
+  morphShape,
+  neckWidth,
+  openingAxis,
+  planMorph,
+  radiusPixels,
+} from "./morph-path.js";
 import type { MorphEndpoints } from "./morph-path.js";
 import { roundRectDistance, smoothMin } from "./union.js";
 
 const button = { left: 100, top: 100, width: 28, height: 28 };
 const menu = { left: 0, top: 136, width: 148, height: 92 };
-const path: MorphEndpoints = { from: button, fromRadius: "circle", to: menu, toRadius: 28, along: "y" };
+const path: MorphEndpoints = {
+  from: button,
+  fromRadius: "circle",
+  to: menu,
+  toRadius: 28,
+  along: "y",
+};
 
 test("the opening axis is the one the popup lies beyond", () => {
   expect(openingAxis(button, menu)).toBe("y");
@@ -13,7 +26,8 @@ test("the opening axis is the one the popup lies beyond", () => {
 });
 
 test("the path is exact at both ends", () => {
-  const start = morphShape(path, 0), end = morphShape(path, 1);
+  const start = morphShape(path, 0),
+    end = morphShape(path, 1);
   expect(start).toEqual({ ...button, radius: 14 });
   expect(end).toEqual({ ...menu, radius: 28 });
 });
@@ -40,30 +54,73 @@ test("the opening axis leads, corners stay drop-like in flight, and overshoot sw
 });
 
 test("a layout path without an opening axis moves both axes together", () => {
-  const s = morphShape({ from: button, fromRadius: "capsule", to: { left: 0, top: 0, width: 128, height: 28 }, toRadius: "capsule" }, 0.5);
+  const s = morphShape(
+    {
+      from: button,
+      fromRadius: "capsule",
+      to: { left: 0, top: 0, width: 128, height: 28 },
+      toRadius: "capsule",
+    },
+    0.5,
+  );
   expect(s.width).toBe(78);
   expect(s.radius).toBe(14);
 });
 
 test("a plan runs from the exact source to the exact target through evenly spaced shapes", () => {
   const stops = planMorph(path, undefined, { stops: 10, dpr: 1, restDpr: 2 });
-  expect(stops[0]!.shape).toEqual({ width: 28, height: 28, radius: "circle", dpr: 2, resting: true });
-  expect(stops.at(-1)!.shape).toEqual({ width: 148, height: 92, radius: 28, dpr: 2, resting: true });
+  expect(stops[0]!.shape).toEqual({
+    width: 28,
+    height: 28,
+    radius: "circle",
+    dpr: 2,
+    resting: true,
+  });
+  expect(stops.at(-1)!.shape).toEqual({
+    width: 148,
+    height: 92,
+    radius: 28,
+    dpr: 2,
+    resting: true,
+  });
   expect(stops.slice(1, -1).every((stop) => !stop.shape.resting)).toBe(true);
   expect(stops.length).toBe(10);
   for (let i = 1; i < stops.length; i++) expect(stops[i]!.p).toBeGreaterThan(stops[i - 1]!.p);
   expect(stops.every((stop) => !stop.absorbs && !stop.box)).toBe(true);
   // Shapes in the first half of the path keep drop-like corners.
-  for (const stop of stops.slice(1, 5)) expect(Number(stop.shape.radius)).toBeGreaterThan(0.3 * Math.min(stop.shape.width, stop.shape.height));
+  for (const stop of stops.slice(1, 5))
+    expect(Number(stop.shape.radius)).toBeGreaterThan(
+      0.3 * Math.min(stop.shape.width, stop.shape.height),
+    );
 });
 
 test("a drop leaving a toolbar starts as the toolbar, is joined by traced unions, then parts", () => {
-  const toolbar = { left: 40, top: 96, width: 120, height: 36, layoutWidth: 120, layoutHeight: 36, radius: "capsule" as const };
+  const toolbar = {
+    left: 40,
+    top: 96,
+    width: 120,
+    height: 36,
+    layoutWidth: 120,
+    layoutHeight: 36,
+    radius: "capsule" as const,
+  };
   const trigger = { left: 128, top: 100, width: 28, height: 28 };
-  const drop: MorphEndpoints = { from: trigger, fromRadius: "circle", to: { left: 8, top: 140, width: 148, height: 92 }, toRadius: 28, along: "y" };
+  const drop: MorphEndpoints = {
+    from: trigger,
+    fromRadius: "circle",
+    to: { left: 8, top: 140, width: 148, height: 92 },
+    toRadius: 28,
+    along: "y",
+  };
   const stops = planMorph(drop, toolbar, { stops: 12, unions: 8 });
   expect(stops[0]!.absorbs).toBe(true);
-  expect(stops[0]!.shape).toEqual({ width: 120, height: 36, radius: "capsule", dpr: 1, resting: true });
+  expect(stops[0]!.shape).toEqual({
+    width: 120,
+    height: 36,
+    radius: "capsule",
+    dpr: 1,
+    resting: true,
+  });
   const unions = stops.filter((stop) => stop.shape.outline);
   expect(unions.length).toBeGreaterThan(2);
   expect(unions.every((stop) => stop.absorbs && stop.box)).toBe(true);
@@ -93,14 +150,40 @@ test("a frame blends the two stops around its progress", () => {
 });
 
 test("detached union maps are reused after fractional movement without moving their visible contours", () => {
-  const toolbar = { left: 246.25, top: 226.5, width: 156, height: 36, layoutWidth: 156, layoutHeight: 36, radius: "capsule" as const };
-  const drop: MorphEndpoints = { from: { left: 360.25, top: 230.5, width: 28, height: 28 }, fromRadius: "circle", to: { left: 200.25, top: 274.5, width: 220, height: 240 }, toRadius: 28, along: "y" };
+  const toolbar = {
+    left: 246.25,
+    top: 226.5,
+    width: 156,
+    height: 36,
+    layoutWidth: 156,
+    layoutHeight: 36,
+    radius: "capsule" as const,
+  };
+  const drop: MorphEndpoints = {
+    from: { left: 360.25, top: 230.5, width: 28, height: 28 },
+    fromRadius: "circle",
+    to: { left: 200.25, top: 274.5, width: 220, height: 240 },
+    toRadius: 28,
+    along: "y",
+  };
   const options = { stops: 7, restDpr: 2 };
   const original = planMorph(drop, toolbar, options);
   expect(original.some((stop) => stop.shape.outline)).toBe(true);
-  for (const [dx, dy] of [[0.25, -0.375], [40.5, 1013.125], [-8000.1, 12000.2]]) {
-    const translate = (box: typeof drop.from) => ({ ...box, left: box.left + dx!, top: box.top + dy! });
-    const moved = planMorph({ ...drop, from: translate(drop.from), to: translate(drop.to) }, { ...toolbar, ...translate(toolbar) }, options);
+  for (const [dx, dy] of [
+    [0.25, -0.375],
+    [40.5, 1013.125],
+    [-8000.1, 12000.2],
+  ]) {
+    const translate = (box: typeof drop.from) => ({
+      ...box,
+      left: box.left + dx!,
+      top: box.top + dy!,
+    });
+    const moved = planMorph(
+      { ...drop, from: translate(drop.from), to: translate(drop.to) },
+      { ...toolbar, ...translate(toolbar) },
+      options,
+    );
     // Shape equality is the map-cache contract; placement alone may change.
     expect(moved.map((stop) => stop.shape)).toEqual(original.map((stop) => stop.shape));
     expect(moved.map((stop) => stop.p)).toEqual(original.map((stop) => stop.p));
@@ -110,7 +193,7 @@ test("detached union maps are reused after fractional movement without moving th
       expect(stop.box.left - before.box!.left).toBeCloseTo(dx!, 8);
       expect(stop.box.top - before.box!.top).toBeCloseTo(dy!, 8);
       // Identical local geometry reuses the traced contour, not just its map.
-      if (stop.shape.outline) expect(stop.shape.outline).toBe(before.shape.outline);
+      if (stop.shape.outline) expect(stop.shape.outline).toBe(before.shape.outline!);
     });
   }
   const endpoint = original.at(-1)!.shape;
@@ -119,19 +202,51 @@ test("detached union maps are reused after fractional movement without moving th
 });
 
 test("local detachment contours still follow the source and moving drop's smooth union", () => {
-  const toolbar = { left: 1040.375, top: -396.125, width: 120, height: 36, layoutWidth: 120, layoutHeight: 36, radius: "capsule" as const };
-  const drop: MorphEndpoints = { from: { left: 1128.375, top: -392.125, width: 28, height: 28 }, fromRadius: "circle", to: { left: 1008.375, top: -352.125, width: 148, height: 92 }, toRadius: 28, along: "y" };
-  const source = { x: toolbar.left, y: toolbar.top, width: toolbar.width, height: toolbar.height, radius: 18 };
+  const toolbar = {
+    left: 1040.375,
+    top: -396.125,
+    width: 120,
+    height: 36,
+    layoutWidth: 120,
+    layoutHeight: 36,
+    radius: "capsule" as const,
+  };
+  const drop: MorphEndpoints = {
+    from: { left: 1128.375, top: -392.125, width: 28, height: 28 },
+    fromRadius: "circle",
+    to: { left: 1008.375, top: -352.125, width: 148, height: 92 },
+    toRadius: 28,
+    along: "y",
+  };
+  const source = {
+    x: toolbar.left,
+    y: toolbar.top,
+    width: toolbar.width,
+    height: toolbar.height,
+    radius: 18,
+  };
   const stops = planMorph(drop, toolbar, { stops: 12, unions: 8 });
   for (const stop of stops) {
     if (!stop.shape.outline) continue;
     const shape = morphShape(drop, stop.p);
-    const moving = { x: shape.left, y: shape.top, width: shape.width, height: shape.height, radius: shape.radius };
-    const error = Math.max(...stop.shape.outline.map(([x, y]) => Math.abs(smoothMin(
-      roundRectDistance(x + stop.box!.left, y + stop.box!.top, source),
-      roundRectDistance(x + stop.box!.left, y + stop.box!.top, moving),
-      neckWidth(stop.p, 18),
-    ))));
+    const moving = {
+      x: shape.left,
+      y: shape.top,
+      width: shape.width,
+      height: shape.height,
+      radius: shape.radius,
+    };
+    const error = Math.max(
+      ...stop.shape.outline.map(([x, y]) =>
+        Math.abs(
+          smoothMin(
+            roundRectDistance(x + stop.box!.left, y + stop.box!.top, source),
+            roundRectDistance(x + stop.box!.left, y + stop.box!.top, moving),
+            neckWidth(stop.p, 18),
+          ),
+        ),
+      ),
+    );
     // The original contour uses a 1.5px marching grid and 0.18px simplification.
     expect(error).toBeLessThan(0.3);
   }
