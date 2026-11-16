@@ -186,12 +186,25 @@ function release(maps: MaterialMaps) {
     decoded.delete(url);
   }
 }
-/** Drop the oldest maps beyond the cache size that have not been drawn for 10s. */
+/** Decoded pixels a set of maps holds in memory, in bytes. */
+const weight = (maps: MaterialMaps) =>
+  urls(maps).reduce((bytes, url) => {
+    const image = decoded.get(url);
+    return bytes + (image ? image.naturalWidth * image.naturalHeight * 4 : 0);
+  }, 0);
+const cacheEntries = 64,
+  cacheBytes = 96 * 1024 * 1024;
+/** Drop the oldest maps that have not been drawn for 10s, while the cache
+ * holds more entries or more decoded pixels than its budget. A count alone
+ * lets a resized panel keep hundreds of megabytes of large maps. */
 function evict() {
   const now = performance.now();
+  let bytes = 0;
+  for (const maps of settled.values()) bytes += weight(maps);
   for (const [key, maps] of settled) {
-    if (cache.size <= 64) break;
+    if (cache.size <= cacheEntries && bytes <= cacheBytes) break;
     if (now - (lastUse.get(maps) ?? 0) < 10_000) continue;
+    bytes -= weight(maps);
     cache.delete(key);
     settled.delete(key);
     release(maps);

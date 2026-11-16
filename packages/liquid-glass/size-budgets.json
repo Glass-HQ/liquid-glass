@@ -4,8 +4,8 @@
     "Surface": 47616,
     "Button": 49152,
     "Toolbar": 56320,
-    "Tabs": 62464,
-    "Menu": 109568,
+    "Tabs": 62976,
+    "Menu": 110080,
     "Slider and switch": 67072,
     "Progressive blur": 47104,
     "Everything": 131584
