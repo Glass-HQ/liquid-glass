@@ -50,6 +50,7 @@ import { sharedBackdropMaterials } from "./shared-backdrop.js";
 import { gecko } from "./filter-stages.js";
 import { chromium } from "./engine.js";
 import type { LayerFrame, LayerLens, LensLayers } from "./lens-layers.js";
+import type { NativeFrost } from "./native-frost.js";
 import { composeSparseLayers } from "./compose-layers.js";
 import { acquireFilterPaintRoot, acquireSceneCompositingLayer } from "./filter-paint-root.js";
 import { registerSceneRoot, releaseFilterPart, sceneDepth, setFilterPart } from "./filter-chain.js";
@@ -326,6 +327,19 @@ export function createGlassScene(
       },
       () => undefined,
     );
+  /** WebKit frosts plain Regular surfaces in its compositor. Until that code
+   * arrives, and where backdrop filters are missing, the filter frosts them. */
+  let frost: NativeFrost | undefined;
+  if (webkit)
+    import("./native-frost.js").then(
+      ({ createNativeFrost, supportsNativeFrost }) => {
+        if (disposed || !supportsNativeFrost()) return;
+        frost = createNativeFrost();
+        dirty = true;
+        ticker.wake();
+      },
+      () => undefined,
+    );
   let layerGlass: LayerGlass[] = [];
   let layerKey = "";
   const layerStyles = new Map<HTMLElement, FilterStyle>();
@@ -437,6 +451,7 @@ export function createGlassScene(
     outer: number,
     regions: ReturnType<typeof progressive.regions>,
     onLayer = false,
+    frosted?: ReadonlySet<number>,
   ) {
     const parentsOf = (l: Lens) =>
       ordered.filter((parent) => parent !== l && parent.element.contains(l.element));
@@ -483,7 +498,7 @@ export function createGlassScene(
     // images, which a single material pass refracts. Elsewhere a shared
     // branch only spreads its passes over the empty space between surfaces.
     const branchKey = (l: Lens) =>
-      `${l.options.material ?? "clear"},${l.options.appearance ?? "light"},${l.options.tint ?? ""},${wanted.get(l)}`;
+      `${l.options.material ?? "clear"},${l.options.appearance ?? "light"},${l.options.tint ?? ""},${wanted.get(l)},${native(l)}`;
     // Submenus fade in and out beside their parent. On WebKit they keep one
     // graph shape at every opacity, since any change of shape redraws it all.
     const fades = (l: Lens) => webkit && l.element.hasAttribute("data-glass-submenu");
@@ -493,6 +508,29 @@ export function createGlassScene(
     // A shared branch sees no glass beneath it, so only earlier surfaces can
     // keep a surface out; glass above reads its overlay either way, and the
     // shared branch is drawn where its first member is.
+    // A resting Regular surface with no tint and no glass near it is frosted
+    // by the compositor: the filter only refracts for it. A layer's own
+    // filter follows what the content's filter decided.
+    const nativeSerials =
+      frosted ??
+      new Set(
+        frost
+          ? drawn
+              .filter(
+                (l) =>
+                  l.options.material === "regular" &&
+                  !l.options.tint &&
+                  independent(l) &&
+                  !l.place &&
+                  !l.absorbs &&
+                  !paired.has(l) &&
+                  !pairedSources.has(l) &&
+                  !drawn.some((other) => other !== l && near(l, other)),
+              )
+              .map((l) => l.serial)
+          : [],
+      );
+    const native = (l: Lens) => nativeSerials.has(l.serial);
     const drawnIndex = new Map(drawn.map((l, index) => [l, index] as const));
     const shareable = (l: Lens) =>
       independent(l) &&
@@ -534,7 +572,7 @@ export function createGlassScene(
         const spec =
           l.options.appearance === "dark" ? materials.regular.dark : materials.regular.light;
         const blur =
-          l.options.material === "regular"
+          l.options.material === "regular" && !native(l)
             ? blurOutsets(materials.regular.blur) + blurOutsets(spec.fillSigma)
             : 0;
         return [l, scale * (blur + wanted.get(l)!)] as const;
@@ -588,7 +626,7 @@ export function createGlassScene(
     // Every surface samples its own padded crop; shared intermediates only
     // need to cover the crops of the surfaces that read them.
     const cropOf = (l: Lens) => {
-      const padding = Math.ceil(3 * blurOf(l, soften) + amounts.get(l)! + 8);
+      const padding = Math.ceil(3 * (native(l) ? 0 : blurOf(l, soften)) + amounts.get(l)! + 8);
       return {
         x: l.x - 2 - padding,
         y: l.y - 2 - padding,
@@ -880,7 +918,16 @@ export function createGlassScene(
           );
         const cropped = sharedCrop?.name ?? (gathered ? `${p}crop` : source);
         let base = cropped;
-        if (o.material === "regular") {
+        const frostless = native(l);
+        // WebKit converts the whole source to read any of it; a composite
+        // of the source with itself crops it to what refraction reads.
+        if (frostless && base === source) {
+          parts.push(
+            `<feComposite in="${source}" in2="${source}" operator="in" result="${p}source"/>`,
+          );
+          base = `${p}source`;
+        }
+        if (o.material === "regular" && !frostless) {
           const backdrop = shared?.get(unit);
           if (backdrop) {
             if (!emitted.has(backdrop.result)) {
@@ -899,9 +946,9 @@ export function createGlassScene(
         // chroma only need the pixels that refraction delivers to the lens.
         parts.push(
           `<feDisplacementMap in="${base}" in2="${p}field" scale="${amount * 2}" xChannelSelector="R" yChannelSelector="G" result="${p}refracted"/>`,
-          toneMarkup(p, o, nested.length > 0),
+          ...(frostless ? [] : [toneMarkup(p, o, nested.length > 0)]),
         );
-        let color = `${p}color`;
+        let color = frostless ? `${p}refracted` : `${p}color`;
         let overlay = `${p}overlay`;
         const tint = tintChannels(o);
         if (tint) {
@@ -912,7 +959,7 @@ export function createGlassScene(
         }
         parts.push(
           `<feComposite in="${color}" in2="${mask}" operator="in" result="${p}inside"/>`,
-          image("overlay", `${p}overlay`),
+          ...(frostless ? [] : [image("overlay", `${p}overlay`)]),
           ...(tint ? [overlayTintMarkup(`${p}overlay`, overlay, o, tint)] : []),
           // Fully opaque glass needs no opacity pass over its rim and light.
           ...(opaque
@@ -929,7 +976,11 @@ export function createGlassScene(
           parts.push(
             `<feColorMatrix in="${p}refracted" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="${p}cover"/>`,
             `<feComposite in="${p}inside" in2="${p}cover" operator="in" result="${p}ownInside"/>`,
-            `<feComposite in="${opaque ? overlay : `${p}fadedOverlay`}" in2="${p}cover" operator="in" result="${p}ownOverlay"/>`,
+            ...(frostless
+              ? []
+              : [
+                  `<feComposite in="${opaque ? overlay : `${p}fadedOverlay`}" in2="${p}cover" operator="in" result="${p}ownOverlay"/>`,
+                ]),
           );
         // Without a subregion every primitive covers the whole filter region,
         // the scene plus padding. Only the surface's box matters, plus the
@@ -939,7 +990,7 @@ export function createGlassScene(
         // subregion and writes transparent pixels for any sample beyond it,
         // so it must cover every pixel it reaches; the mask clips it after.
         const sampledStages = new Set(
-          [...["frost", "fill", "blend", "mix"], ...(webkit ? ["refracted"] : [])].map(
+          [...["frost", "fill", "blend", "mix"], ...(webkit ? ["refracted", "source"] : [])].map(
             (name) => `${p}${name}`,
           ),
         );
@@ -954,9 +1005,11 @@ export function createGlassScene(
               return `<${name}${attributes} x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}"${close}>`;
             },
           );
-        const layer = onLayer
-          ? [`${p}ownInside`, `${p}ownOverlay`]
-          : [`${p}inside`, opaque ? overlay : `${p}fadedOverlay`];
+        const layer = (
+          onLayer
+            ? [`${p}ownInside`, `${p}ownOverlay`]
+            : [`${p}inside`, opaque ? overlay : `${p}fadedOverlay`]
+        ).slice(0, frostless ? 1 : 2);
         layersOf.set(unit, layer);
         maskOf.set(unit, mask);
       });
@@ -1023,7 +1076,7 @@ export function createGlassScene(
       }
       return primitives;
     };
-    return { drawn, parents, wanted, reach, bounds, primitives };
+    return { drawn, parents, wanted, reach, bounds, primitives, nativeSerials };
   }
   /** Rebuild the filters for the measured content size. The filter's
    * bounding box is the content layer, which can be taller than the scene
@@ -1051,6 +1104,21 @@ export function createGlassScene(
     const ordered = order();
     const graph = sceneGraph(ordered, width, height, progressiveOutsets, progressive.regions());
     const { drawn, parents, wanted, reach, bounds } = graph;
+    frost?.update(
+      drawn
+        .filter((l) => graph.nativeSerials.has(l.serial))
+        .map((l) => ({
+          serial: l.serial,
+          element: l.element,
+          options: l.options,
+          maps: l.maps!,
+          x: l.x,
+          y: l.y,
+          w: l.w,
+          h: l.h,
+        })),
+      content,
+    );
     filterError = undefined;
     if (layers) {
       // Every surface draws its own glass; the content keeps only passes
@@ -1134,7 +1202,7 @@ export function createGlassScene(
           y: l.y - layer.y,
           place: l.place && { ...l.place, a: shift(l.place.a), b: shift(l.place.b) },
         }));
-        const glass = sceneGraph(local, layer.w, layer.h, 0, [], true);
+        const glass = sceneGraph(local, layer.w, layer.h, 0, [], true, graph.nativeSerials);
         if (!glass.drawn.length) continue;
         const markup = zoomFilterMarkup(glass.primitives(), 1 / layer.scale);
         const filterId = `${id}-k${layerIdOf(layer.element)}`;
@@ -1750,6 +1818,7 @@ export function createGlassScene(
       svg.contains(target) ||
       warmer.owns(target) ||
       Boolean(layers?.owns(target)) ||
+      Boolean(frost?.owns(target)) ||
       Boolean(escapes?.owns(target, record)) ||
       (record.type === "attributes" &&
         record.attributeName === "style" &&
@@ -1928,6 +1997,7 @@ export function createGlassScene(
       clearTimeout(warmStyle);
       progressive.dispose();
       layers?.dispose();
+      frost?.dispose();
       escapes?.dispose();
       for (const [element, style] of layerStyles) releaseFilter(element, style);
       layerStyles.clear();
