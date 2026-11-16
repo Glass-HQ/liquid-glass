@@ -68,8 +68,9 @@ const metrics = [
   ["work", "filter work Mpx", 1],
   ["redraws", "filter redraws/s", 0],
 ];
-/** Lower is better for everything except frames per second. */
-const better = (key, head, base) => (key === "frames" ? head > base : head < base);
+/** Lower is better for everything except frames and glass updates per second. */
+const better = (key, head, base) =>
+  key === "frames" || key === "redraws" ? head > base : head < base;
 /** A build wins a metric only when every one of its runs beats every run of the other. */
 export function verdict(key, head, base) {
   if (head.length < 3 || base.length < 3) return "too few runs";

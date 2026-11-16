@@ -94,9 +94,12 @@ function watchFilters() {
     )
       return;
     changed = true;
-    requestAnimationFrame(() => {
+    redraws++;
+    // A task runs after this frame's callbacks and before the next frame's.
+    // Waiting for the next frame instead would miss the change made in it,
+    // and count only every other frame of a filter that changes on each.
+    setTimeout(() => {
       changed = false;
-      redraws++;
       const now = filterWork();
       if (now.megapixels > peak.megapixels) {
         peak = now;
