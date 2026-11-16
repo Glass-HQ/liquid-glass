@@ -68,10 +68,11 @@ function Page({ rows }: { rows: number }) {
     </div>
   );
 }
-function Player({ style }: { style?: CSSProperties }) {
+function Player({ style, interactive }: { style?: CSSProperties; interactive?: boolean }) {
   return (
     <GlassSurface
       radius={38}
+      interactive={interactive}
       className="bench-panel"
       style={{ width: 300, height: 170, padding: 20, ...style }}
     >
@@ -136,12 +137,20 @@ function Canvas() {
   };
   return <canvas ref={draw} width={2200} height={1280} style={fill} />;
 }
-function Dragged({ children, canvas }: { children?: ReactNode; canvas?: boolean }) {
+function Dragged({
+  children,
+  canvas,
+  interactive,
+}: {
+  children?: ReactNode;
+  canvas?: boolean;
+  interactive?: boolean;
+}) {
   return (
     <GlassScene material="regular" style={size}>
       <GlassContent>{canvas ? <Canvas /> : <Photo />}</GlassContent>
       {children}
-      <Player style={at(400, 235)} />
+      <Player style={at(400, 235)} interactive={interactive} />
     </GlassScene>
   );
 }
@@ -183,10 +192,45 @@ const drag = (driver: Driver) => {
   });
 };
 
+/** Drags the panel under a pressed pointer, as a person would: an
+ * interactive surface stretches toward the pointer while it follows it. */
+const dragHeld = async (driver: Driver) => {
+  const panel = driver.find<HTMLElement>(".bench-panel")!;
+  const box = panel.getBoundingClientRect();
+  const start = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  const pointer = (type: string, x: number, y: number) =>
+    panel.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: type === "pointerup" ? 0 : 1,
+      }),
+    );
+  pointer("pointerdown", start.x, start.y);
+  await driver.animate(4, (t) => {
+    const x = 300 * wave(t, 2),
+      y = 180 * wave(t, 1.3);
+    panel.style.transform = `translate(${x}px, ${y}px)`;
+    pointer("pointermove", start.x + x, start.y + y);
+  });
+  pointer("pointerup", start.x, start.y);
+};
+
 export const scenes: Record<string, BenchScene> = {
   drag: {
     render: () => <Dragged />,
     run: (driver) => drag(driver),
+  },
+  "drag-held": {
+    render: () => <Dragged interactive />,
+    run: dragHeld,
   },
   "drag-over-canvas": {
     render: () => <Dragged canvas />,

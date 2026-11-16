@@ -1,5 +1,6 @@
 {
   "drag": "One panel moving over a still picture.",
+  "drag-held": "An interactive panel dragged under a pressed pointer: it stretches toward the pointer while it moves, so its shape changes on every frame.",
   "drag-over-canvas": "The same drag over a canvas, which Safari draws in a layer of its own.",
   "drag-half-stage": "The same drag with half as much background behind it: how much of the cost is the background, not the glass.",
   "drag-among-many": "One panel moving while twelve other pieces of glass stay still: the cost of glass that did not change.",
