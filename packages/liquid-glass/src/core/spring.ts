@@ -13,9 +13,7 @@ export const springs = {
   release: { duration: 0.5, bounce: 0.42 },
   /** Light settling into and out of the material. */
   glow: { duration: 0.42, bounce: 0 },
-  /** Glass growing out of, or back into, another shape. */
-  morph: { duration: 0.42, bounce: 0.18 },
-  /** A surface flowing to a new layout. */
+  /** A selection flowing to a new layout. */
   layout: { duration: 0.4, bounce: 0.16 },
   /** A selection lens following a drag. */
   track: { duration: 0.18, bounce: 0 },

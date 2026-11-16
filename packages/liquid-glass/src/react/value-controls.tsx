@@ -28,6 +28,7 @@ export function GlassSlider({
   appearance,
   tint,
   refraction,
+  specular,
   radius = "capsule",
   motion,
   interactive = true,
@@ -114,7 +115,7 @@ export function GlassSlider({
               motion={motion}
               interactive={interactive}
               pressed={sliderPressed || state.dragging}
-              options={{ material, appearance, radius, refraction }}
+              options={{ material, appearance, radius, refraction, specular }}
               className={`lg-slider-thumb ${typeof thumbClass === "function" ? thumbClass(state) : thumbClass}`}
             />
           )}
@@ -139,6 +140,7 @@ export function GlassSwitch({
   appearance,
   tint,
   refraction,
+  specular,
   radius = "capsule",
   motion,
   interactive = true,
@@ -291,7 +293,7 @@ export function GlassSwitch({
             pressed={pressed}
             motion={motion}
             interactive={interactive}
-            options={{ material, appearance, radius, refraction }}
+            options={{ material, appearance, radius, refraction, specular }}
             className="lg-switch-thumb"
           />
         )}

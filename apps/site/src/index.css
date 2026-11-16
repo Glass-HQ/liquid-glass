@@ -950,26 +950,6 @@ footer a:focus-visible,
   outline: 2px solid currentColor;
   outline-offset: -3px;
 }
-.progressive-caption {
-  position: absolute;
-  inset-inline: 28px;
-  margin: 0;
-  font-size: clamp(26px, 4vw, 40px);
-  font-weight: 600;
-  letter-spacing: -1.2px;
-  line-height: 1.05;
-  color: #211e19;
-}
-.glass-dark .progressive-caption {
-  color: #fff7e8;
-}
-.progressive-caption.is-top {
-  top: 28px;
-}
-.progressive-caption.is-bottom {
-  bottom: 28px;
-}
-
 /* Scenes: glass chrome stays sharp above the blurred GlassContent. */
 .lg-button.chrome-button {
   width: 38px;
@@ -977,9 +957,6 @@ footer a:focus-visible,
   min-height: 38px;
   padding: 0;
 }
-.messages-bar,
-.messages-composer,
-.article-bar,
 .library-header {
   position: absolute;
   inset-inline: 16px;
@@ -988,254 +965,9 @@ footer a:focus-visible,
   gap: 8px;
   pointer-events: none;
 }
-.messages-bar > *,
-.messages-composer > *,
-.article-bar > *,
 .library-header > * {
   pointer-events: auto;
 }
-.messages-bar,
-.article-bar {
-  top: 14px;
-}
-.messages-bar {
-  justify-content: space-between;
-}
-.messages-composer {
-  bottom: 14px;
-}
-.messages-contact {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 14px 0 4px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.messages-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-}
-.messages-field {
-  flex: 1;
-  height: 38px;
-  display: flex;
-}
-.messages-field input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: none;
-  padding: 0 14px;
-  font: inherit;
-  font-size: 15px;
-  color: inherit;
-  outline: none;
-}
-.messages-thread {
-  list-style: none;
-  margin: 0;
-  padding: 72px 20px 76px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.messages-day {
-  align-self: center;
-  margin-bottom: 6px;
-  font-size: 11px;
-  opacity: 0.55;
-}
-.messages-row {
-  display: flex;
-}
-.messages-row.is-me {
-  justify-content: flex-end;
-}
-.messages-bubble {
-  max-width: min(62%, 420px);
-  padding: 8px 13px;
-  font-size: 15px;
-  line-height: 1.35;
-  background: #e9e9eb;
-  color: #111;
-}
-.is-me .messages-bubble {
-  background: #0a84ff;
-  color: #fff;
-}
-.glass-dark .is-them .messages-bubble {
-  background: #2c2c2e;
-  color: #fff;
-}
-.messages-photo {
-  width: 260px;
-  height: 170px;
-  object-fit: cover;
-}
-.messages-link {
-  display: grid;
-  width: 260px;
-  overflow: hidden;
-  background: #e9e9eb;
-  color: #111;
-  font-size: 13px;
-}
-.glass-dark .messages-link {
-  background: #2c2c2e;
-  color: #fff;
-}
-.messages-link img {
-  width: 100%;
-  height: 110px;
-  object-fit: cover;
-}
-.messages-link strong {
-  padding: 8px 12px 0;
-}
-.messages-link span {
-  padding: 0 12px 9px;
-  opacity: 0.6;
-}
-
-.progressive-viewport.is-article {
-  scroll-padding-block: 110px;
-}
-.article-body {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 72px 24px 96px;
-  font-family: "Iowan Old Style", "Charter", Georgia, serif;
-  font-size: 17px;
-  line-height: 1.62;
-}
-.article-header {
-  margin-bottom: 24px;
-}
-.article-body h1 {
-  margin: 0;
-  font-size: 40px;
-  line-height: 1.05;
-  letter-spacing: -1.1px;
-  font-weight: 700;
-  text-wrap: balance;
-}
-.article-dek {
-  margin: 12px 0 18px;
-  font-size: 20px;
-  line-height: 1.4;
-  opacity: 0.72;
-  text-wrap: pretty;
-}
-.article-byline {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  font-family: "Inter Variable", sans-serif;
-  font-size: 13px;
-}
-.article-byline img {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-}
-.article-byline span {
-  opacity: 0.7;
-}
-.article-byline strong {
-  font-weight: 600;
-}
-.article-body figure {
-  margin: 0 0 26px;
-}
-.article-body figcaption {
-  margin-top: 8px;
-  font-family: "Inter Variable", sans-serif;
-  font-size: 12px;
-  opacity: 0.55;
-}
-.article-hero {
-  width: 100%;
-  height: 260px;
-  object-fit: cover;
-  display: block;
-}
-.article-inline {
-  width: 100%;
-  height: 210px;
-  object-fit: cover;
-  display: block;
-}
-.article-body p {
-  margin: 0 0 18px;
-}
-.article-lede::first-letter {
-  float: left;
-  margin: 6px 10px 0 0;
-  font-size: 58px;
-  line-height: 0.82;
-  font-weight: 700;
-}
-.article-body h2 {
-  margin: 34px 0 10px;
-  font-family: "Inter Variable", sans-serif;
-  font-size: 21px;
-  letter-spacing: -0.4px;
-  font-weight: 650;
-}
-.article-body a {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
-}
-.article-body blockquote {
-  margin: 28px 0;
-  padding-inline-start: 20px;
-  border-inline-start: 3px solid currentColor;
-}
-.article-body blockquote p {
-  margin: 0 0 8px;
-  font-size: 23px;
-  line-height: 1.32;
-  font-style: italic;
-}
-.article-body cite {
-  font-family: "Inter Variable", sans-serif;
-  font-size: 13px;
-  font-style: normal;
-  opacity: 0.6;
-}
-.article-body ul {
-  margin: 0 0 18px;
-  padding-inline-start: 22px;
-}
-.article-body li {
-  margin-bottom: 6px;
-}
-.article-body li::marker {
-  color: color-mix(in srgb, currentColor 45%, transparent);
-}
-.article-bar-title {
-  flex: 1;
-  padding-inline-end: 46px;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 600;
-  opacity: var(--collapse, 0);
-  transform: translateY(calc((1 - var(--collapse, 0)) * 6px));
-}
-.article-actions {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
 .progressive-scene.is-library {
   background: #fbfbfd;
   color: #1d1d1f;
@@ -1338,6 +1070,28 @@ footer a:focus-visible,
   font-size: 12px;
 }
 
+.color-picker-example {
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  margin-top: -20px;
+}
+.color-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+}
 .value-control-example {
   display: grid;
   width: 280px;

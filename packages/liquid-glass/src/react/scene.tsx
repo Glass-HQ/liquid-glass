@@ -19,6 +19,7 @@ interface SceneContextValue {
   maxSurfaces: number;
   material: MaterialOptions["material"];
   appearance: MaterialOptions["appearance"];
+  specular: boolean;
   motion: GlassMotion;
 }
 const inertController: GlassSceneController = {
@@ -74,7 +75,7 @@ export interface GlassSceneProps
   extends
     ComponentPropsWithRef<"div">,
     GlassSceneOptions,
-    Pick<MaterialOptions, "material" | "appearance"> {
+    Pick<MaterialOptions, "material" | "appearance" | "specular"> {
   /** Motion for every glass component in the scene. `full` still follows the
    * system reduced-motion setting, which removes elasticity and travel. */
   motion?: GlassMotion;
@@ -87,6 +88,7 @@ export function GlassScene({
   ref,
   material = "clear",
   appearance = "light",
+  specular = false,
   motion = "full",
   ...props
 }: GlassSceneProps) {
@@ -98,6 +100,7 @@ export function GlassScene({
     maxSurfaces: capacity,
     material,
     appearance,
+    specular,
     motion,
   });
   const diagnostic = useRef(onDiagnostic);
@@ -127,7 +130,7 @@ export function GlassScene({
       ...props,
       className: `lg-scene ${className}`,
       children: (
-        <SceneContext.Provider value={{ ...scene, material, appearance, motion }}>
+        <SceneContext.Provider value={{ ...scene, material, appearance, specular, motion }}>
           {children}
         </SceneContext.Provider>
       ),

@@ -26,7 +26,7 @@ test("bounce overshoots, and the result does not depend on frame rate", () => {
 });
 
 test("retargeting preserves velocity, so reversal is continuous", () => {
-  const spring = new Spring(0, springs.morph);
+  const spring = new Spring(0, springs.layout);
   spring.target = 1;
   spring.step(0.08);
   const { value, velocity } = spring;

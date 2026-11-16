@@ -10,6 +10,9 @@ export interface MaterialOptions {
   refraction?: number;
   /** Optional six-digit hex color, e.g. "#007aff". Omit for untinted glass. */
   tint?: string;
+  /** A moving highlight along the rim that follows the pointer, and the
+   * device's tilt where the browser reports it. Default: false. */
+  specular?: boolean;
 }
 export const materials = {
   clear: {

@@ -1,6 +1,6 @@
 export { GlassShape, GlassShapeContainer, GlassCorner } from "./shape.js";
 export type { GlassShapeProps, GlassCornerProps } from "./shape.js";
-export type { GlassMotion, GlassMorph } from "../dom/index.js";
+export type { GlassMotion } from "../dom/index.js";
 export type { GlassBlurEdge, ProgressiveBlurOptions } from "../core/progressive.js";
 export {
   GlassScene,
@@ -54,4 +54,6 @@ export type { GlassMenuContentProps } from "./menu.js";
 export { GlassProgressiveBlur, GlassScrollEdges } from "./progressive.js";
 export type { GlassProgressiveBlurProps, GlassScrollEdgesProps } from "./progressive.js";
 export { GlassSlider, GlassSwitch } from "./value-controls.js";
+export { GlassColorPicker } from "./color-picker.js";
+export type { GlassColorPickerProps } from "./color-picker.js";
 export type { GlassSliderProps, GlassSwitchProps } from "./value-controls.js";

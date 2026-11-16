@@ -39,7 +39,7 @@
 /* Gecko draws each surface's glass in a layer beneath its children. */
 .lg-glass-layer {
   position: absolute;
-  z-index: -1;
+  z-index: -2;
   pointer-events: none;
   background-repeat: no-repeat;
 }
@@ -198,23 +198,19 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* While glass grows out of, or back into, another shape, its content waits
-   for room: it condenses out of a blur as the outline opens, and dissolves
-   back into one as it closes. */
-:where(.lg-surface[data-glass-morph]) > * {
-  opacity: calc(var(--lg-morph, 1) * var(--lg-glass-ready, 1));
-  filter: blur(calc((1 - var(--lg-morph, 1)) * 6px));
-  /* Keep animated text blur on its own layer: WebKit can otherwise flash
-     unpainted pixels while the containing outline changes. This hint does
-     not replace an author's transform and expires with the morph. */
-  will-change: transform;
-  backface-visibility: hidden;
+/* The rim highlight of specular glass, above the material and beneath the
+   surface's children. The scene sizes it to the glass and aims its light. */
+.lg-specular {
+  position: absolute;
+  z-index: -1;
+  display: block;
+  pointer-events: none;
+  background-repeat: no-repeat;
 }
-/* Glass that has become another surface: its material is drawn by that
-   surface, and its own content withdraws as the glass leaves it. */
-:where([data-glass-morph-source]) {
-  opacity: calc(1 - var(--lg-morph-source, 1));
-  filter: blur(calc(var(--lg-morph-source, 1) * 3px));
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .lg-specular {
+    display: none;
+  }
 }
 
 :where(.lg-tab-indicator) {
@@ -578,4 +574,125 @@
 [data-lg-shape]:not([style*="clip-path"]),
 .lg-surface:not([style*="clip-path"]) {
   visibility: hidden;
+}
+
+/* Color picker: the wheel is the scene's content. At rest a small dot of the
+   chosen color marks it; pressing grows a Clear lens out of the dot. The lens
+   keeps its open size in layout and is only scaled, so its maps never change
+   while it grows. */
+:where(.lg-color-picker) {
+  --lg-color-lens-size: 60px;
+  --lg-color-lens-rest: 0.24;
+  --lg-color-picker-padding: calc(var(--lg-color-lens-size) / 2 + 6px);
+  display: inline-flex;
+  box-sizing: border-box;
+  padding: var(--lg-color-picker-padding);
+}
+:where(.lg-color-picker[data-disabled]) {
+  opacity: 0.45;
+  pointer-events: none;
+}
+:where(.lg-color-picker-canvas) {
+  box-sizing: border-box;
+  padding: var(--lg-color-picker-padding);
+  background: var(--lg-color-picker-background, transparent);
+}
+:where(.lg-color-wheel-colors, .lg-color-wheel) {
+  position: relative;
+  width: var(--lg-color-wheel-size);
+  height: var(--lg-color-wheel-size);
+  border-radius: 50%;
+}
+:where(.lg-color-wheel-colors) {
+  /* Shown until the drawn wheel is ready. */
+  background:
+    radial-gradient(closest-side, #fff, rgb(255 255 255 / 0)),
+    conic-gradient(from 90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  background-size: 100% 100%;
+  box-shadow: 0 10px 34px rgb(0 0 0 / 0.1);
+}
+:where(.lg-color-wheel) {
+  flex-shrink: 0;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.lg-color-lens,
+.lg-color-lens-shadow,
+.lg-color-knob {
+  position: absolute;
+  translate: -50% -50%;
+  pointer-events: none;
+}
+.lg-color-lens,
+.lg-color-lens-shadow {
+  width: var(--lg-color-lens-size);
+  height: var(--lg-color-lens-size);
+  scale: var(--lg-color-lens-rest);
+  opacity: 0;
+  transition:
+    scale 320ms cubic-bezier(0.3, 1.35, 0.45, 1),
+    opacity 90ms ease-out;
+}
+.lg-color-lens-shadow {
+  border-radius: 50%;
+  box-shadow: 0 3px 14px rgb(0 0 0 / 0.22);
+}
+.lg-color-lens[data-open],
+.lg-color-lens-shadow[data-open] {
+  scale: 1;
+  opacity: 1;
+}
+.lg-color-lens[data-open][data-touch],
+.lg-color-lens-shadow[data-open][data-touch] {
+  scale: 1.1;
+}
+:where(.lg-color-lens:not([data-open]), .lg-color-lens-shadow:not([data-open])) {
+  transition:
+    scale 220ms cubic-bezier(0.4, 0, 0.6, 1),
+    opacity 120ms 100ms ease-in;
+}
+/* The exact color under the pointer: the center of the lens bends nothing. */
+:where(.lg-color-lens-point) {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1.5px rgb(255 255 255 / 0.95),
+    0 0 0 2.5px rgb(0 0 0 / 0.16);
+}
+/* The resting marker: the chosen color, ringed thinly in white. */
+.lg-color-knob {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--lg-color);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 1px 5px rgb(0 0 0 / 0.3);
+  transition:
+    scale 160ms ease-out,
+    opacity 120ms ease-out;
+}
+.lg-color-knob[data-open] {
+  scale: 0.4;
+  opacity: 0;
+}
+:where(.lg-color-knob:not([data-open])) {
+  transition:
+    scale 200ms 120ms cubic-bezier(0.3, 1.35, 0.45, 1),
+    opacity 120ms 120ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lg-color-lens,
+  .lg-color-lens-shadow,
+  .lg-color-knob {
+    transition: opacity 120ms;
+  }
 }

@@ -15,10 +15,8 @@ export function resolveMotion(motion: GlassMotion | undefined): GlassMotion {
 
 export interface SurfaceAnimator {
   /** Advance to `now` before the scene samples geometry. Returns true while
-   * the animation is in motion and needs the next frame. While the scene is
-   * `quiet`, an animator leaves the page as it is: nothing moves, so the GPU
-   * is free for the maps another surface is waiting on. */
-  frame(now: number, quiet?: boolean): boolean | void;
+   * the animation is in motion and needs the next frame. */
+  frame(now: number): boolean | void;
   dispose(): void;
 }
 
@@ -191,12 +189,7 @@ export function attachInteraction(
   element.addEventListener("focusout", blur);
 
   return {
-    frame(now, quiet) {
-      // Held still: the springs resume from here once the scene moves again.
-      if (quiet) {
-        previous = now;
-        return true;
-      }
+    frame(now) {
       // The analytic springs are stable across dropped frames. Capping time
       // here would make a slow paint stretch the gesture's wall-clock duration.
       const dt = previous ? Math.max(0, (now - previous) / 1000) : 1 / 60;

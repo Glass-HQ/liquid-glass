@@ -38,22 +38,18 @@ function materialRows(kind: ExampleKind): readonly Row[] {
         ? "Six-digit hex track color."
         : "Six-digit hex glass color; leaves text and icons unchanged.",
     ],
+    [
+      "specular",
+      "boolean",
+      thumb
+        ? "Rim highlight on the pressed thumb that follows the pointer. Inherits from the scene."
+        : "Two rim highlights on opposite corners that turn toward the pointer, and with device tilt where the browser reports it. Inherits from the scene; default false.",
+    ],
   ];
 }
 const motionRows: Record<"surface" | "control" | "menu", readonly Row[]> = {
   surface: [
     ["interactive", "boolean", "Press and drag feedback. Default: false."],
-    [
-      "morphFrom",
-      "RefObject<Element | null> | element getter",
-      "Source element for opening and closing transitions.",
-    ],
-    [
-      "morph",
-      '"become" | "detach"',
-      "Replace the source or separate from it. Defaults to become for glass triggers, detach for triggers inside glass.",
-    ],
-    ["fluid", "boolean", "Animate layout size changes. Default: false."],
     [
       "motion",
       '"full" | "reduced" | "none"',
@@ -69,11 +65,6 @@ const motionRows: Record<"surface" | "control" | "menu", readonly Row[]> = {
     ],
   ],
   menu: [
-    [
-      "morph",
-      '"become" | "detach"',
-      "Replace the trigger or separate from its glass. Default: become; detach inside a toolbar.",
-    ],
     [
       "interactive",
       "boolean",
@@ -304,6 +295,37 @@ const parts: Record<ExampleKind, readonly Part[]> = {
     },
   ],
   menu: menuParts,
+  "color-picker": [
+    {
+      name: "GlassColorPicker",
+      description:
+        "A hue and saturation wheel. A small dot of the chosen color marks it exactly; pressing the wheel grows the dot into a Clear glass bubble that follows the pointer, with a point at its center on the exact color. The glass is always Clear, so the color shows as it is. Arrow keys change hue (left and right) and saturation (up and down); hold Shift for larger steps.",
+      rows: [
+        [
+          "value / defaultValue",
+          "string",
+          'Controlled or initial six-digit hex color. Default: "#007aff".',
+        ],
+        [
+          "onValueChange / onValueCommitted",
+          "(value: string) => void",
+          "Live changes, and changes when a drag or key press ends.",
+        ],
+        ["size", "number", "Wheel diameter in pixels. Default: 240."],
+        ["name", "string", "Submit the hex value with a form through a hidden input."],
+        ["disabled", "boolean", "Disable interaction."],
+        ["aria-label", "string", 'Accessible name of the wheel. Default: "Color".'],
+        ["appearance", '"light" | "dark"', "The lens's appearance. Default: light."],
+        ["refraction", "number", "The lens's displacement in pixels. Default: 16."],
+        ["specular", "boolean", "Rim highlights on the lens. Default: true."],
+        [
+          "--lg-color-picker-background",
+          "CSS color",
+          "Backdrop behind the wheel, refracted at the bubble's edge. Set it to your page color in Safari, which needs an opaque backdrop. Default: transparent.",
+        ],
+      ],
+    },
+  ],
   "progressive-blur": [
     {
       name: "GlassProgressiveBlur",
@@ -411,7 +433,9 @@ function ReferencePart({ name, description, rows }: Part) {
 export function ApiReference({ kind }: { kind: ExampleKind }) {
   const sections: Part[] = [
     ...parts[kind],
-    ...(kind === "progressive-blur" ? [] : [{ name: "Material props", rows: materialRows(kind) }]),
+    ...(kind === "progressive-blur" || kind === "color-picker"
+      ? []
+      : [{ name: "Material props", rows: materialRows(kind) }]),
     ...(motionFor[kind] ? [{ name: "Motion props", rows: motionFor[kind] }] : []),
   ];
   return (
@@ -433,7 +457,7 @@ export function ApiReference({ kind }: { kind: ExampleKind }) {
           <a href="#menu">menu example and props</a>.
         </p>
       )}
-      {kind !== "progressive-blur" && (
+      {kind !== "progressive-blur" && kind !== "color-picker" && (
         <p>
           For inherited props and behavior, see{" "}
           <a

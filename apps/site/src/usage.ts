@@ -14,6 +14,7 @@ const imports = {
   toolbar: "GlassToolbar, GlassToolbarButton",
   tabs: "GlassTabs",
   menu: "GlassButton, GlassMenu, GlassMenuTrigger, GlassMenuContent, GlassMenuItem",
+  "color-picker": "GlassColorPicker",
 };
 const snippets = {
   slider: `<GlassSlider aria-label="Volume" defaultValue={50} onValueCommitted={(value) => console.log(value)} />`,
@@ -35,6 +36,7 @@ const snippets = {
   ]}
 />`,
   menu: "",
+  "color-picker": `<GlassColorPicker defaultValue="#0a84ff" onValueCommitted={(color) => console.log(color)} />`,
 };
 function menuContentCode(material: GlassMaterial, options: MenuOptions) {
   const share = options.submenu
@@ -63,20 +65,6 @@ ${share
 </GlassMenuContent>`;
 }
 function menuCode(material: GlassMaterial, options: MenuOptions) {
-  if (options.trigger === "toolbar")
-    return `<GlassToolbar aria-label="Playback">
-  <GlassToolbarButton aria-label="Play">▶</GlassToolbarButton>
-  <GlassToolbarButton aria-label="Favorite">♡</GlassToolbarButton>
-  <GlassMenu>
-    <GlassToolbarButton aria-label="Options" render={<GlassMenuTrigger />}>
-      ⋯
-    </GlassToolbarButton>
-${menuContentCode(material, options)
-  .split("\n")
-  .map((line) => `    ${line}`)
-  .join("\n")}
-  </GlassMenu>
-</GlassToolbar>`;
   return `<GlassMenu>
   <GlassMenuTrigger render={<GlassButton size="icon" aria-label="Options" />}>
     ⋯
@@ -118,17 +106,32 @@ export function usageCode(
   material: GlassMaterial,
   appearance: GlassAppearance,
   toolbarVariant: ToolbarVariant = "normal",
-  menuOptions: MenuOptions = { side: "bottom", align: "end", submenu: false, trigger: "button" },
+  menuOptions: MenuOptions = { side: "bottom", align: "end", submenu: false },
   tint?: string,
   sliderStepped = false,
   progressive: ProgressiveOptions = defaultProgressiveOptions,
+  specular = false,
 ) {
   if (kind === "progressive-blur") return progressiveCode(progressive, material, appearance);
+  if (kind === "color-picker")
+    return `import { useState } from "react";
+import { GlassColorPicker } from "@glass-sdk/liquid-glass";
+import "@glass-sdk/liquid-glass/styles.css";
+
+export function ColorField() {
+  const [color, setColor] = useState("#0a84ff");
+  return (
+    <GlassColorPicker
+      appearance="${appearance}"
+      value={color}
+      onValueChange={setColor}
+      name="color"
+    />
+  );
+}`;
   const extraImports =
     kind === "menu"
-      ? menuOptions.trigger === "toolbar"
-        ? ", GlassToolbar, GlassToolbarButton"
-        : ""
+      ? ""
       : kind !== "toolbar" || toolbarVariant === "normal"
         ? ""
         : toolbarVariant === "menu"
@@ -153,11 +156,11 @@ export function usageCode(
       )
     : snippet;
   return `import {
-${["GlassScene", "GlassContent", ...`${kind === "menu" && menuOptions.trigger === "toolbar" ? imports.menu.replace("GlassButton, ", "") : imports[kind]}${extraImports}${submenuImports}`.split(", ")].map((name) => `  ${name},`).join("\n")}
+${["GlassScene", "GlassContent", ...`${imports[kind]}${extraImports}${submenuImports}`.split(", ")].map((name) => `  ${name},`).join("\n")}
 } from "@glass-sdk/liquid-glass";
 import "@glass-sdk/liquid-glass/styles.css";
 
-<GlassScene material="${material}" appearance="${appearance}" style={{ height: 400 }}>
+<GlassScene material="${material}" appearance="${appearance}"${specular ? " specular" : ""} style={{ height: 400 }}>
   <GlassContent>
     <img src="/landscape.jpg" alt="Mountain landscape"
       style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -182,33 +185,23 @@ function progressiveCode(
   ]
     .filter(Boolean)
     .join(" ");
-  if (options.mode === "image")
-    return `import { GlassScene, GlassContent, GlassProgressiveBlur } from "@glass-sdk/liquid-glass";
-import "@glass-sdk/liquid-glass/styles.css";
-
-<GlassScene material="${material}" appearance="${appearance}" style={{ height: 390, overflow: "hidden", borderRadius: 16 }}>
-  <GlassContent>
-    <img src="/landscape.jpg" alt="Mountain landscape"
-      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-  </GlassContent>
-  <GlassProgressiveBlur edge="${options.edge}" size={260} ${props} />
-  <p style={{ position: "absolute", ${options.edge}: 28, left: 28 }}>A little further away.</p>
-</GlassScene>`;
   return `import { useRef, type ReactNode } from "react";
-import { GlassScene, GlassContent, GlassButton, GlassScrollEdges } from "@glass-sdk/liquid-glass";
+import { GlassScene, GlassContent, GlassSurface, GlassScrollEdges } from "@glass-sdk/liquid-glass";
 import "@glass-sdk/liquid-glass/styles.css";
 
-export function Reader({ children }: { children: ReactNode }) {
+export function Library({ albums, nowPlaying }: { albums: ReactNode; nowPlaying: ReactNode }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   return (
     <GlassScene material="${material}" appearance="${appearance}" style={{ height: 390, overflow: "hidden" }}>
       <GlassContent layout="scroll" ref={scrollRef} tabIndex={0} role="region"
-        aria-label="Article" style={{ scrollPaddingBlock: 110 }}>
-        {children}
+        aria-label="Albums" style={{ scrollPaddingBlock: 96 }}>
+        {albums}
       </GlassContent>
-      <GlassScrollEdges target={scrollRef} size={110} ${props} />
-      <GlassButton size="icon" aria-label="Back"
-        style={{ position: "absolute", top: 14, left: 16 }}>‹</GlassButton>
+      <GlassScrollEdges target={scrollRef} size={96} ${props} />
+      <GlassSurface radius="capsule"
+        style={{ position: "absolute", bottom: 14, left: 16, right: 16, padding: 6 }}>
+        {nowPlaying}
+      </GlassSurface>
     </GlassScene>
   );
 }`;

@@ -15,4 +15,3 @@ export function wallpaperImage(tone: "day" | "night", sizes: string) {
 // 803px of source width before applying DPR, even when its box is narrower.
 export const backdropSizes =
   "(max-width: 640px) max(803px, calc(100vw - 32px)), max(679px, min(992px, calc(100vw - 48px)))";
-export const articleSizes = "max(402px, min(720px, calc(100vw - 88px)))";

@@ -9,21 +9,9 @@ import { getLayoutSize } from "./layout-size.js";
 import { shapeClip, shapePolygon, cornerOptions } from "../core/shape.js";
 import { attachInteraction, resolveMotion } from "./interaction.js";
 import type { GlassMotion, SurfaceAnimator } from "./interaction.js";
-import { attachGeometryMotion } from "./morph.js";
-import type { GeometryAnimator, GlassMorph, LensPlacement, LensWaypoint } from "./morph.js";
 export { attachInteraction, resolveMotion } from "./interaction.js";
 export type { GlassMotion, SurfaceAnimator } from "./interaction.js";
-export { attachGeometryMotion, radiusPixels } from "./morph.js";
 export { attachSelectionLens } from "./selection.js";
-export type {
-  GeometryAnimator,
-  GeometryMotionOptions,
-  GlassMorph,
-  LensFrame,
-  LensPlacement,
-  LensWaypoint,
-} from "./morph.js";
-import { shapeDistance } from "../core/morph-path.js";
 import { comparePaintOrder, foregroundFilter, overlaps } from "./foreground.js";
 import type { ForegroundLens } from "./foreground.js";
 import { patchFilters } from "./filter-patch.js";
@@ -44,7 +32,6 @@ import {
 import { padRepaintReach, repaintReach, tiledReach } from "./filter-reach.js";
 import { filterPixelRatio, pageZoom, untiledOutsets } from "./page-zoom.js";
 import { clusterFilterBranches, mapBoxesOverlap } from "./filter-groups.js";
-import { compoundFieldImage, compoundSources, fieldTouches } from "./compound-field.js";
 import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds.js";
 import { sharedBackdropMaterials } from "./shared-backdrop.js";
 import { gecko } from "./filter-stages.js";
@@ -75,11 +62,19 @@ import {
 } from "./maps.js";
 import { getMaterialRenderer } from "./renderer.js";
 import { capsuleMapGeometry, mapImage, mapUrl, surfaceMapResult } from "./map-image.js";
-import { blendMapImage } from "./map-blend.js";
 import type { MapPlane } from "./map-image.js";
 import type { MaterialMaps } from "./maps.js";
 import type { MapGeometry } from "../gpu/geometry.js";
 import { createTicker } from "./ticker.js";
+import {
+  approachAngle,
+  createSpecularLayer,
+  lightAngle,
+  ownsSpecular,
+  restingAngle,
+  subscribeLight,
+} from "./specular.js";
+import type { SpecularLayer } from "./specular.js";
 export { getMaterialMaps, clearMaterialMapCache } from "./maps.js";
 export type { MaterialMaps } from "./maps.js";
 export interface GlassDiagnostic {
@@ -97,23 +92,10 @@ export interface SurfaceOptions extends MaterialOptions {
   /** React to touch and pointer input: grow, stretch toward a drag, settle with
    * overshoot, and light up beneath the pointer. */
   interactive?: boolean;
-  /** Grow out of this element when registered, and back into it when Base UI
-   * marks the popup with `data-ending-style`. */
-  morphFrom?: () => Element | null | undefined;
-  /** `become`: the source's glass is this surface, and withdraws its own
-   * content while the surface is present. `detach`: this surface leaves the
-   * source's glass as a drop, joined by a liquid neck until they part.
-   * Default: a glass source is become; a source inside glass, such as a
-   * toolbar button, is detached from. */
-  morph?: GlassMorph;
-  /** Spring the glass outline when the surface's layout box changes. */
-  fluid?: boolean;
   /** Motion level for this surface. System reduced motion always applies. */
   motion?: GlassMotion;
-  /** Neck reach of a detaching drop in pixels; `0` grows a plain shape. */
-  neck?: number;
-  /** Grow out of `morphFrom` when registered. `false` only runs the exit. */
-  morphEnter?: boolean;
+  /** A popup, such as a menu: its scene rises above sibling scenes while it is present. */
+  popup?: boolean;
 }
 export interface GlassSceneController {
   /** Optional transparent, nested filter hosts in inner-to-outer order.
@@ -142,19 +124,13 @@ interface Lens {
   /** One map request in flight per lens; the newest result is shown meanwhile. */
   inflight?: boolean;
   animators: SurfaceAnimator[];
-  outline?: GeometryAnimator;
-  /** The animation path whose maps are prepared, and the shape currently shown. */
-  path?: readonly LensWaypoint[];
-  prepared: Map<string, PreparedMaps>;
-  /** Glass this lens currently draws in its place, and how much of it. */
-  absorbs?: { element: Element; weight: number };
-  /** The prepared shapes drawn this frame, each in its box, blended by `mix`. */
-  place?: { a: Placed; b: Placed; mix: number; stretched: boolean };
+  /** The rim highlight that follows the light, and where it points now. */
+  specular?: SpecularLayer;
+  specularAngle: number;
   /** When the layout size last changed. */
   resized?: number;
   /** Where the surface's own glass layer is drawn, in Gecko. */
   frame?: LayerFrame;
-  preparing: Set<string>;
   shown?: MapGeometry;
   geometryKey?: string;
   clip: string;
@@ -166,11 +142,9 @@ interface Lens {
   w: number;
   h: number;
   opacity: number;
-  baseOpacity?: number;
   /** Inline styles as last written, so they are never read back to compare. */
   writtenClip?: string;
   writtenRadius?: string;
-  writtenReady?: string;
   /** When the surface's box last moved or changed size. */
   movedAt?: number;
   /** The inline will-change a moving surface had before Chromium gave it a layer. */
@@ -187,24 +161,7 @@ function demote(l: Lens) {
   if (l.element.style.getPropertyValue("will-change") === promotion)
     l.element.style.removeProperty("will-change");
 }
-/** Shapes in motion use 1× maps: a quarter of the pixels to render, encode
- * and decode each frame. The resting shape returns to full density. */
-const motionDpr = 1;
 const mapKey = (g: MapGeometry) => JSON.stringify(capsuleMapGeometry(g) ?? g);
-/** Maps for a shape an animation will pass through, usable once warm. */
-interface PreparedMaps {
-  geometry: MapGeometry;
-  maps: MaterialMaps;
-  ready: number;
-}
-/** Prepared maps placed in content coordinates. */
-interface Placed {
-  maps: MaterialMaps;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
 /** Opacity the material inherits from its element and ancestors in the scene. */
 function effectiveOpacity(element: HTMLElement, root: HTMLElement): number {
   let opacity = 1;
@@ -232,7 +189,9 @@ export function createGlassScene(
   svg.style.inset = "0";
   svg.style.pointerEvents = "none";
   const defs = document.createElementNS(ns, "defs");
-  svg.append(defs);
+  // Specular filters change on their own, outside the retained scene filters.
+  const specularDefs = document.createElementNS(ns, "defs");
+  svg.append(defs, specularDefs);
   root.append(svg);
   const maxSurfaces = Math.max(1, Math.min(64, Math.floor(config.maxSurfaces ?? 16)));
   let notified = "";
@@ -248,11 +207,10 @@ export function createGlassScene(
   let pending = 0;
   /** Popup surfaces currently registered. */
   let popups = 0;
-  /** A surface waited for the maps of its path last frame. Everything else
-   * holds still meanwhile: filters redrawn every frame, and the GPU work
-   * behind them, would keep those maps from arriving until the motion was
-   * over. The wait is short, and the surface about to move covers it. */
-  let quiet = false;
+  /** The light specular surfaces follow, while any is registered. */
+  let lit: ReturnType<typeof subscribeLight> | undefined;
+  let litCount = 0;
+  let litAt = 0;
   /** When the filter was last rebuilt for motion. Every rebuild re-rasters the
    * whole filtered layer, which takes most of a 120 Hz frame; rebuilding at
    * 60 Hz lands every frame on time instead of alternating one and two. */
@@ -285,8 +243,7 @@ export function createGlassScene(
   const warmer = createMapWarmer(root);
   // Resting glass draws from stored maps without a GPU device. The device is
   // brought up shortly after, while the page is quiet: a device's first work
-  // waits for painting to stop, which would hold a menu's first opening back
-  // for as long as its own motion lasts.
+  // waits for painting to stop, which would hold the first new shape back.
   const warmRenderer =
     typeof navigator !== "undefined" && "gpu" in navigator
       ? setTimeout(() => {
@@ -445,24 +402,7 @@ export function createGlassScene(
     // masked material, rim, and light to a single final merge. A surface's
     // sampled backdrop includes earlier surfaces only when it is near enough
     // to see them, so full-size intermediates are built only where needed.
-    const paired = webkit
-      ? compoundSources(ordered, {
-          source: (l) => l.outline?.detachedSource(),
-          nested: (l) => parentsOf(l).length > 0,
-          refraction: (l) => refractionOf(l, parentsOf(l)),
-          reach: (l) => Math.ceil(3 * blurOf(l, 1) + refractionOf(l, parentsOf(l)) + 8) + 2,
-        })
-      : new Map<Lens, Lens>();
-    const pairedSources = new Set(paired.values());
-    const compoundOf = (unit: readonly Lens[]) =>
-      unit.length === 2 && paired.get(unit[1]!) === unit[0]
-        ? { source: unit[0]!, popup: unit[1]! }
-        : undefined;
-    const drawn = ordered.filter(
-      (l) =>
-        l.maps &&
-        (l.opacity >= 0.001 || pairedSources.has(l) || (webkit && Boolean(l.outline?.arriving()))),
-    );
+    const drawn = ordered.filter((l) => l.maps && l.opacity >= 0.001);
     const parents = new Map(drawn.map((l) => [l, parentsOf(l)] as const));
     const wanted = new Map(drawn.map((l) => [l, refractionOf(l, parents.get(l)!)] as const));
     // Glass shows other glass when it overlaps it or bends it in from its
@@ -484,11 +424,7 @@ export function createGlassScene(
     // branch only spreads its passes over the empty space between surfaces.
     const branchKey = (l: Lens) =>
       `${l.options.material ?? "clear"},${l.options.appearance ?? "light"},${l.options.tint ?? ""},${wanted.get(l)}`;
-    // Submenus fade in and out beside their parent. On WebKit they keep one
-    // graph shape at every opacity, since any change of shape redraws it all.
-    const fades = (l: Lens) => webkit && l.element.hasAttribute("data-glass-submenu");
-    const independent = (l: Lens) =>
-      webkit && l.opacity >= 0.999 && !parents.get(l)!.length && !fades(l);
+    const independent = (l: Lens) => webkit && l.opacity >= 0.999 && !parents.get(l)!.length;
     // Neighbors drawn in the same pass need no finished glass of each other.
     // A shared branch sees no glass beneath it, so only earlier surfaces can
     // keep a surface out; glass above reads its overlay either way, and the
@@ -508,12 +444,6 @@ export function createGlassScene(
     let units: Lens[][] = [];
     const sharedUnits = new Map<string, Lens[]>();
     for (const l of drawn) {
-      if (pairedSources.has(l)) continue;
-      const source = paired.get(l);
-      if (source) {
-        units.push([source, l]);
-        continue;
-      }
       if (!shareable(l)) {
         units.push([l]);
         continue;
@@ -547,7 +477,7 @@ export function createGlassScene(
         (sum, unit) =>
           sum +
           Math.max(...unit.map((l) => outsetsOf.get(l)!)) +
-          (unit.length === 1 || compoundOf(unit)
+          (unit.length === 1
             ? drawn
                 .filter(
                   (other) =>
@@ -561,20 +491,8 @@ export function createGlassScene(
     const amounts = new Map(drawn.map((l) => [l, wanted.get(l)! * soften] as const));
     const sampling = new Map(
       drawn.map((l) => {
-        const place = l.place;
-        // Ordinary outlines refract inward. Distinct map rectangles and custom
-        // outlines retain full reach: a transparent map crossfade can change
-        // its unpremultiplied displacement channels through quantization.
-        const symmetric =
-          !paired.has(l) &&
-          !pairedSources.has(l) &&
-          (place
-            ? place.stretched &&
-              place.a.x === place.b.x &&
-              place.a.y === place.b.y &&
-              place.a.w === place.b.w &&
-              place.a.h === place.b.h
-            : Boolean(l.shown && !l.shown.outline));
+        // Ordinary outlines refract inward; custom outlines retain full reach.
+        const symmetric = Boolean(l.shown && !l.shown.outline);
         return [
           l,
           refractionSamplingBounds(
@@ -598,7 +516,7 @@ export function createGlassScene(
     };
     const cluster = (extra: number) =>
       units.flatMap((unit) => {
-        if (unit.length < 2 || compoundOf(unit)) return [unit];
+        if (unit.length < 2) return [unit];
         const regular = unit[0]!.options.material === "regular";
         const tinted = /^#[\da-f]{6}$/i.test(unit[0]!.options.tint ?? "");
         const split = clusterFilterBranches(
@@ -682,9 +600,9 @@ export function createGlassScene(
       const source = "SourceGraphic";
       const beneathOf = new Map(
         stageUnits.map((unit, index) => {
-          const lens = compoundOf(unit)?.popup ?? unit[0]!;
+          const lens = unit[0]!;
           const beneath =
-            unit.length > 1 && !compoundOf(unit)
+            unit.length > 1
               ? []
               : stageUnits
                   .slice(0, index)
@@ -692,7 +610,7 @@ export function createGlassScene(
                   .filter(
                     (earlier) =>
                       materialGroupOf.get(earlier) !== materialGroupOf.get(lens) &&
-                      unit.some((member) => fieldTouches(earlier, member, reach(lens))),
+                      unit.some((member) => overlaps(earlier, member, reach(lens))),
                   );
           return [unit, beneath] as const;
         }),
@@ -702,7 +620,7 @@ export function createGlassScene(
             stageUnits.map((unit) => ({
               key: unit,
               id: unitName(unit),
-              options: (compoundOf(unit)?.popup ?? unit[0]!).options,
+              options: unit[0]!.options,
               bounds: unionSamplingBounds(unit.map((member) => sampling.get(member)!)),
               inputs: beneathOf.get(unit)!,
             })),
@@ -763,8 +681,7 @@ export function createGlassScene(
       stageUnits.forEach((unit) => {
         // The first surface of a shared branch stands for all: they share
         // material, appearance, tint, and refraction.
-        const compound = compoundOf(unit);
-        const l = compound?.popup ?? unit[0]!;
+        const l = unit[0]!;
         const o = l.options,
           // Names follow the surface, not its position, so primitives persist
           // as other surfaces enter and leave the scene. A shared identity
@@ -782,39 +699,23 @@ export function createGlassScene(
           y = box.y,
           w = box.width,
           h = box.height;
-        /** A resting surface draws its map in its box. In motion it draws the
-         * two prepared shapes around the frame, each in its own box, blended;
-         * the structure stays the same for every frame of the motion, so the
-         * retained filter only changes attributes. A shared branch merges the
+        /** A surface draws its map in its box. A shared branch merges the
          * images of its surfaces into one. */
         const image = (plane: MapPlane, result: string) => {
-          const memberImage = (member: Lens, name: string, imagePlane: MapPlane = plane) => {
-            const place = member.place;
-            if (!place)
-              return mapImage(
-                member.maps!,
-                imagePlane,
-                name,
-                member.x - 2,
-                member.y - 2,
-                member.w + 4,
-                member.h + 4,
-              );
-            return blendMapImage(imagePlane, name, place, member, gecko);
-          };
-          if (compound)
-            return compoundFieldImage(
-              compound.source,
-              compound.popup,
+          const memberImage = (member: Lens, name: string) =>
+            mapImage(
+              member.maps!,
               plane,
-              result,
-              box,
-              (member, imagePlane, name) => memberImage(member, name, imagePlane),
+              name,
+              member.x - 2,
+              member.y - 2,
+              member.w + 4,
+              member.h + 4,
             );
           if (unit.length === 1) return memberImage(l, result);
           // Keep each image's singleton identity when group membership
           // changes. Reloading unchanged maps here can stall and flash the
-          // entire content filter when a popup absorbs its source glass.
+          // entire content filter.
           return (
             unit
               .map((member) => memberImage(member, surfaceMapResult(member.serial, plane)))
@@ -822,7 +723,7 @@ export function createGlassScene(
             `<feMerge result="${result}" ${region(box)}>${unit.map((member) => `<feMergeNode in="${surfaceMapResult(member.serial, plane)}"/>`).join("")}</feMerge>`
           );
         };
-        const opaque = unit.length > 1 || (l.opacity >= 0.999 && !fades(l));
+        const opaque = unit.length > 1 || l.opacity >= 0.999;
         const first = parts.length;
         // The field displaces with its red and green channels and covers
         // the shape with its alpha, which a fading surface scales.
@@ -843,7 +744,7 @@ export function createGlassScene(
         const beneath = beneathOf.get(unit)!;
         const inputs: string[] = [];
         for (const earlier of beneath) {
-          const touching = unit.some((member) => fieldTouches(earlier, member));
+          const touching = unit.some((member) => overlaps(earlier, member));
           if (touching) inputs.push(...layersOf.get(unitOf.get(earlier)!)!);
           else {
             const q = `s${earlier.serial}`;
@@ -1067,7 +968,6 @@ export function createGlassScene(
                   element: l.element,
                   options: l.options,
                   maps: l.maps!,
-                  place: l.place,
                   x: l.x,
                   y: l.y,
                   w: l.w,
@@ -1095,7 +995,7 @@ export function createGlassScene(
             below &&
             !layer.parents.includes(below) &&
             !l.element.contains(earlier.element) &&
-            fieldTouches(earlier, l, reach(l))
+            overlaps(earlier, l, reach(l))
           )
             layer.beneath.push(below);
         }
@@ -1127,13 +1027,7 @@ export function createGlassScene(
             intersects(layer, l, 2),
         );
         if (!over.length) continue;
-        const shift = (p: Placed): Placed => ({ ...p, x: p.x - layer.x, y: p.y - layer.y });
-        const local = over.map((l): Lens => ({
-          ...l,
-          x: l.x - layer.x,
-          y: l.y - layer.y,
-          place: l.place && { ...l.place, a: shift(l.place.a), b: shift(l.place.b) },
-        }));
+        const local = over.map((l): Lens => ({ ...l, x: l.x - layer.x, y: l.y - layer.y }));
         const glass = sceneGraph(local, layer.w, layer.h, 0, [], true);
         if (!glass.drawn.length) continue;
         const markup = zoomFilterMarkup(glass.primitives(), 1 / layer.scale);
@@ -1151,8 +1045,7 @@ export function createGlassScene(
     // Gecko's layers already refract the glass beneath them.
     if (!layers)
       targets.forEach((target) => {
-        // An invisible surface, such as a trigger that became its menu, has no
-        // content to refract.
+        // An invisible foreground has no content to refract.
         if (!target.w || !target.h || target.opacity < 0.001) return;
         const overlays = ordered.filter(
           (lens) =>
@@ -1160,7 +1053,6 @@ export function createGlassScene(
             lens.maps &&
             lens.opacity > 0.001 &&
             overlaps(target, lens) &&
-            lens.absorbs?.element !== target.element &&
             !target.element.contains(lens.element) &&
             !lens.element.contains(target.element) &&
             ![...filteredAncestors].some(
@@ -1199,52 +1091,6 @@ export function createGlassScene(
     // elements change WebKit's reference bounds as preceding lenses overflow.
     surfaceFilters = applied.map((id) => `url("#${liveId(id)}")`).join(" ");
     notify();
-  }
-  /** Prepare maps for a shape an animation will pass through. Only resting
-   * shapes are kept across loads; the rest render at once. */
-  function prepare(l: Lens, g: MapGeometry, persist: boolean) {
-    const key = mapKey(g);
-    if (l.prepared.has(key) || l.preparing.has(key)) return;
-    // Maps already decoded, or stored from an earlier load, apply at once, so
-    // a path that starts on a surface's own shape begins on its own map.
-    const settled = peekSurfaceMaterialMaps(g);
-    if (settled) {
-      const warm = warmer.has(settled);
-      warmer.warm(settled);
-      l.prepared.set(key, {
-        geometry: g,
-        maps: settled,
-        ready: warm ? 0 : performance.now() + warmup,
-      });
-      dirty = true;
-      return;
-    }
-    l.preparing.add(key);
-    pending++;
-    getSurfaceMaterialMaps(g, persist)
-      .then((maps) => {
-        l.preparing.delete(key);
-        // A path planned while its surface is still being placed has no
-        // scene path yet; keep its maps for when it starts.
-        if (
-          !disposed &&
-          lenses.has(l) &&
-          (!l.path ||
-            l.path.some((w) => mapKey({ ...w, dpr: g.dpr, appearance: g.appearance }) === key))
-        ) {
-          const warm = warmer.has(maps);
-          warmer.warm(maps);
-          l.prepared.set(key, { geometry: g, maps, ready: warm ? 0 : performance.now() + warmup });
-          dirty = true;
-        }
-      })
-      .catch(() => {
-        l.preparing.delete(key);
-      })
-      .finally(() => {
-        pending--;
-        ticker.wake();
-      });
   }
   /** Request maps for a lens geometry. Decoded maps already in the cache
    * apply at once, so a resting shape never waits a task for glass it has
@@ -1340,26 +1186,13 @@ export function createGlassScene(
     }
     // Advance every surface animation before any geometry is sampled.
     animators.forEach((animator) => {
-      if (animator.frame(now, quiet)) busy = true;
+      if (animator.frame(now)) busy = true;
     });
     lenses.forEach((l) =>
       l.animators.forEach((animator) => {
-        if (animator.frame(now, quiet)) busy = true;
+        if (animator.frame(now)) busy = true;
       }),
     );
-    const holding = [...lenses].some((l) => l.outline?.pending());
-    quiet = holding;
-    const waypointKey = (l: Lens, w: LensWaypoint) =>
-      mapKey({
-        width: w.width,
-        height: w.height,
-        radius: w.radius,
-        outline: w.outline,
-        dpr: w.dpr ?? motionDpr,
-        appearance: l.options.appearance,
-      });
-    /** Glass drawn in its place by another surface this frame, by how much. */
-    const absorbed = new Map<Element, number>();
     const setClip = (l: Lens, clip: string) => {
       if (l.writtenClip === clip) return;
       l.writtenClip = clip;
@@ -1373,90 +1206,7 @@ export function createGlassScene(
       l.writtenRadius = radius;
       writes.push(() => l.element.style.setProperty("--lg-radius", radius));
     };
-    // Animated outlines choose what they draw before any opacity is decided,
-    // since glass is only hidden once another surface draws in its place.
     lenses.forEach((l) => {
-      l.place = undefined;
-      const animated = l.outline?.geometry();
-      if (!animated) return;
-      // Maps for the path are prepared as it is planned, so the frames that
-      // follow can blend between them instead of waiting on any of them.
-      const waypoints = l.outline!.waypoints();
-      if (waypoints !== l.path) {
-        l.path = waypoints;
-        const keep = new Set(waypoints.map((w) => waypointKey(l, w)));
-        for (const [key, entry] of l.prepared)
-          if (!keep.has(key) && entry.maps !== l.maps) l.prepared.delete(key);
-        for (const w of waypoints)
-          prepare(
-            l,
-            {
-              width: w.width,
-              height: w.height,
-              radius: w.radius,
-              outline: w.outline,
-              dpr: w.dpr ?? motionDpr,
-              appearance: l.options.appearance,
-            },
-            Boolean(w.resting),
-          );
-      }
-      const draw = animated.draw;
-      if (!draw) return;
-      const ready = (place: LensPlacement) => {
-        const entry = l.prepared.get(waypointKey(l, place.shape));
-        return entry && entry.ready <= now ? entry : undefined;
-      };
-      const placed = (place: LensPlacement, entry: PreparedMaps): Placed => ({
-        maps: entry.maps,
-        x: place.left - r.left,
-        y: place.top - r.top,
-        w: place.width,
-        h: place.height,
-      });
-      let a = ready(draw.a),
-        b = draw.b ? ready(draw.b) : a;
-      // A shape whose maps are not ready yet shows the nearest prepared plain
-      // one, stretched to the surface's own outline; a union that is not
-      // ready leaves its glass in place and draws the surface on its own.
-      let standIn = false;
-      if (!a) {
-        let score = Infinity;
-        for (const entry of l.prepared.values()) {
-          if (entry.geometry.outline || entry.ready > now) continue;
-          const value = shapeDistance(entry.geometry, animated);
-          if (value < score) {
-            score = value;
-            a = entry;
-          }
-        }
-        standIn = true;
-      }
-      if (!a) return;
-      const own = {
-        shape: draw.a.shape,
-        left: animated.left,
-        top: animated.top,
-        width: animated.width,
-        height: animated.height,
-      };
-      const first = standIn ? placed(own, a) : placed(draw.a, a);
-      const second = !standIn && b && draw.b ? placed(draw.b, b) : first;
-      l.place = {
-        a: first,
-        b: second,
-        mix: second === first ? 0 : draw.mix,
-        stretched: standIn || (!draw.a.shape.outline && !draw.b?.shape.outline),
-      };
-      if (animated.absorbs && !standIn)
-        absorbed.set(
-          animated.absorbs.element,
-          Math.max(absorbed.get(animated.absorbs.element) ?? 0, animated.absorbs.weight),
-        );
-    });
-    lenses.forEach((l) => {
-      const animated = l.outline?.geometry();
-      const place = l.place;
       if (layers) {
         // The surface's screen box and the scale its transforms apply, so its
         // glass layer can draw the content under it in its own space.
@@ -1479,92 +1229,23 @@ export function createGlassScene(
           dirty = true;
         l.frame = frame;
       }
-      // In motion the lens covers whatever it draws this frame.
-      const rect = place
-        ? {
-            left: Math.min(place.a.x, place.b.x) + r.left,
-            top: Math.min(place.a.y, place.b.y) + r.top,
-            width:
-              Math.max(place.a.x + place.a.w, place.b.x + place.b.w) -
-              Math.min(place.a.x, place.b.x),
-            height:
-              Math.max(place.a.y + place.a.h, place.b.y + place.b.h) -
-              Math.min(place.a.y, place.b.y),
-          }
-        : (animated ??
-          (({ left, top, width, height }) => ({ left, top, width, height }))(
-            l.element.getBoundingClientRect(),
-          ));
+      const rect = l.element.getBoundingClientRect();
       const x = rect.left - r.left,
         y = rect.top - r.top,
         w = rect.width,
         h = rect.height;
       if ([x - l.x, y - l.y, w - l.w, h - l.h].some((n) => Math.abs(n) > 0.05)) {
         Object.assign(l, { x, y, w, h });
-        // A morphing outline repaints itself every frame anyway; only a
-        // surface moving as a whole gains from a layer of its own.
-        if (!animated) l.movedAt = now;
+        l.movedAt = now;
         lensMoved = true;
         dirty = true;
       }
-      l.baseOpacity = effectiveOpacity(l.element, root) * (l.outline?.opacity() ?? 1);
-      const opacity = l.baseOpacity * (1 - (absorbed.get(l.element) ?? 0));
+      const opacity = effectiveOpacity(l.element, root);
       if (Math.abs(opacity - l.opacity) > 0.001) {
         l.opacity = opacity;
         dirty = true;
       }
       const dpr = Math.min(devicePixelRatio || 1, 2);
-      if (!animated) l.absorbs = undefined;
-      if (animated) {
-        busy = true;
-        // The blend changes every frame, so the filter is rebuilt every frame.
-        l.absorbs = animated.absorbs;
-        if (place) {
-          l.maps = place.a.maps;
-          l.shown = l.prepared.get(waypointKey(l, animated.draw!.a.shape))?.geometry ?? l.shown;
-        } else l.maps = undefined;
-        dirty = true;
-        // Content is clipped to the surface's own outline, never a union.
-        const shown = place?.stretched ? l.shown : undefined;
-        const box = l.element.getBoundingClientRect();
-        const sx = (l.element.offsetWidth || 1) / (box.width || 1),
-          sy = (l.element.offsetHeight || 1) / (box.height || 1);
-        // Capsule maps are sliced, so they are exact at any width of their height.
-        const exact =
-          !shown ||
-          (shown.radius === "capsule" &&
-            animated.radius === "capsule" &&
-            Math.abs(shown.height - animated.height) < 0.5);
-        const outline = exact
-          ? { width: animated.width, height: animated.height, radius: animated.radius }
-          : shown;
-        const kx = animated.width / outline.width,
-          ky = animated.height / outline.height;
-        const points = shapePolygon(outline.width, outline.height, outline.radius).map(
-          ([px, py]): ShapePoint => [
-            (animated.left - box.left + px * kx) * sx,
-            (animated.top - box.top + py * ky) * sy,
-          ],
-        );
-        setClip(l, polygonClip(points));
-        const radius =
-          animated.radius === "capsule"
-            ? Math.min(animated.width, animated.height) / 2
-            : animated.radius;
-        setRadius(l, `${radius.toFixed(2)}px`);
-        // Content never shows before the glass that holds it.
-        const ready = l.maps ? "1" : "0";
-        if (l.writtenReady !== ready) {
-          l.writtenReady = ready;
-          writes.push(() => l.element.style.setProperty("--lg-glass-ready", ready));
-        }
-        l.geometryKey = undefined;
-        l.key = undefined;
-        return;
-      }
-      // Placement can change the popup's intrinsic size. Its path prepares
-      // the final maps once positioned; intermediate hidden boxes are unused.
-      if (l.outline?.positioning()) return;
       const { width, height } = getLayoutSize(l.element);
       if (!width || !height) return;
       const radius = l.options.radius ?? 8;
@@ -1637,6 +1318,29 @@ export function createGlassScene(
           writes.push(() => demote(l));
         }
       });
+    if (lit) {
+      const dt = litAt ? Math.min(0.1, Math.max(0, (now - litAt) / 1000)) : 1 / 60;
+      litAt = now;
+      lenses.forEach((l) => {
+        const layer = l.specular;
+        if (!layer) return;
+        const target =
+          resolveMotion(l.options.motion) === "full"
+            ? lightAngle(lit!.light, r.left + l.x + l.w / 2, r.top + l.y + l.h / 2)
+            : restingAngle;
+        const previous = l.specularAngle;
+        l.specularAngle = approachAngle(previous, target, dt);
+        if (l.specularAngle !== previous) busy = true;
+        const angle = l.specularAngle,
+          maps = l.maps,
+          shown = l.shown,
+          strength = l.options.appearance === "dark" ? 0.8 : 1;
+        writes.push(() => {
+          layer.place(maps, shown?.width ?? 0, shown?.height ?? 0);
+          layer.aim(angle, strength);
+        });
+      });
+    }
     foregrounds.forEach((target) => {
       const box = target.element.getBoundingClientRect();
       const next = { x: box.left - r.left, y: box.top - r.top, w: box.width, h: box.height };
@@ -1715,9 +1419,9 @@ export function createGlassScene(
     }
     const changed = dirty;
     const moving = (busy || lensMoved) && now - composedAt < 15;
-    const rebuild = dirty && !holding && !moving;
+    const rebuild = dirty && !moving;
     if (rebuild) composedAt = now;
-    if (!holding && !moving) dirty = false;
+    if (!moving) dirty = false;
 
     const nextProgressiveError = progressive.error();
     const progressiveErrorChanged =
@@ -1743,11 +1447,22 @@ export function createGlassScene(
       },
     };
   }
+  const releaseSpecular = (lens: Lens) => {
+    if (!lens.specular) return;
+    lens.specular.dispose();
+    lens.specular = undefined;
+    if (--litCount === 0) {
+      lit?.release();
+      lit = undefined;
+      litAt = 0;
+    }
+  };
   const ticker = createTicker(tick, {
     root,
     // The filters and the warmer are this scene's own output.
     ignore: (target, record) =>
       svg.contains(target) ||
+      ownsSpecular(target) ||
       warmer.owns(target) ||
       Boolean(layers?.owns(target)) ||
       Boolean(escapes?.owns(target, record)) ||
@@ -1800,40 +1515,18 @@ export function createGlassScene(
         h: 0,
         opacity: 1,
         animators: [],
-        prepared: new Map(),
-        preparing: new Set(),
+        specularAngle: restingAngle,
       };
-      const motion = () => resolveMotion(options.motion);
-      // Container-relative outlines follow their parent; they do not travel.
-      if ((options.morphFrom || options.fluid) && !options.concentric)
-        lens.animators.push(
-          (lens.outline = attachGeometryMotion(element, {
-            from: options.morphFrom,
-            morph: options.morph,
-            layout: options.fluid,
-            radius: options.radius ?? 8,
-            motion,
-            neck: options.neck,
-            enter: options.morphEnter,
-            submenu: element.hasAttribute("data-glass-submenu"),
-            prepared: (shape) => {
-              const geometry = {
-                width: shape.width,
-                height: shape.height,
-                radius: shape.radius,
-                outline: shape.outline,
-                dpr: shape.dpr ?? motionDpr,
-                appearance: options.appearance,
-              };
-              // The outline asks as soon as it plans, before this frame's scene
-              // pass prepares its path; decoded maps apply now, not a frame later.
-              if (!lens.prepared.has(mapKey(geometry)))
-                prepare(lens, geometry, Boolean(shape.resting));
-              const entry = lens.prepared.get(mapKey(geometry));
-              return Boolean(entry) && entry!.ready <= performance.now();
-            },
-          })),
+      if (options.specular) {
+        lens.specular = createSpecularLayer(
+          element,
+          specularDefs,
+          `lg-${owner}-light${lens.serial}`,
         );
+        if (lens.specular && litCount++ === 0)
+          lit = subscribeLight(root.ownerDocument.defaultView ?? window, () => ticker.wake());
+      }
+      const motion = () => resolveMotion(options.motion);
       if (options.interactive) {
         lens.animators.push(attachInteraction(element, motion));
         if (element.dataset.glassInteractive !== "") element.dataset.glassInteractive = "";
@@ -1848,13 +1541,14 @@ export function createGlassScene(
       structure++;
       dirty = true;
       // A popup raises its scene above sibling scenes while it is present.
-      if (options.morphFrom) {
+      if (options.popup) {
         popups++;
         root.dataset.glassPopup = "";
       }
       ticker.wake();
       return () => {
         lens.animators.forEach((animator) => animator.dispose());
+        releaseSpecular(lens);
         if (options.interactive) delete element.dataset.glassInteractive;
         setResolvedShape(element);
         lens.releaseShape();
@@ -1866,7 +1560,7 @@ export function createGlassScene(
         lenses.delete(lens);
         structure++;
         ticker.unobserve(element);
-        if (options.morphFrom && --popups === 0) delete root.dataset.glassPopup;
+        if (options.popup && --popups === 0) delete root.dataset.glassPopup;
         if (previousAppearance === null) element.removeAttribute("data-glass-appearance");
         else element.setAttribute("data-glass-appearance", previousAppearance);
         dirty = true;
@@ -1943,6 +1637,7 @@ export function createGlassScene(
       unregisterRoot();
       lenses.forEach((lens) => {
         lens.animators.forEach((animator) => animator.dispose());
+        releaseSpecular(lens);
         setResolvedShape(lens.element);
         lens.releaseShape();
         lens.element.style.clipPath = lens.clip;

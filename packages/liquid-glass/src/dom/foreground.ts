@@ -39,11 +39,18 @@ export function comparePaintOrder(a: HTMLElement, b: HTMLElement): number {
   return delta || (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
 }
 
+/** Whether two boxes overlap, or come within `reach` pixels of each other. */
 export function overlaps(
   a: Pick<ForegroundLens, "x" | "y" | "w" | "h">,
   b: Pick<ForegroundLens, "x" | "y" | "w" | "h">,
+  reach = 0,
 ): boolean {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  return (
+    a.x < b.x + b.w + reach &&
+    b.x - reach < a.x + a.w &&
+    a.y < b.y + b.h + reach &&
+    b.y - reach < a.y + a.h
+  );
 }
 
 /** Filter live foreground DOM through higher lenses, without repainting their rims.

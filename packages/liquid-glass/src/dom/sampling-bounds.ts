@@ -23,9 +23,7 @@ export function refractionSamplingBounds(
   return { x: box.x - x, y: box.y - y, width: box.width + 2 * x, height: box.height + 2 * y };
 }
 
-/** Combine independently proven sampling regions. Arithmetic map blends
- * can quantize premultiplied channels at low alpha; callers must use full
- * reach for such blends unless their opaque coverage is known to coincide. */
+/** Combine independently proven sampling regions. */
 export function unionSamplingBounds(boxes: readonly FilterBounds[]): FilterBounds {
   if (!boxes.length) throw new RangeError("At least one sampling box is required.");
   const x = Math.min(...boxes.map((box) => box.x)),

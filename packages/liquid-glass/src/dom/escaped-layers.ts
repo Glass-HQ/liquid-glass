@@ -19,8 +19,6 @@ import { refractionSamplingBounds } from "./sampling-bounds.js";
 export interface EscapeLens extends LayerBox {
   element: HTMLElement;
   options: MaterialOptions;
-  /** Set while the outline animates between prepared shapes. */
-  place?: unknown;
   /** The shape the lens shows; an outline makes its refraction asymmetric. */
   shown?: { outline?: unknown };
 }
@@ -222,7 +220,7 @@ export function createEscapedLayers(wake: () => void): EscapedLayers {
             const sampled = refractionSamplingBounds(
               { x: l.x - 2, y: l.y - 2, width: l.w + 4, height: l.h + 4 },
               refraction(l),
-              !l.place && Boolean(l.shown && !l.shown.outline),
+              Boolean(l.shown && !l.shown.outline),
             );
             const spread = Math.ceil(3 * blur(l)) + 2;
             let region = clip(

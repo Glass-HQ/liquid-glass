@@ -27,6 +27,7 @@ export function GlassTabsList({
   radius = "capsule",
   refraction,
   tint,
+  specular,
   interactive = true,
   motion,
   size = "default",
@@ -49,6 +50,7 @@ export function GlassTabsList({
         radius={radius}
         refraction={refraction}
         tint={tint}
+        specular={specular}
         interactive={interactive}
         motion={motion}
         style={style}
@@ -67,6 +69,7 @@ export function GlassTabsIndicator({
   radius = "capsule",
   refraction,
   tint,
+  specular,
   motion,
   className = "",
   style,
@@ -94,8 +97,9 @@ export function GlassTabsIndicator({
       radius={radius}
       refraction={refraction}
       tint={tint}
+      specular={specular}
       style={style}
-      ref={useMergedRef(lens, ref as Ref<HTMLElement> | undefined)}
+      ref={useMergedRef(lens, ref)}
       className={`lg-tab-indicator ${className}`}
       render={<Tabs.Indicator {...props} />}
     />
@@ -142,6 +146,7 @@ export function GlassTabs({
   radius,
   refraction,
   tint,
+  specular,
   interactive,
   motion,
   size,
@@ -161,6 +166,7 @@ export function GlassTabs({
         radius={radius}
         refraction={refraction}
         tint={tint}
+        specular={specular}
         interactive={interactive}
         motion={motion}
         size={size}

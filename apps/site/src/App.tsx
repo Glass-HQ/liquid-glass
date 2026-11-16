@@ -24,8 +24,6 @@ import {
   Image03Icon,
   Grid02Icon,
   CaseSensitiveIcon,
-  MoreHorizontalCircle01Icon,
-  LayoutBottomIcon,
 } from "@hugeicons/core-free-icons";
 import type { GlassMaterial, GlassAppearance } from "@glass-sdk/liquid-glass";
 import {
@@ -61,7 +59,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Example, toolbarVariants } from "./Examples";
 import { PageEdgeBlur } from "./PageEdgeBlur";
-import { defaultProgressiveOptions, progressiveModes } from "./ProgressiveScenes";
+import { defaultProgressiveOptions } from "./ProgressiveScenes";
 import type { ProgressiveOptions } from "./ProgressiveScenes";
 import type { ExampleKind, ToolbarVariant, MenuOptions } from "./Examples";
 import { ApiReference } from "./ApiReference";
@@ -235,10 +233,13 @@ function PreviewToolbar({
   value,
   onChange,
   children,
+  materialChoice = true,
 }: {
   value: GlassMaterial;
   onChange: (m: GlassMaterial) => void;
   children: ReactNode;
+  /** The color picker's glass is always Clear. */
+  materialChoice?: boolean;
 }) {
   const { material: siteMaterial } = useSiteMaterial();
   return (
@@ -252,15 +253,17 @@ function PreviewToolbar({
           className="site-glass-choice demo-customize-menu"
           align="end"
         >
-          <GlassChoice
-            label="Material"
-            value={value}
-            onChange={onChange}
-            items={[
-              { value: "clear", label: "Clear" },
-              { value: "regular", label: "Regular" },
-            ]}
-          />
+          {materialChoice && (
+            <GlassChoice
+              label="Material"
+              value={value}
+              onChange={onChange}
+              items={[
+                { value: "clear", label: "Clear" },
+                { value: "regular", label: "Regular" },
+              ]}
+            />
+          )}
           {children}
         </GlassMenuContent>
       </GlassMenu>
@@ -412,11 +415,9 @@ function CodeSample({
 function MenuControls({
   value,
   onChange,
-  trigger = false,
 }: {
   value: MenuOptions;
   onChange: (value: MenuOptions) => void;
-  trigger?: boolean;
 }) {
   const { material: siteMaterial } = useSiteMaterial();
   const groups = [
@@ -480,24 +481,6 @@ function MenuControls({
         select: () => onChange({ ...value, submenu: true }),
       },
     ],
-    ...(trigger
-      ? [
-          [
-            {
-              label: "Glass button becomes the menu",
-              active: value.trigger === "button",
-              icon: MoreHorizontalCircle01Icon,
-              select: () => onChange({ ...value, trigger: "button" as const }),
-            },
-            {
-              label: "Menu detaches from a toolbar",
-              active: value.trigger === "toolbar",
-              icon: LayoutBottomIcon,
-              select: () => onChange({ ...value, trigger: "toolbar" as const }),
-            },
-          ],
-        ]
-      : []),
   ];
   return (
     <GlassToolbar
@@ -535,8 +518,8 @@ function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppear
     side: "bottom",
     align: "end",
     submenu: false,
-    trigger: "button",
   });
+  const [specular, setSpecular] = useState(false);
   const [sliderStepped, setSliderStepped] = useState(false);
   const [toolbarVariant, setToolbarVariant] = useState<ToolbarVariant>("normal");
   const [surfaceDrag, setSurfaceDrag] = useState<"move" | "anchor">("move");
@@ -547,21 +530,23 @@ function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppear
   } | null>(null);
   if (appearance && appearance.theme !== theme) setAppearance(null);
   const title =
-    kind === "slider"
-      ? "Slider"
-      : kind === "switch"
-        ? "Switch"
-        : kind === "progressive-blur"
-          ? "Progressive blur"
-          : kind === "surface"
-            ? "Surface"
-            : kind === "tabs"
-              ? "Tab bar"
-              : kind === "menu"
-                ? "Menu"
-                : kind === "toolbar"
-                  ? "Toolbar"
-                  : "Buttons";
+    kind === "color-picker"
+      ? "Color picker"
+      : kind === "slider"
+        ? "Slider"
+        : kind === "switch"
+          ? "Switch"
+          : kind === "progressive-blur"
+            ? "Progressive blur"
+            : kind === "surface"
+              ? "Surface"
+              : kind === "tabs"
+                ? "Tab bar"
+                : kind === "menu"
+                  ? "Menu"
+                  : kind === "toolbar"
+                    ? "Toolbar"
+                    : "Buttons";
   return (
     <section id={kind} aria-label={`${title} example`}>
       <h2 className="component-title">
@@ -594,27 +579,13 @@ function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppear
                 className="preview-controls component-controls"
                 aria-label={`${title} controls`}
               >
-                <PreviewToolbar value={material} onChange={setMaterial}>
+                <PreviewToolbar
+                  value={material}
+                  onChange={setMaterial}
+                  materialChoice={kind !== "color-picker"}
+                >
                   {kind === "progressive-blur" ? (
                     <>
-                      <GlassChoice
-                        label="Layout"
-                        value={progressive.mode}
-                        onChange={(mode) => setProgressive({ ...progressive, mode })}
-                        items={progressiveModes}
-                      />
-                      {progressive.mode === "image" && (
-                        <GlassChoice
-                          label="Edge"
-                          value={progressive.edge}
-                          onChange={(edge) => setProgressive({ ...progressive, edge })}
-                          items={[
-                            { value: "bottom", label: "Bottom edge" },
-                            { value: "top", label: "Top edge" },
-                          ]}
-                        />
-                      )}
-                      <DropdownMenuSeparator />
                       <GlassChoice
                         label="Blur"
                         value={progressive.blur}
@@ -638,10 +609,21 @@ function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppear
                         ]}
                       />
                     </>
+                  ) : kind === "color-picker" ? (
+                    <BackgroundChoice value={background} onChange={setBackground} />
                   ) : (
                     <>
                       <TintChoice value={tint} onChange={setTint} />
                       <BackgroundChoice value={background} onChange={setBackground} />
+                      <GlassChoice
+                        label="Specular"
+                        value={specular ? "on" : "off"}
+                        onChange={(value) => setSpecular(value === "on")}
+                        items={[
+                          { value: "off", label: "Off" },
+                          { value: "on", label: "On" },
+                        ]}
+                      />
                     </>
                   )}
                   <AppearanceChoice
@@ -696,15 +678,12 @@ function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppear
                   ))}
                 </GlassToolbar>
               ) : kind === "menu" || (kind === "toolbar" && toolbarVariant === "menu") ? (
-                <MenuControls
-                  value={menuOptions}
-                  onChange={setMenuOptions}
-                  trigger={kind === "menu"}
-                />
+                <MenuControls value={menuOptions} onChange={setMenuOptions} />
               ) : undefined
             }
             material={material}
             tint={tint === "none" ? undefined : tint}
+            specular={specular}
             appearance={appearance?.value ?? theme}
             background={background}
             example={kind}
@@ -713,7 +692,7 @@ function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppear
             menuOptions={menuOptions}
             progressive={progressive}
             draggable={kind === "surface" && surfaceDrag === "move"}
-            className={kind === "surface" ? "hero-scene" : undefined}
+            className={kind === "surface" || kind === "color-picker" ? "hero-scene" : undefined}
           />
         </TabsContent>
         <TabsContent value="usage" className="component-usage documentation">
@@ -729,6 +708,7 @@ function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppear
               tint === "none" ? undefined : tint,
               sliderStepped,
               progressive,
+              specular,
             )}
           />
           <ApiReference kind={kind} />
@@ -763,6 +743,7 @@ const exampleLinks = [
   { value: "menu", label: "Menu" },
   { value: "slider", label: "Slider" },
   { value: "switch", label: "Switch" },
+  { value: "color-picker", label: "Color Picker" },
   { value: "progressive-blur", label: "Progressive Blur" },
 ] as const;
 type SiteView = "introduction" | "all" | ExampleKind;
@@ -783,8 +764,9 @@ function Introduction() {
         glass or Regular for a frosted finish. Both support light and dark appearances.
       </p>
       <p>
-        The content behind the glass stays live. Buttons respond to presses and drags, menus animate
-        from their triggers, and tab indicators move between selections.
+        The content behind the glass stays live. Buttons respond to presses and drags, tab
+        indicators move between selections, and specular glass catches the light as the pointer
+        moves.
       </p>
       <p>
         Explore the <a href="#examples">examples</a> for installation, usage, and component props.
@@ -923,6 +905,7 @@ function Home({ theme, preference, onPreferenceChange }: SiteThemeProps) {
                         "menu",
                         "slider",
                         "switch",
+                        "color-picker",
                         "progressive-blur",
                       ] as const
                     )

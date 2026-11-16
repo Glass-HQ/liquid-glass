@@ -91,6 +91,11 @@ const glyphs = {
     back: pill(1, 6.67, 22, 9.78),
     parts: [{ d: pill(9.15, 7.48, 13.04, 8.15), top: 7.48, bottom: 15.63 }],
   },
+  // A glass bubble lifted over the edge of a color wheel.
+  "color-picker": {
+    back: circle(13.6, 13.6, 9.4),
+    parts: [{ d: circle(8.2, 8.2, 6), top: 2.2, bottom: 14.2 }],
+  },
   "progressive-blur": {
     back:
       pill(1, 1.5, 22, 3.4) +

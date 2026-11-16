@@ -64,13 +64,10 @@ if (typeof indexedDB !== "undefined" && typeof Image !== "undefined") {
 export function getMaterialMaps(g: MapGeometry): Promise<MaterialMaps> {
   return materialMaps(g);
 }
-/** Internal surface path; public map requests still return the exact geometry.
- * Shapes an animation merely passes through are not worth keeping across
- * loads: with `persist` false they are rendered at once and never wait on the
- * store, whose startup read can take longer than the animation. */
-export function getSurfaceMaterialMaps(g: MapGeometry, persist = true): Promise<MaterialMaps> {
+/** Internal surface path; public map requests still return the exact geometry. */
+export function getSurfaceMaterialMaps(g: MapGeometry): Promise<MaterialMaps> {
   const capsule = capsuleMapGeometry(g);
-  return capsule ? materialMaps(capsule, true, persist) : materialMaps(g, false, persist);
+  return capsule ? materialMaps(capsule, true) : materialMaps(g, false);
 }
 /** Maps for a surface available without waiting a task: already shown, or
  * stored from an earlier load. Stored maps are handed out before their images
@@ -119,12 +116,12 @@ function assemble(
     ...(sliceCapsule ? { capsule: { cap: g.height + 2, height: g.height + 4, planes } } : {}),
   };
 }
-function materialMaps(g: MapGeometry, sliceCapsule = false, persist = true): Promise<MaterialMaps> {
+function materialMaps(g: MapGeometry, sliceCapsule = false): Promise<MaterialMaps> {
   const key = keyOf(g, sliceCapsule);
   const cached = cache.get(key);
   if (cached) return cached;
   const stored = `${version}|${key}`;
-  const result = (persist ? loadStoredMaps(stored) : Promise.resolve(peekStoredMaps(stored)))
+  const result = loadStoredMaps(stored)
     .then(async (found) => {
       if (found) {
         claimFirstPaint(stored, found);
@@ -138,10 +135,8 @@ function materialMaps(g: MapGeometry, sliceCapsule = false, persist = true): Pro
         height,
         sliceCapsule ? Math.round((g.height + 2) * mapScale(g)) : undefined,
       );
-      if (persist) {
-        saveStoredMaps(stored, { planes: encoded, duration });
-        claimFirstPaint(stored, { planes: encoded, duration });
-      }
+      saveStoredMaps(stored, { planes: encoded, duration });
+      claimFirstPaint(stored, { planes: encoded, duration });
       return assemble(g, sliceCapsule, encoded, duration);
     })
     .then(async (maps) => {

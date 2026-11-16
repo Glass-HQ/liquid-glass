@@ -21,6 +21,7 @@ import {
   GlassMenuSubmenu,
   GlassMenuSubmenuTrigger,
   GlassMenuSubmenuContent,
+  GlassColorPicker,
 } from "@glass-sdk/liquid-glass";
 import type { GlassMaterial, GlassAppearance } from "@glass-sdk/liquid-glass";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -48,7 +49,8 @@ export type ExampleKind =
   | "menu"
   | "progressive-blur"
   | "slider"
-  | "switch";
+  | "switch"
+  | "color-picker";
 export const toolbarVariants = [
   { value: "normal", label: "Normal" },
   { value: "fixed", label: "Fixed spacer" },
@@ -59,19 +61,18 @@ export type MenuOptions = {
   side: "top" | "bottom" | "left" | "right";
   align: "start" | "center" | "end";
   submenu: boolean;
-  /** A glass button becomes its menu; a button inside a toolbar lets the menu pinch off. */
-  trigger: "button" | "toolbar";
 };
 export type ToolbarVariant = (typeof toolbarVariants)[number]["value"];
 export function Example({
   example = "surface",
   toolbarVariant = "normal",
   sliderStepped = false,
-  menuOptions = { side: "bottom", align: "end", submenu: false, trigger: "button" },
+  menuOptions = { side: "bottom", align: "end", submenu: false },
   progressive = defaultProgressiveOptions,
   material = "clear",
   appearance = "light",
   tint,
+  specular = false,
   background = "landscape",
   draggable = false,
   className = "",
@@ -85,6 +86,7 @@ export function Example({
   progressive?: ProgressiveOptions;
   material?: GlassMaterial;
   tint?: string;
+  specular?: boolean;
   appearance?: GlassAppearance;
   background?: "landscape" | "type" | "grid";
   draggable?: boolean;
@@ -95,6 +97,7 @@ export function Example({
   const [value, setValue] = useState(50);
   const sliderValue = sliderStepped ? Math.round(value / 25) * 25 : value;
   const [checked, setChecked] = useState(true);
+  const [color, setColor] = useState("#0a84ff");
   const [liked, setLiked] = useState(false);
   const [error, setError] = useState<Error | undefined>();
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -168,6 +171,7 @@ export function Example({
     <GlassScene
       material={material}
       appearance={appearance}
+      specular={specular}
       className={`example-scene ${bottomControls ? "has-bottom-controls" : ""} ${controls ? "has-controls" : ""} ${appearance === "dark" ? "glass-dark" : ""} ${className}`}
       onDiagnostic={(d) => {
         setError(d.error);
@@ -265,6 +269,25 @@ export function Example({
                 )}
               </div>
             )}
+            {example === "color-picker" && (
+              <div className="color-picker-example">
+                <GlassColorPicker
+                  size={220}
+                  appearance={appearance}
+                  value={color}
+                  onValueChange={setColor}
+                />
+                <GlassSurface
+                  {...options}
+                  radius="capsule"
+                  className="color-readout"
+                  render={<output aria-live="polite" />}
+                >
+                  <span className="color-swatch" style={{ backgroundColor: color }} />
+                  {color.toUpperCase()}
+                </GlassSurface>
+              </div>
+            )}
             {example === "buttons" && (
               <div className="button-examples">
                 <GlassButton {...options}>
@@ -316,7 +339,7 @@ export function Example({
                 aria-label="Music"
               />
             )}
-            {example === "menu" && menuOptions.trigger === "button" && (
+            {example === "menu" && (
               <GlassMenu>
                 <GlassMenuTrigger
                   render={<GlassButton {...options} size="icon" aria-label="Options" />}
@@ -330,27 +353,6 @@ export function Example({
                   menuOptions={menuOptions}
                 />
               </GlassMenu>
-            )}
-            {example === "menu" && menuOptions.trigger === "toolbar" && (
-              <GlassToolbar {...options} aria-label="Playback">
-                <GlassToolbarButton aria-label="Play">
-                  <Icon icon={PlayIcon} />
-                </GlassToolbarButton>
-                <GlassToolbarButton aria-label="Favorite">
-                  <Icon icon={FavouriteIcon} />
-                </GlassToolbarButton>
-                <GlassMenu>
-                  <GlassToolbarButton aria-label="Options" render={<GlassMenuTrigger />}>
-                    <Icon icon={MoreHorizontalIcon} />
-                  </GlassToolbarButton>
-                  <ExampleMenuContent
-                    material={material}
-                    appearance={appearance}
-                    tint={tint}
-                    menuOptions={menuOptions}
-                  />
-                </GlassMenu>
-              </GlassToolbar>
             )}
           </div>
         )}

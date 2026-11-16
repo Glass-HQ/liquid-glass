@@ -23,7 +23,7 @@ const ns = "http://www.w3.org/2000/svg";
 let version = 0;
 
 const weights = new Set(["k1", "k2", "k3", "k4", "slope", "intercept", "flood-opacity"]);
-/** Animated geometry and crossfade weights approach their targets in steps
+/** Animated geometry and opacity weights approach their targets in steps
  * no display can show, and every changed primitive re-renders the whole
  * filtered layer. Round primitive lengths to 1/16 px and weights to 1/1024,
  * below one 8-bit step, so those frames repeat the last markup exactly. */
@@ -267,8 +267,7 @@ function reconcile(live: Retained, next: Description, links: Element[]): boolean
  * a fade's opacity, redraw on top of the image's blank result. Changing the
  * filter's region clears every result: nudge it after the images have had
  * time to arrive, restore it a frame later, and repeat once for slower
- * devices. Both fall within a popup's entrance, which redraws every frame
- * anyway. The value restored is the description's, read when each step
+ * devices. The value restored is the description's, read when each step
  * runs: a filter rewired mid-nudge must not keep the nudged region, which
  * shifts every subregion and can abort the whole filter. */
 const webkitSettling = new WeakMap<Element, number>();

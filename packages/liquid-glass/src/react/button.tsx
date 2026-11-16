@@ -27,6 +27,7 @@ export function GlassButton({
   radius = "capsule",
   refraction,
   tint,
+  specular,
   interactive = true,
   motion,
   size = "default",
@@ -42,6 +43,7 @@ export function GlassButton({
       radius={size.startsWith("icon") ? "circle" : radius}
       refraction={refraction}
       tint={tint}
+      specular={specular}
       interactive={interactive}
       motion={motion}
       className={`lg-button ${className}`}

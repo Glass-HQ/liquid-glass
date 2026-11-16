@@ -1,21 +1,12 @@
-import {
-  Fragment,
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, createContext, useCallback, useContext, useState } from "react";
 import type { CSSProperties, ComponentPropsWithRef, Ref } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { useRender } from "@base-ui/react/use-render";
-import { prepareSubmenuHandoff } from "../dom/morph.js";
 import type { MaterialOptions } from "../core/materials.js";
 import { useMergedRef } from "./merged-ref.js";
 import { GlassShape } from "./shape.js";
 import { useScene } from "./scene.js";
-import { GlassSurface } from "./surface.js";
+import { GlassPopupSurface } from "./surface.js";
 import type { GlassMotionProps } from "./surface.js";
 /** Triggers registered by a menu or submenu. Root menus anchor to a stable
  * wrapper so the trigger's own press motion never moves the popup. */
@@ -78,51 +69,16 @@ export function GlassMenuSubmenu(props: Menu.SubmenuRoot.Props) {
 export function GlassMenuSubmenuTrigger({
   ref,
   delay = 40,
-  onPointerEnter,
-  onPointerLeave,
-  onFocus,
-  onBlur,
   ...props
 }: ComponentPropsWithRef<typeof Menu.SubmenuTrigger>) {
   const attach = useRegisterTrigger(() => null);
-  const release = useRef<(() => void) | undefined>(undefined);
-  const reserve = (element: HTMLElement) => {
-    release.current?.();
-    release.current = prepareSubmenuHandoff(element);
-  };
-  const clear = () => {
-    release.current?.();
-    release.current = undefined;
-  };
-  useEffect(() => clear, []);
   // A submenu should be there the moment the pointer rests on its item; Base
   // UI's safe polygon still lets the pointer cross to it diagonally.
   return (
     <GlassShape
       ref={useMergedRef(attach, ref)}
       concentric={{ contentPadding: 8 }}
-      render={
-        <Menu.SubmenuTrigger
-          delay={delay}
-          {...props}
-          onPointerEnter={(event) => {
-            onPointerEnter?.(event);
-            if (!event.defaultPrevented && !props.disabled) reserve(event.currentTarget);
-          }}
-          onPointerLeave={(event) => {
-            onPointerLeave?.(event);
-            clear();
-          }}
-          onFocus={(event) => {
-            onFocus?.(event);
-            if (!event.defaultPrevented && !props.disabled) reserve(event.currentTarget);
-          }}
-          onBlur={(event) => {
-            onBlur?.(event);
-            clear();
-          }}
-        />
-      }
+      render={<Menu.SubmenuTrigger delay={delay} {...props} />}
     />
   );
 }
@@ -150,7 +106,7 @@ export interface GlassMenuContentProps
     GlassMenuPositioningProps,
     Omit<ComponentPropsWithRef<typeof Menu.Popup>, "className" | "style">,
     MaterialOptions,
-    Pick<GlassMotionProps, "interactive" | "motion" | "morph" | "neck"> {
+    Pick<GlassMotionProps, "interactive" | "motion"> {
   className?: string;
   style?: CSSProperties;
   positionerProps?: Omit<ComponentPropsWithRef<typeof Menu.Positioner>, "children">;
@@ -165,10 +121,9 @@ export function GlassMenuContent({
   radius = 28,
   refraction,
   tint,
+  specular,
   interactive,
   motion,
-  morph,
-  neck,
   side,
   align,
   sideOffset,
@@ -180,8 +135,7 @@ export function GlassMenuContent({
 }: GlassMenuContentProps) {
   const { root } = useScene();
   const registry = useContext(MenuTriggersContext);
-  // The trigger that opened this popup: its anchor for placement, and the
-  // shape the popup's glass grows out of.
+  // The trigger that opened this popup anchors its placement.
   const openTrigger = () => {
     const triggers = [...(registry?.triggers.keys() ?? [])];
     return (
@@ -209,25 +163,21 @@ export function GlassMenuContent({
         alignOffset={alignOffset ?? positionerProps?.alignOffset}
         collisionAvoidance={collisionAvoidance ?? positionerProps?.collisionAvoidance}
       >
-        <GlassSurface
+        <GlassPopupSurface
           material={material}
           appearance={appearance}
           radius={radius}
           refraction={refraction}
           tint={tint}
+          specular={specular}
           interactive={interactive}
           motion={motion}
-          // A glass trigger becomes its menu; a trigger inside glass, such
-          // as a toolbar button, lets the menu detach from that glass as a drop.
-          morphFrom={openTrigger}
-          morph={morph}
-          neck={neck}
           style={style}
           className={`lg-menu ${className}`}
           render={<Menu.Popup {...props} />}
         >
           <Fragment>{children}</Fragment>
-        </GlassSurface>
+        </GlassPopupSurface>
       </Menu.Positioner>
     </Menu.Portal>
   );
@@ -236,14 +186,11 @@ export function GlassMenuItem(props: ComponentPropsWithRef<typeof Menu.Item>) {
   return <GlassShape concentric={{ contentPadding: 8 }} render={<Menu.Item {...props} />} />;
 }
 
-/** Submenus fade beside their parent. Moving between siblings morphs the
- * existing panel into the next panel's position and size. */
+/** Submenus open beside their parent item. */
 export function GlassMenuSubmenuContent(props: GlassMenuContentProps) {
   return (
     <GlassMenuContent
-      neck={0}
       {...props}
-      data-glass-submenu=""
       side={props.side ?? props.positionerProps?.side ?? "inline-end"}
       align={props.align ?? props.positionerProps?.align ?? "start"}
     />

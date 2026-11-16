@@ -196,8 +196,8 @@ test("absorbing a group member and splitting the survivors retains every unchang
     node: defs.find(name)!,
     writes: defs.find(name)!.writes,
   }));
-  // A detaching menu absorbs its toolbar, then nearby geometry can split
-  // the remaining group. Closing the menu restores the original membership.
+  // Surfaces join a shared branch, nearby geometry splits it, and the
+  // original membership returns.
   for (const units of [[[2, 3]], [[2], [3]], [[2, 3]], [[1, 2, 3]]]) {
     apply([filter(units.map(branch).join(""))]);
     for (const { name, node, writes } of retained) {

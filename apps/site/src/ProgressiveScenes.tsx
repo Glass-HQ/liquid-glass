@@ -1,53 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { nowPlaying } from "./music";
-import type { FormEvent, ReactNode, RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   GlassShape,
   GlassContent,
   GlassSurface,
   GlassButton,
   GlassTabs,
-  GlassToolbar,
-  GlassToolbarButton,
-  GlassProgressiveBlur,
   GlassScrollEdges,
 } from "@glass-sdk/liquid-glass";
 import type { GlassAppearance, GlassBlurEdge } from "@glass-sdk/liquid-glass";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  ArrowLeft01Icon,
   GridViewIcon,
   ListViewIcon,
-  ArrowUp02Icon,
-  Bookmark01Icon,
   NextIcon,
   PauseIcon,
   PlayIcon,
-  PlusSignIcon,
-  Share08Icon,
-  Video01Icon,
 } from "@hugeicons/core-free-icons";
-import { Backdrop } from "./Backdrop";
-import { articleSizes, wallpaperImage } from "./wallpapers";
 
 export const progressiveBlurLevels = { off: 0, soft: 10, balanced: 20, strong: 32 } as const;
-export const progressiveModes = [
-  { value: "library", label: "Library" },
-  { value: "messages", label: "iMessage" },
-  { value: "article", label: "Article" },
-  { value: "image", label: "Image" },
-] as const;
 export type ProgressiveOptions = {
-  mode: (typeof progressiveModes)[number]["value"];
   blur: keyof typeof progressiveBlurLevels;
   refraction: boolean;
-  edge: "top" | "bottom";
 };
 export const defaultProgressiveOptions: ProgressiveOptions = {
-  mode: "library",
   blur: "balanced",
   refraction: false,
-  edge: "bottom",
 };
 
 type BlurProps = { blur: number; refraction: number; disabled: boolean };
@@ -68,24 +47,9 @@ export function ProgressiveScene({
     refraction: options.refraction ? 6 : 0,
     disabled: options.blur === "off",
   };
-  const className = `progressive-scene is-${options.mode} ${appearance === "dark" ? "glass-dark" : ""}`;
   return (
-    <div key={options.mode} className={className}>
-      {options.mode === "messages" ? (
-        <MessagesScene blur={blur} />
-      ) : options.mode === "article" ? (
-        <ArticleScene blur={blur} appearance={appearance} />
-      ) : options.mode === "library" ? (
-        <LibraryScene blur={blur} appearance={appearance} />
-      ) : (
-        <>
-          <GlassContent>
-            <Backdrop appearance={appearance} />
-          </GlassContent>
-          <GlassProgressiveBlur edge={options.edge} size={260} {...blur} />
-          <p className={`progressive-caption is-${options.edge}`}>A little further away.</p>
-        </>
-      )}
+    <div className={`progressive-scene is-library ${appearance === "dark" ? "glass-dark" : ""}`}>
+      <LibraryScene blur={blur} appearance={appearance} />
     </div>
   );
 }
@@ -96,13 +60,11 @@ function ScrollFrame({
   scroller,
   label,
   className,
-  onScroll,
   children,
 }: {
   scroller: RefObject<HTMLDivElement | null>;
   label: string;
   className: string;
-  onScroll?: () => void;
   children: ReactNode;
 }) {
   // GlassContent owns the filtered div and its scene registration.
@@ -115,7 +77,6 @@ function ScrollFrame({
       tabIndex={0}
       aria-label={label}
       className={`progressive-viewport ${className}`}
-      onScroll={onScroll}
     >
       {children}
     </GlassContent>
@@ -309,243 +270,6 @@ function LibraryScene({ blur, appearance }: { blur: BlurProps; appearance: Glass
           <Icon icon={NextIcon} />
         </GlassButton>
       </GlassSurface>
-    </>
-  );
-}
-
-type Message = {
-  id: number;
-  from: "me" | "them";
-  text?: string;
-  photo?: "day" | "night";
-  link?: boolean;
-};
-const opening: Message[] = [
-  { id: 1, from: "them", text: "Are we still on for the desert this weekend?" },
-  { id: 2, from: "me", text: "Yes! Leaving Saturday at 6 so we catch the light." },
-  { id: 3, from: "them", photo: "day" },
-  { id: 4, from: "them", text: "This is the ridge from last year. Same spot?" },
-  { id: 5, from: "me", text: "Same spot. I'm bringing the big lens this time." },
-  { id: 6, from: "me", link: true },
-  { id: 7, from: "them", text: "Clear skies all weekend 🌙" },
-  { id: 8, from: "me", photo: "night" },
-  { id: 9, from: "me", text: "Stars should look like this after midnight." },
-  { id: 10, from: "them", text: "Okay that's unreal. Bring the warm jacket, it gets cold fast." },
-];
-function MessagesScene({ blur }: { blur: BlurProps }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const [messages, setMessages] = useState(opening);
-  const [draft, setDraft] = useState("");
-  useEffect(() => {
-    const element = scroller.current;
-    const smooth =
-      messages.length > opening.length && !matchMedia("(prefers-reduced-motion: reduce)").matches;
-    element?.scrollTo({ top: element.scrollHeight, behavior: smooth ? "smooth" : "instant" });
-  }, [messages.length]);
-  const send = (event: FormEvent) => {
-    event.preventDefault();
-    if (!draft.trim()) return;
-    setMessages((list) => [...list, { id: list.length + 1, from: "me", text: draft.trim() }]);
-    setDraft("");
-  };
-  return (
-    <>
-      <ScrollFrame scroller={scroller} label="Conversation with Maya" className="is-messages">
-        <ol className="messages-thread">
-          <li className="messages-day">Today 9:41</li>
-          {messages.map((message) => (
-            <li key={message.id} className={`messages-row is-${message.from}`}>
-              {message.photo ? (
-                <GlassShape
-                  radius={18}
-                  render={
-                    <img
-                      className="messages-photo"
-                      {...wallpaperImage(message.photo === "day" ? "day" : "night", "263px")}
-                      alt={
-                        message.photo === "day" ? "Desert ridge at dusk" : "Desert ridge at night"
-                      }
-                    />
-                  }
-                />
-              ) : message.link ? (
-                <GlassShape radius={18} render={<span />} className="messages-link">
-                  <img {...wallpaperImage("night", "260px")} alt="" />
-                  <strong>Dark Sky Places</strong>
-                  <span>darksky.org</span>
-                </GlassShape>
-              ) : (
-                <GlassShape radius={19} render={<span />} className="messages-bubble">
-                  {message.text}
-                </GlassShape>
-              )}
-            </li>
-          ))}
-        </ol>
-      </ScrollFrame>
-      <GlassScrollEdges target={scroller} size={120} {...blur} />
-      <div className="messages-bar">
-        <GlassButton size="icon" className="chrome-button" aria-label="Back">
-          <Icon icon={ArrowLeft01Icon} />
-        </GlassButton>
-        <GlassSurface radius={19} className="messages-contact">
-          <img className="messages-avatar" src="/avatars/maya.svg" alt="" />
-          Maya
-        </GlassSurface>
-        <GlassButton size="icon" className="chrome-button" aria-label="FaceTime">
-          <Icon icon={Video01Icon} />
-        </GlassButton>
-      </div>
-      <form className="messages-composer" onSubmit={send}>
-        <GlassButton size="icon" type="button" className="chrome-button" aria-label="Attach">
-          <Icon icon={PlusSignIcon} />
-        </GlassButton>
-        <GlassSurface radius={19} className="messages-field">
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="iMessage"
-            aria-label="Message"
-          />
-        </GlassSurface>
-        <GlassButton
-          size="icon"
-          type="submit"
-          className="chrome-button"
-          aria-label="Send"
-          tint="#0a84ff"
-        >
-          <Icon icon={ArrowUp02Icon} />
-        </GlassButton>
-      </form>
-    </>
-  );
-}
-
-function ArticleScene({ blur, appearance }: { blur: BlurProps; appearance: GlassAppearance }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const bar = useRef<HTMLDivElement>(null);
-  // A CSS variable keeps the collapsing title off React's render path while scrolling.
-  const collapse = () => {
-    const top = scroller.current?.scrollTop ?? 0;
-    bar.current?.style.setProperty("--collapse", String(Math.min(1, Math.max(0, (top - 60) / 50))));
-  };
-  const [hero, second] =
-    appearance === "dark" ? (["night", "day"] as const) : (["day", "night"] as const);
-  return (
-    <>
-      <ScrollFrame
-        scroller={scroller}
-        label="The quiet edge of the desert"
-        className="is-article"
-        onScroll={collapse}
-      >
-        <article className="article-body">
-          <header className="article-header">
-            <h1>The quiet edge of the desert</h1>
-            <p className="article-dek">
-              An hour on foot past the end of the road, the dunes keep the last of the light long
-              after the valley has gone blue.
-            </p>
-            <p className="article-byline">
-              <img src="/avatars/jonah.svg" alt="" />
-              <span>
-                <strong>Jonah Reyes</strong> · October 6 · 6 min read
-              </span>
-            </p>
-          </header>
-          <figure>
-            <GlassShape
-              radius={25.5}
-              render={
-                <img
-                  className="article-hero"
-                  {...wallpaperImage(hero, articleSizes)}
-                  alt="Dunes below a mountain ridge"
-                />
-              }
-            />
-            <figcaption>The ridge from the last dune, twenty minutes before sunset.</figcaption>
-          </figure>
-          <p className="article-lede">
-            The road ends where the sand begins. From there it is an hour on foot, past dunes that
-            move <em>a little every night</em>, to a ridge that holds the last of the light long
-            after the valley has gone blue.
-          </p>
-          <p>
-            Nobody comes here for the view at noon. The heat flattens everything into one color, and
-            the only shade is your own. It is the hour before sunset that matters.
-          </p>
-          <h2>The hour before sunset</h2>
-          <p>
-            The light arrives sideways and suddenly the dunes have texture again.{" "}
-            <strong>Every ripple throws its own small shadow</strong>, and the ridge turns from
-            beige to rust to violet in the time it takes to set up a tripod.
-          </p>
-          <blockquote>
-            <p>
-              You stop taking photographs at some point. The light changes faster than you can
-              choose a frame.
-            </p>
-            <cite>Field notes, day two</cite>
-          </blockquote>
-          <h2>What to bring</h2>
-          <ul>
-            <li>
-              <strong>Water</strong>: more than you think, and a little more after that.
-            </li>
-            <li>
-              <strong>A warm layer</strong>: the temperature drops twenty degrees after dark.
-            </li>
-            <li>
-              <strong>A red headlamp</strong>: it keeps your night vision for the stars.
-            </li>
-          </ul>
-          <h2>After midnight</h2>
-          <p>
-            By the time the stars appear the wind has dropped completely. You can hear your own
-            heartbeat and, somewhere far below, a single truck crossing the valley floor. The{" "}
-            <a href="https://darksky.org/" tabIndex={-1}>
-              dark sky reserve
-            </a>{" "}
-            starts a few miles east.
-          </p>
-          <figure>
-            <GlassShape
-              radius={25.5}
-              render={
-                <img
-                  className="article-inline"
-                  {...wallpaperImage(second, articleSizes)}
-                  alt="The same ridge at a different hour"
-                />
-              }
-            />
-            <figcaption>Same ridge, six hours later.</figcaption>
-          </figure>
-          <p>
-            We stayed until the cold drove us back to the car. Next year we will bring a second
-            lens, a warmer jacket, and the patience to wait for the moon to rise behind the ridge.
-          </p>
-        </article>
-      </ScrollFrame>
-      <GlassScrollEdges target={scroller} size={110} {...blur} />
-      <div ref={bar} className="article-bar">
-        <GlassButton size="icon" className="chrome-button" aria-label="Back">
-          <Icon icon={ArrowLeft01Icon} />
-        </GlassButton>
-        <span className="article-bar-title" aria-hidden="true">
-          The quiet edge of the desert
-        </span>
-      </div>
-      <GlassToolbar aria-label="Article actions" className="article-actions">
-        <GlassToolbarButton aria-label="Share">
-          <Icon icon={Share08Icon} />
-        </GlassToolbarButton>
-        <GlassToolbarButton aria-label="Save">
-          <Icon icon={Bookmark01Icon} />
-        </GlassToolbarButton>
-      </GlassToolbar>
     </>
   );
 }

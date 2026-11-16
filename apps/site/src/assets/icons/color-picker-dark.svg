@@ -1,0 +1,19 @@
+<svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M 15 2 L 15 2 c 3.0236 0.0000 4.5354 0.0000 5.7665 0.3697 a 8.7500 8.7500 0 0 1 5.8638 5.8638 c 0.3697 1.2311 0.3697 2.7429 0.3697 5.7665 L 27 14 c 0.0000 3.0236 0.0000 4.5354 -0.3697 5.7665 a 8.7500 8.7500 0 0 1 -5.8638 5.8638 c -1.2311 0.3697 -2.7429 0.3697 -5.7665 0.3697 L 15 26 c -3.0236 0.0000 -4.5354 0.0000 -5.7665 -0.3697 a 8.7500 8.7500 0 0 1 -5.8638 -5.8638 c -0.3697 -1.2311 -0.3697 -2.7429 -0.3697 -5.7665 L 3 14 c 0.0000 -3.0236 0.0000 -4.5354 0.3697 -5.7665 a 8.7500 8.7500 0 0 1 5.8638 -5.8638 c 1.2311 -0.3697 2.7429 -0.3697 5.7665 -0.3697 Z" fill="#3B3B3B" fill-opacity="0.7"/>
+<g transform="translate(7.8 6.8) scale(0.6)">
+<path d="M4.2 13.6A9.4 9.4 0 1 1 23 13.6A9.4 9.4 0 1 1 4.2 13.6Z" fill="url(#bk-color-picker-dark)" mask="url(#mk-color-picker-dark)"/>
+<g clip-path="url(#cl-color-picker-dark)"><path d="M4.2 13.6A9.4 9.4 0 1 1 23 13.6A9.4 9.4 0 1 1 4.2 13.6Z" fill="url(#bk-color-picker-dark)" filter="url(#bl-color-picker-dark)"/></g>
+<g mask="url(#hm-color-picker-dark)"><path d="M2.2 8.2A6 6 0 1 1 14.2 8.2A6 6 0 1 1 2.2 8.2Z" fill="url(#gl-color-picker-dark)"/><g filter="url(#ring-color-picker-dark)"><path d="M2.2 8.2A6 6 0 1 1 14.2 8.2A6 6 0 1 1 2.2 8.2Z" fill="url(#rim0-color-picker-dark)"/></g></g>
+
+</g>
+<defs>
+<linearGradient id="bk-color-picker-dark" x1="12" y1="1" x2="12" y2="23" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7C7C7E" stop-opacity="1"/><stop offset="1" stop-color="#4A4A4C" stop-opacity="1"/></linearGradient>
+<linearGradient id="gl-color-picker-dark" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ECECEE" stop-opacity="0.66"/><stop offset="1" stop-color="#C2C2C7" stop-opacity="0.66"/></linearGradient>
+<filter id="bl-color-picker-dark" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2"/></filter>
+<filter id="ring-color-picker-dark" x="-20%" y="-20%" width="140%" height="140%"><feMorphology in="SourceAlpha" operator="erode" radius="0.75" result="in"/><feComposite in="SourceGraphic" in2="in" operator="out"/></filter>
+<filter id="goo-color-picker-dark" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="b"/><feColorMatrix in="b" values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 24 -11"/></filter>
+<mask id="hm-color-picker-dark" maskUnits="userSpaceOnUse" x="-4" y="-4" width="32" height="32"><rect x="-4" y="-4" width="32" height="32" fill="#fff"/><path d="" fill="#000"/></mask>
+<mask id="mk-color-picker-dark" maskUnits="userSpaceOnUse" x="-4" y="-4" width="32" height="32"><rect x="-4" y="-4" width="32" height="32" fill="#fff"/><path d="M2.2 8.2A6 6 0 1 1 14.2 8.2A6 6 0 1 1 2.2 8.2Z" fill="#000"/></mask>
+<clipPath id="cl-color-picker-dark"><path d="M2.2 8.2A6 6 0 1 1 14.2 8.2A6 6 0 1 1 2.2 8.2Z"/></clipPath><linearGradient id="rim0-color-picker-dark" x1="0" y1="2.2" x2="0" y2="9.16" gradientUnits="userSpaceOnUse"><stop stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs>
+</svg>

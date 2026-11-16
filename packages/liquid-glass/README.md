@@ -50,6 +50,7 @@ Import the stylesheet once. It requires neither Tailwind nor a CSS reset. Put gl
 | `GlassMenu`, `GlassMenuTrigger`, `GlassMenuContent`, `GlassMenuItem`                                | Menu with positioning and focus restoration.               |
 | `GlassMenuSubmenu`, `GlassMenuSubmenuTrigger`, `GlassMenuSubmenuContent`                            | Nested menus.                                              |
 | `GlassSlider`, `GlassSwitch`                                                                        | Slider and switch.                                         |
+| `GlassColorPicker`                                                                                  | Color wheel with a glass bubble that picks colors.         |
 | `GlassForeground`, `useGlassForeground`                                                             | Foreground content that higher glass surfaces can refract. |
 | `GlassShape`, `GlassShapeContainer`, `GlassCorner`                                                  | Continuous corners and container-relative geometry.        |
 | `GlassProgressiveBlur`, `GlassScrollEdges`                                                          | Progressive blur over background content and scroll edges. |
@@ -68,9 +69,7 @@ Set defaults on `GlassScene`; individual surfaces can override them. Menu popups
 | `refraction`  | `60`               | Nonnegative displacement in CSS pixels. Nested surfaces limit their default to the parent inset.                                                                                                    |
 | `tint`        | None               | Six-digit hex color. Colors the glass without changing text or icons.                                                                                                                               |
 | `interactive` | Component-specific | Press and drag feedback; on by default for buttons, toolbars, and tab bars. While pressed, links and images inside stop starting a native browser drag; mark content `draggable="true"` to keep it. |
-| `fluid`       | `false`            | Animate the outline when layout dimensions change.                                                                                                                                                  |
-| `morphFrom`   | None               | Element ref or getter for a surface's opening and closing shape.                                                                                                                                    |
-| `morph`       | By context         | `"become"` replaces its source; `"detach"` separates from it.                                                                                                                                       |
+| `specular`    | `false`            | Two equal rim highlights on opposite corners that turn toward the pointer, and with the device's tilt on Android. Reduced motion holds them at the top left and bottom right.                       |
 | `motion`      | `"full"`           | `"full"`, `"reduced"`, or `"none"`; inherited from the scene.                                                                                                                                       |
 
 Slider and switch pressed thumbs default to Clear, with refraction of 5px and 7.75px respectively. Their `tint` sets the track color.
@@ -89,7 +88,7 @@ The `render` prop merges props, handlers, styles, and refs with your component. 
 </GlassSurface>
 ```
 
-Menus stay inside their scene. Content accepts `side`, `align`, `sideOffset`, `alignOffset`, and `collisionAvoidance`; defaults are bottom/end with an 8px offset. Use `positionerProps` and `portalProps` for additional Base UI options.
+Menus open and close without animation. Menus stay inside their scene. Content accepts `side`, `align`, `sideOffset`, `alignOffset`, and `collisionAvoidance`; defaults are bottom/end with an 8px offset. Use `positionerProps` and `portalProps` for additional Base UI options.
 
 ```tsx
 <GlassMenu>
@@ -141,6 +140,18 @@ The list also works within an existing Base UI tabs root; do not nest another ro
 Sliders accept a numeric `value` or `defaultValue`, `min`, `max`, `step`, `onValueChange`, and `onValueCommitted`. Defaults are 0–100 with a 0.1 step. With `ticks`, the step must divide the range evenly, with at most 100 intervals. `thumbProps` exposes input refs and accessible value text.
 
 Switches accept Base UI switch props, including `checked`, `defaultChecked`, `onCheckedChange`, `name`, and `inputRef`. Name inputs with a label or `aria-label`. Both controls support forms, RTL, `tint`, and reduced motion.
+
+## Color picker
+
+`GlassColorPicker` is a hue and saturation wheel. A small dot of the chosen color marks it exactly, and pressing the wheel grows the dot into a Clear glass bubble that follows the pointer, with a point at its center on the exact color. It renders its own scene, so it does not need a `GlassScene` around it.
+
+```tsx
+const [color, setColor] = useState("#0a84ff");
+
+<GlassColorPicker value={color} onValueChange={setColor} name="color" />;
+```
+
+Values are six-digit hex colors, picked at full brightness. `onValueCommitted` fires when a drag or key press ends. Arrow keys change hue (left and right) and saturation (up and down); Shift takes larger steps. `size` sets the wheel diameter (default 240). The lens is always Clear glass, so the color under it shows as it is; it defaults to `refraction={16}` and `specular`. Set `--lg-color-picker-background` to the color behind the picker: the lens refracts it at the wheel's edge, and Safari needs it opaque.
 
 ## Progressive blur
 
@@ -235,7 +246,7 @@ The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, 
 ## Requirements and limitations
 
 - React 19+ and Base UI (`@base-ui/react`, a peer dependency) for React components; HTTPS or localhost and an available WebGPU adapter to render glass material maps. Progressive blur needs no WebGPU.
-- SVG filter performance varies between browser engines. Safari can spend substantially longer filtering large content layers than Chromium, even when material maps are cached. Keep scenes close to the content they need to refract, and test animated menus on the devices you support. Chromium, Firefox, Safari, and Electron are acceptance targets; they do not have identical performance.
+- SVG filter performance varies between browser engines. Safari can spend substantially longer filtering large content layers than Chromium, even when material maps are cached. Keep scenes close to the content they need to refract, and test moving glass on the devices you support. Chromium, Firefox, Safari, and Electron are acceptance targets; they do not have identical performance.
 - For consistent refraction in Safari, give `GlassContent` an opaque background. Transparent source pixels can leave the original content visible beneath its refracted image.
 - Use bounded scenes with explicit content layers. Arbitrary page-backdrop sampling, rotated/transformed ancestors, and native ports are outside the supported scope.
 - In Safari, glass over a rotated or skewed composited layer, such as an element in a rotating CSS animation, draws beneath it. Encrypted (DRM) video cannot be drawn by any page, so glass over it also draws beneath it. Cross-origin video and canvas content refract without CORS, because the mirror never reads its pixels back.
