@@ -137,9 +137,11 @@ Tabs select the first enabled item unless `defaultValue` is set. Use `value` and
 
 The list also works within an existing Base UI tabs root; do not nest another root. Keep interactive elements out of tab labels.
 
-Sliders accept a numeric `value` or `defaultValue`, `min`, `max`, `step`, `onValueChange`, and `onValueCommitted`. Defaults are 0–100 with a 0.1 step. With `ticks`, the step must divide the range evenly, with at most 100 intervals. `thumbProps` exposes input refs and accessible value text.
+Sliders accept a numeric `value` or `defaultValue`, `min`, `max`, `step`, `onValueChange`, and `onValueCommitted`. Defaults are 0–100 with a 0.1 step. With `ticks`, the step must divide the range evenly, with at most 100 intervals. `thumbProps` exposes input refs and accessible value text. `disabled` dims the slider and stops pointer and keyboard changes.
 
-Switches accept Base UI switch props, including `checked`, `defaultChecked`, `onCheckedChange`, `name`, and `inputRef`. Name inputs with a label or `aria-label`. Both controls support forms, RTL, `tint`, and reduced motion.
+Switches accept Base UI switch props, including `checked`, `defaultChecked`, `onCheckedChange`, `name`, `inputRef`, `readOnly`, and `disabled`. A disabled switch is dimmed, ignores pointer, drag and keyboard input, leaves the tab order, and is announced as disabled.
+
+A switch is 54 × 24 pixels by default. To resize it, set only its own `width` and `height` (with a class, inline style, or atomic CSS): the thumb fills the height inside the 2px padding at a 32:20 ratio and travels the width that remains, in either text direction. A macOS-sized switch is `width: 44px; height: 20px`, with a 25.6 × 16 thumb. Name inputs with a label or `aria-label`. Both controls support forms, RTL, `tint`, and reduced motion.
 
 ## Color picker
 

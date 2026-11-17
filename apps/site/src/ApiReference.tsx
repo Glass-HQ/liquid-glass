@@ -180,6 +180,7 @@ const parts: Record<ExampleKind, readonly Part[]> = {
           "Input ref, accessible value text and input handlers.",
         ],
         ["orientation", '"horizontal" | "vertical"', "Default: horizontal. Supports RTL."],
+        ["disabled", "boolean", "Dim the slider and block changes."],
         ["name / form", "Base UI props", "Form integration."],
       ],
     },
@@ -192,6 +193,7 @@ const parts: Record<ExampleKind, readonly Part[]> = {
         ["checked / defaultChecked", "boolean", "Controlled or initial state."],
         ["onCheckedChange", "(checked, eventDetails) => void", "Called when the state changes."],
         ["readOnly / required", "boolean", "Interaction and validation."],
+        ["disabled", "boolean", "Dim the switch, block changes and remove it from the tab order."],
         [
           "name / value / uncheckedValue / form",
           "string",
@@ -388,11 +390,11 @@ const motionFor: Partial<Record<ExampleKind, readonly Row[]>> = {
   menu: motionRows.menu,
   slider: [
     ["interactive", "boolean", "Lift the thumb into glass under a press. Default: true."],
-    motionRows.control[1]!,
+    motionRows.control[1],
   ],
   switch: [
     ["interactive", "boolean", "Lift the thumb into glass under a press. Default: true."],
-    motionRows.control[1]!,
+    motionRows.control[1],
   ],
 };
 function ReferencePart({ name, description, rows }: Part) {

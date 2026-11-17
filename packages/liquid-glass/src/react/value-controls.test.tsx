@@ -57,6 +57,17 @@ test("switch preserves controlled checked state and form fields", () => {
   expect(off).toContain('aria-checked="false"');
 });
 
+test("disabled switch and slider are announced, dimmed and leave the tab order", () => {
+  const off = render(<GlassSwitch disabled name="sync" aria-label="Sync" />);
+  expect(off).toContain('aria-disabled="true"');
+  expect(off).toContain('tabindex="-1"');
+  expect(off).toContain("data-disabled");
+  expect(off).toMatch(/<input[^>]*disabled=""/);
+  const slider = render(<GlassSlider disabled aria-label="Gain" defaultValue={10} />);
+  expect(slider).toContain("data-disabled");
+  expect(slider).toMatch(/<input[^>]*disabled=""/);
+});
+
 test("resting value controls have solid faces without registered glass surfaces", () => {
   const html = render(
     <>

@@ -12,7 +12,7 @@ import type { MaterialOptions } from "../core/materials.js";
 
 export interface GlassSliderProps
   extends
-    Omit<Slider.Root.Props<number>, "className" | "style" | "children" | "disabled">,
+    Omit<Slider.Root.Props<number>, "className" | "style" | "children">,
     MaterialOptions,
     ControlMotionOptions {
   className?: string;
@@ -89,7 +89,8 @@ export function GlassSlider({
       <Slider.Control
         className="lg-slider-control"
         onPointerDownCapture={(event) => {
-          if (!event.defaultPrevented && event.button === 0) setSliderPressed(true);
+          if (!event.defaultPrevented && !props.disabled && event.button === 0)
+            setSliderPressed(true);
         }}
         onPointerUp={() => setSliderPressed(false)}
         onPointerCancel={() => setSliderPressed(false)}
@@ -128,7 +129,7 @@ export interface GlassSwitchProps
   extends
     Omit<
       ComponentPropsWithRef<typeof Switch.Root>,
-      "className" | "style" | "children" | "render" | "nativeButton" | "disabled"
+      "className" | "style" | "children" | "render" | "nativeButton"
     >,
     MaterialOptions,
     ControlMotionOptions {
@@ -164,6 +165,8 @@ export function GlassSwitch({
     moved: boolean;
   } | null>(null);
   const suppressClick = useRef(false);
+  // A disabled switch, like a read-only one, ignores drags and key presses.
+  const locked = props.readOnly || props.disabled;
   return (
     <Switch.Root
       {...props}
@@ -188,7 +191,7 @@ export function GlassSwitch({
           }
           onPointerDown={(event) => {
             rootProps.onPointerDown?.(event);
-            if (event.defaultPrevented || props.readOnly || event.button !== 0) return;
+            if (event.defaultPrevented || locked || event.button !== 0) return;
             suppressClick.current = false;
             const rtl = getComputedStyle(event.currentTarget).direction === "rtl";
             const start = state.checked ? 1 : 0;
@@ -261,11 +264,7 @@ export function GlassSwitch({
           onKeyDown={(event) => {
             rootProps.onKeyDown?.(event);
             suppressClick.current = false;
-            if (
-              !event.defaultPrevented &&
-              !props.readOnly &&
-              (event.key === " " || event.key === "Enter")
-            )
+            if (!event.defaultPrevented && !locked && (event.key === " " || event.key === "Enter"))
               setPressed(true);
           }}
           onKeyUp={(event) => {
