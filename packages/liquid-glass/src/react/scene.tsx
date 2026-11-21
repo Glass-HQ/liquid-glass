@@ -9,10 +9,19 @@ import {
 } from "react";
 import type { ComponentPropsWithRef, HTMLAttributes, Ref } from "react";
 import { useRender } from "@base-ui/react/use-render";
-import { webkit } from "../dom/filter-budget.js";
-import { createGlassScene } from "../dom/index.js";
+import { webkit } from "../dom/engine.js";
 import type { GlassSceneController, GlassSceneOptions, GlassMotion } from "../dom/index.js";
 import type { MaterialOptions } from "../core/materials.js";
+
+/**
+ * The glass engine (filters, maps, motion) loads on its own, after the page that holds a scene:
+ * nothing of the page's first screen waits for it, and a page whose scenes never mount never
+ * downloads it. A scene starts loading it as it mounts, long before a menu or dialog opens; its
+ * surfaces register as soon as it arrives, as they do whenever a scene's controller changes.
+ */
+let engine: Promise<typeof import("../dom/index.js")> | undefined;
+const loadEngine = () => (engine ??= import("../dom/index.js"));
+
 interface SceneContextValue {
   controller: GlassSceneController;
   root: HTMLElement | null;
@@ -114,17 +123,24 @@ export function GlassScene({
   const attach = useCallback(
     (root: HTMLDivElement | null) => {
       if (!root) return;
-      const controller = createGlassScene(root, {
-        maxSurfaces: capacity,
-        onDiagnostic: (d) => diagnostic.current?.(d),
+      // Popups portal into the scene's root from the start; glass joins them once it loads.
+      setScene((previous) => ({ ...previous, root, maxSurfaces: capacity }));
+      let controller: GlassSceneController | undefined;
+      let detached = false;
+      void loadEngine().then(({ createGlassScene }) => {
+        if (detached) return;
+        const created = createGlassScene(root, {
+          maxSurfaces: capacity,
+          onDiagnostic: (d) => diagnostic.current?.(d),
+        });
+        controller = created;
+        setScene((previous) => ({ ...previous, controller: created }));
       });
-      setScene((previous) => ({
-        ...previous,
-        controller,
-        root,
-        maxSurfaces: capacity,
-      }));
-      return () => controller.dispose();
+      return () => {
+        detached = true;
+        controller?.dispose();
+        setScene((previous) => ({ ...previous, controller: inertController, root: null }));
+      };
     },
     [capacity],
   );

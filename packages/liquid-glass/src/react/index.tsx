@@ -53,7 +53,9 @@ export {
 export type { GlassMenuContentProps } from "./menu.js";
 export { GlassProgressiveBlur, GlassScrollEdges } from "./progressive.js";
 export type { GlassProgressiveBlurProps, GlassScrollEdgesProps } from "./progressive.js";
-export { GlassSlider, GlassSwitch } from "./value-controls.js";
+export { GlassSlider } from "./slider.js";
+export { GlassSwitch } from "./switch.js";
 export { GlassColorPicker } from "./color-picker.js";
 export type { GlassColorPickerProps } from "./color-picker.js";
-export type { GlassSliderProps, GlassSwitchProps } from "./value-controls.js";
+export type { GlassSliderProps } from "./slider.js";
+export type { GlassSwitchProps } from "./switch.js";

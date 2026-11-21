@@ -1,8 +1,9 @@
 // Bundles what an app ships for typical imports of the built package and checks
 // each against its budget. "Initial" is everything loaded with the entry. Code
-// split behind a dynamic import, such as the GPU map renderer or an engine's own
-// path, is budgeted per module: what loading it downloads beyond the initial
-// code. Engine-specific modules never load together, so they are not summed.
+// split behind a dynamic import, such as the engine, the GPU map renderer or an
+// engine's own path, is budgeted per module: what loading it downloads beyond
+// what is loaded when it is asked for (the entry, and the code that imports it).
+// Engine-specific modules never load together, so they are not summed.
 //
 //   node scripts/check-size.mjs            check budgets
 //   node scripts/check-size.mjs --json     print measurements as JSON
@@ -57,7 +58,8 @@ async function measure(name, source) {
     });
     const files = new Map(result.outputFiles.map((f) => [f.path, f.contents]));
     const outputs = result.metafile.outputs;
-    const entryOut = Object.keys(outputs).find((k) => outputs[k].entryPoint);
+    // The scenario's own entry; chunks split behind a dynamic import have entry points too.
+    const entryOut = Object.keys(outputs).find((k) => outputs[k].entryPoint?.endsWith("entry.js"));
     const initial = new Set();
     const visit = (key) => {
       if (initial.has(key)) return;
@@ -74,19 +76,41 @@ async function measure(name, source) {
     const all = Object.keys(outputs).filter((k) => k.endsWith(".js"));
     const gz = (b) => gzipSync(b, { level: 9 }).length,
       br = (b) => brotliCompressSync(b).length;
-    const lazy = {};
-    for (const key of all) {
-      const entryPoint = outputs[key].entryPoint;
-      if (initial.has(key) || !entryPoint) continue;
-      const loaded = new Set();
+    // What loading a chunk brings with it, beyond what is already loaded.
+    const closure = (key, loaded) => {
+      const found = new Set();
       const load = (k) => {
-        if (loaded.has(k) || initial.has(k)) return;
-        loaded.add(k);
+        if (found.has(k) || loaded.has(k)) return;
+        found.add(k);
         for (const i of outputs[k].imports)
           if (i.kind === "import-statement" && outputs[i.path]) load(i.path);
       };
       load(key);
-      lazy[entryPoint.replace(/^(?:.*\/)?dist\//, "").replace(/\.js$/, "")] = sum([...loaded], gz);
+      return found;
+    };
+    // A chunk split behind a dynamic import loads once the code that imports it has: the
+    // engine after the entry, the GPU renderer after the engine. Its cost is what it adds then.
+    const importer = new Map();
+    for (const key of all)
+      for (const i of outputs[key].imports)
+        if (i.kind === "dynamic-import" && outputs[i.path] && !importer.has(i.path))
+          importer.set(i.path, key);
+    const present = (key, seen = new Set()) => {
+      const from = importer.get(key);
+      if (from === undefined || initial.has(from) || seen.has(from)) return new Set(initial);
+      seen.add(from);
+      const before = present(from, seen);
+      for (const k of closure(from, before)) before.add(k);
+      return before;
+    };
+    const lazy = {};
+    for (const key of all) {
+      const entryPoint = outputs[key].entryPoint;
+      if (initial.has(key) || !entryPoint) continue;
+      lazy[entryPoint.replace(/^(?:.*\/)?dist\//, "").replace(/\.js$/, "")] = sum(
+        [...closure(key, present(key))],
+        gz,
+      );
     }
     return { name, initialGzip: sum([...initial], gz), initialBrotli: sum([...initial], br), lazy };
   } finally {

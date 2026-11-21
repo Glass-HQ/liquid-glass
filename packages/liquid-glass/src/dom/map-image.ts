@@ -93,23 +93,30 @@ export function nineMapImage(
   y: number,
   width: number,
   height: number,
+  /** CSS pixels per device pixel; tile edges land on device pixels. */
+  pixel = 1,
 ): string {
   const nine = maps.nine;
   if (!nine) return mapImage(maps, plane, result, x, y, width, height);
   touchMaps(maps);
   const tiles = nine.planes[plane];
-  const cx = Math.min(nine.x, width / 2),
-    cy = Math.min(nine.y, height / 2);
-  const columns = [
-    [x, cx],
-    [x + cx, width - 2 * cx],
-    [x + width - cx, cx],
-  ];
-  const rows = [
-    [y, cy],
-    [y + cy, height - 2 * cy],
-    [y + height - cy, cy],
-  ];
+  // Every tile edge lies on a device pixel, so neighbouring tiles meet without
+  // sharing a partly covered pixel, and one merge joins them: each tile covers
+  // whole pixels, and no seam shows. The far corners move by under half a
+  // device pixel to get there.
+  const snap = (value: number) => Math.round(value / pixel) * pixel;
+  const span = (start: number, length: number, corner: number) => {
+    const a = snap(start),
+      end = snap(start + length),
+      c = Math.min(snap(corner), snap((end - a) / 2));
+    return [
+      [a, c],
+      [a + c, end - a - 2 * c],
+      [end - c, c],
+    ];
+  };
+  const columns = span(x, width, nine.x);
+  const rows = span(y, height, nine.y);
   const names: string[] = [];
   let markup = "";
   rows.forEach(([top, h], row) =>
@@ -120,16 +127,5 @@ export function nineMapImage(
       markup += `<feImage data-map="${mapToken(tiles[row * 3 + column])}" x="${left}" y="${top}" width="${w}" height="${h}" preserveAspectRatio="none" result="${name}"/>`;
     }),
   );
-  // Tiles meet along fractional edges, where each covers part of a pixel. Laid
-  // over each other, two halves make three quarters and the seam shows as a
-  // line; added, they make the whole pixel.
-  const region = `x="${x}" y="${y}" width="${width}" height="${height}"`;
-  let sum = names[0]!;
-  names.slice(1).forEach((name, index) => {
-    const next = index === names.length - 2 ? result : `${result}+${index}`;
-    markup += `<feComposite in="${sum}" in2="${name}" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" ${region} result="${next}"/>`;
-    sum = next;
-  });
-  if (names.length === 1) markup += `<feOffset in="${sum}" ${region} result="${result}"/>`;
-  return markup;
+  return `${markup}<feMerge result="${result}" x="${x}" y="${y}" width="${width}" height="${height}">${names.map((name) => `<feMergeNode in="${name}"/>`).join("")}</feMerge>`;
 }

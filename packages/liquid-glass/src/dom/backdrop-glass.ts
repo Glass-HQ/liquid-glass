@@ -5,7 +5,6 @@ import type { MaterialMaps } from "./maps.js";
 import {
   backdropMarkup,
   fillMarkup,
-  frostMarkup,
   lightMarkup,
   outlineMarkup,
   overlayTintMarkup,
@@ -58,31 +57,36 @@ export function backdropGlassFilter(glass: BackdropGlass): string {
   // so they give the same face. The refraction and the maps come last, each
   // map read once or twice.
   for (const plane of ["field", "rim", "light"] as const)
-    parts.push(nineMapImage(maps, plane, `${p}${plane}`, ...box));
-  // The frost reads the backdrop itself, whose edge Chromium repeats past the
-  // box; the backdrop color goes beneath it after, so it does not fade there.
-  const frost = frostMarkup(p, "SourceGraphic", o, size);
-  parts.push(frost.markup);
-  let source = "SourceGraphic",
-    frosted = frost.result;
+    parts.push(nineMapImage(maps, plane, `${p}${plane}`, ...box, pixel));
+  // The frost is Chromium's own blur, run before this filter (see
+  // `backdropGlassFrost`): it reads the backdrop the same way, and costs a
+  // fraction of an SVG blur, which every frame the glass redraws runs again.
+  // So the filter's source is already frosted. The backdrop color goes
+  // beneath it, so the frost does not fade where the content is transparent.
+  let frosted = "SourceGraphic";
   if (glass.backed) {
-    parts.push(backdropMarkup(`${p}backdrop`, { x: 0, y: 0, width, height }));
-    const under = (input: string, result: string) =>
-      `<feMerge result="${result}"><feMergeNode in="${p}backdrop"/><feMergeNode in="${input}"/></feMerge>`;
-    parts.push(under("SourceGraphic", `${p}crop`));
-    source = `${p}crop`;
-    if (frost.result !== "SourceGraphic") {
-      parts.push(under(frost.result, `${p}frosted`));
-      frosted = `${p}frosted`;
-    } else frosted = source;
+    parts.push(
+      backdropMarkup(`${p}backdrop`, { x: 0, y: 0, width, height }),
+      `<feMerge result="${p}frosted"><feMergeNode in="${p}backdrop"/><feMergeNode in="SourceGraphic"/></feMerge>`,
+    );
+    frosted = `${p}frosted`;
   }
-  // The softer copy blends with the frost; as soft as the frost, it is the
-  // frost, and the blend changes nothing.
+  // The softer copy blends with the frost. As soft as the frost, it is the
+  // frost, and the blend changes nothing; softer, it blurs the frost by what
+  // the frost leaves out (Gaussians add in quadrature).
   const recipe = glassRecipe(o, size);
+  const blur = backdropGlassFrost(o, size);
   const filled =
-    Math.abs(recipe.fill - recipe.blur) < 0.01
+    recipe.fill <= blur + 0.01
       ? { markup: "", result: frosted }
-      : fillMarkup(p, frosted, source, o, size, 1, frosted === source ? undefined : frosted);
+      : fillMarkup(
+          p,
+          frosted,
+          frosted,
+          o,
+          size,
+          Math.sqrt(recipe.fill ** 2 - blur ** 2) / recipe.fill,
+        );
   parts.push(filled.markup, toneMarkup(p, o, size, filled.result));
   let color = `${p}color`;
   let light = `${p}light`;
@@ -112,6 +116,13 @@ export function backdropGlassFilter(glass: BackdropGlass): string {
           : `<${name}${attributes} x="0" y="0" width="${width}" height="${height}"${close}>`,
     );
   return `<filter id="${glass.id}" x="0" y="0" width="1" height="1" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">${markup}</filter>`;
+}
+
+/** The frost Chromium's own `blur()` draws before the glass filter, in CSS
+ * pixels: the material's, rounded to a hundredth; 0 for none. */
+export function backdropGlassFrost(o: MaterialOptions, size: number): number {
+  const blur = Math.round(glassRecipe(o, size).blur * 100) / 100;
+  return blur >= 0.05 ? blur : 0;
 }
 
 /** The shadow glass casts, as a CSS box shadow: a Gaussian of `blur` CSS

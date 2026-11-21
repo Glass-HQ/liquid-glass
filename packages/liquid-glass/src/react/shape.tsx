@@ -1,14 +1,33 @@
 import { useLayoutEffect, useRef } from "react";
 import type { HTMLAttributes, Ref, RefObject } from "react";
 import { useRender } from "@base-ui/react/use-render";
-import { observeFixedShape } from "../dom/fixed-shape.js";
-import type { GlassRadius } from "../core/shape.js";
-import {
-  observeConcentricShape,
-  observeCornerPlacement,
-  shapeContainerAttributes,
-} from "../dom/shape-layout.js";
+import type { GlassRadius } from "../core/corner-options.js";
+import { shapeContainerAttributes } from "../dom/shape-attributes.js";
 import type { ConcentricOptions, CornerOptions } from "../dom/shape-layout.js";
+
+type Geometry = typeof import("../dom/shape-geometry.js");
+/** Shape geometry loads with the first shape on screen, not with the components. */
+let geometry: Promise<Geometry> | undefined;
+let loaded: Geometry | undefined;
+const loadGeometry = () =>
+  (geometry ??= import("../dom/shape-geometry.js").then((module) => (loaded = module)));
+
+/**
+ * Runs `observe` with shape geometry, at once when it's loaded and as soon as it loads
+ * otherwise; returns what stops it. Until then the element has no clip and stays hidden.
+ */
+function withGeometry(observe: (geometry: Geometry) => () => void): () => void {
+  if (loaded) return observe(loaded);
+  let stop: (() => void) | undefined;
+  let stopped = false;
+  void loadGeometry().then((module) => {
+    if (!stopped) stop = observe(module);
+  });
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
 export interface GlassShapeProps extends HTMLAttributes<HTMLElement> {
   radius?: GlassRadius;
   render?: useRender.RenderProp;
@@ -43,7 +62,8 @@ function FixedShape({ radius = 8, render, ref, style, ...props }: GlassShapeProp
   const element = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     if (!element.current) return;
-    return observeFixedShape(element.current, radius);
+    const target = element.current;
+    return withGeometry(({ observeFixedShape }) => observeFixedShape(target, radius));
   }, [radius]);
   return useRender({
     render,
@@ -70,10 +90,13 @@ function ConcentricShape({
   const options = JSON.stringify({ ...config, radius: radius ?? config.radius ?? 8 });
   useLayoutEffect(() => {
     if (!element.current) return;
-    return observeConcentricShape(
-      element.current,
-      JSON.parse(options),
-      container ? () => container.current : undefined,
+    const target = element.current;
+    return withGeometry(({ observeConcentricShape }) =>
+      observeConcentricShape(
+        target,
+        JSON.parse(options),
+        container ? () => container.current : undefined,
+      ),
     );
   }, [options, container]);
   return useRender({
@@ -123,10 +146,13 @@ export function GlassCorner({
   useLayoutEffect(() => {
     if (!element.current) return;
     if (!enabled) return;
-    return observeCornerPlacement(
-      element.current,
-      { corner, gap, radius },
-      container ? () => container.current : undefined,
+    const target = element.current;
+    return withGeometry(({ observeCornerPlacement }) =>
+      observeCornerPlacement(
+        target,
+        { corner, gap, radius },
+        container ? () => container.current : undefined,
+      ),
     );
   }, [corner, gap, radius, container, enabled]);
   return useRender({

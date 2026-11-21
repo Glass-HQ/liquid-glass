@@ -1,4 +1,6 @@
 import { getLayoutSize } from "./layout-size.js";
+import { shapeContainerAttributes } from "./shape-attributes.js";
+export { shapeContainerAttributes };
 import {
   concentricOutline,
   contentInsets,
@@ -62,10 +64,6 @@ function schedule(job: Job, ...observed: Element[]) {
 export function wakeShapeLayout(element?: Element) {
   if (element) ticker?.observe(element);
   ticker?.wake();
-}
-export function shapeContainerAttributes(radius: GlassRadius) {
-  cornerOptions(radius);
-  return { "data-lg-container": "", "data-lg-container-radius": String(radius) };
 }
 /** Declare geometry for DOM consumers without clipping or changing layout. */
 export function registerShapeContainer(element: HTMLElement, radius: GlassRadius) {

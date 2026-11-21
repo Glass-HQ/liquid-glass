@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, HTMLAttributes, Ref } from "react";
 import { useRender } from "@base-ui/react/use-render";
-import { shapeContainerAttributes } from "../dom/shape-layout.js";
+import { shapeContainerAttributes } from "../dom/shape-attributes.js";
 import type { GlassMotion } from "../dom/index.js";
 import type { MaterialOptions } from "../core/materials.js";
 import { useScene } from "./scene.js";

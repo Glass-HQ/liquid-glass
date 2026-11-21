@@ -37,7 +37,7 @@ import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds
 import { sharedBackdropMaterials } from "./shared-backdrop.js";
 import { gecko } from "./filter-stages.js";
 import { chromium } from "./engine.js";
-import { backdropGlassFilter, backdropGlassShadow } from "./backdrop-glass.js";
+import { backdropGlassFilter, backdropGlassFrost, backdropGlassShadow } from "./backdrop-glass.js";
 import { hexTint, resolveTint } from "./tint-color.js";
 import type { LayerFrame, LayerLens, LensLayers } from "./lens-layers.js";
 import { composeSparseLayers } from "./compose-layers.js";
@@ -1198,7 +1198,10 @@ export function createGlassScene(
         !(l.pending && !warmer.has(l.maps)),
     );
     const filters: string[] = [];
-    const planned = new Map<Lens, { filter: string; shadow: string; host: boolean }>();
+    const planned = new Map<
+      Lens,
+      { filter: string; frost: number; shadow: string; host: boolean }
+    >();
     const pixel = 1 / (devicePixelRatio || 1);
     for (const l of drawn) {
       const parents = ordered.filter(
@@ -1220,6 +1223,7 @@ export function createGlassScene(
       );
       planned.set(l, {
         filter,
+        frost: backdropGlassFrost(l.options, sizeOf(l)),
         shadow: backdropGlassShadow(l.options, sizeOf(l), parents.length > 0),
         // A surface holding other glass draws its glass on a layer among its children, which
         // the surface's own fade would cut off from what is behind it: while it fades it draws
@@ -1234,7 +1238,7 @@ export function createGlassScene(
       const plan = planned.get(l);
       writeBackdrop(
         l,
-        plan ? `url("#${liveId(plan.filter)}")` : "",
+        plan ? `${plan.frost ? `blur(${plan.frost}px) ` : ""}url("#${liveId(plan.filter)}")` : "",
         plan?.shadow ?? "",
         plan?.host ?? false,
       );
@@ -1804,6 +1808,11 @@ export function createGlassScene(
           clearTimeout(lens.pending.timer);
           lens.pending = undefined;
           delete element.dataset.glassPending;
+          // A popup that stopped waiting draws its glass as soon as it has maps, decoded or
+          // not. Revealed by its timer, with maps still decoding, nothing else would rebuild
+          // the scene, and it would stay without glass until something else changed.
+          dirty = true;
+          ticker.wake();
         };
         lens.pending = { reveal, timer: setTimeout(reveal, 250) };
       }

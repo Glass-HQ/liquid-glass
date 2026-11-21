@@ -1,20 +1,11 @@
 import { cornerPath } from "./corner-path.js";
 import type { CornerOptions } from "./corner-path.js";
 
-/** A fixed continuous corner, a continuous capsule, or a circular cap. */
-export type GlassRadius = number | "capsule" | "circle";
-export function cornerOptions(radius: GlassRadius): CornerOptions {
-  if (typeof radius !== "number" && radius !== "capsule" && radius !== "circle")
-    throw new RangeError("Unknown glass radius.");
-  if (typeof radius === "number" && (!Number.isFinite(radius) || radius < 0))
-    throw new RangeError("Corner radius must be finite and nonnegative.");
-  return {
-    radius: typeof radius === "number" ? radius : Number.MAX_SAFE_INTEGER,
-    smoothing: 0.8125,
-    preserveSmoothing: true,
-    curve: radius === "circle" ? "arc" : "squircle",
-  };
-}
+export { cornerOptions } from "./corner-options.js";
+export type { GlassRadius } from "./corner-options.js";
+import { cornerOptions } from "./corner-options.js";
+import type { GlassRadius } from "./corner-options.js";
+
 /** Path generation is not cheap, and a page repeats the same few
  * shapes many times over, so results are memoized by exact geometry. */
 const memo = new Map<string, string>();

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { backdropGlassFilter, backdropGlassShadow } from "./backdrop-glass.js";
+import { backdropGlassFilter, backdropGlassFrost, backdropGlassShadow } from "./backdrop-glass.js";
 import { encodeMapPixels } from "./map-encoding.js";
 import { nineMapImage } from "./map-image.js";
 import type { MaterialMaps } from "./maps.js";
@@ -24,14 +24,14 @@ const maps = (nine = true): MaterialMaps => ({
       }
     : {}),
 });
-const glass = (options = {}, nine = true) =>
+const glass = (options = {}, size = 240, nine = true) =>
   backdropGlassFilter({
     id: "f",
     maps: maps(nine),
     options: { material: "regular", appearance: "dark", floating: true, ...options },
     width: 240,
     height: 300,
-    size: 240,
+    size,
     refraction: 60,
     backed: true,
     pixel: 0.5,
@@ -91,12 +91,24 @@ test("backdrop glass draws the shape a device pixel inside its box", () => {
 });
 
 test("backdrop glass without cut maps places whole planes", () => {
-  expect(glass({}, false).match(/<feImage /g)).toHaveLength(3);
+  expect(glass({}, 240, false).match(/<feImage /g)).toHaveLength(3);
 });
 
-test("frost as soft as the fill skips the blend that would change nothing", () => {
+test("the frost is Chromium's own blur; the filter blurs only what the softer copy adds", () => {
+  // A panel's softer copy is as soft as its frost: no SVG blur at all, no blend.
+  expect(glass()).not.toContain("feGaussianBlur");
   expect(glass()).not.toContain("feBlend");
-  expect(glass({ floating: false, appearance: "light" })).toContain("feGaussianBlur");
+  expect(backdropGlassFrost({ material: "regular", appearance: "dark", floating: true }, 240)).toBe(
+    7.5,
+  );
+  // A control's softer copy (6) is wider than its frost (0.8): the filter blurs the frosted
+  // backdrop by the rest, as Gaussians add in quadrature.
+  const control = glass({ floating: false, appearance: "light" }, 28);
+  expect(backdropGlassFrost({ material: "regular", appearance: "light" }, 28)).toBe(0.8);
+  const deviation = Number(/feGaussianBlur[^>]*stdDeviation="([\d.]+)"/.exec(control)?.[1]);
+  expect(deviation).toBeCloseTo(Math.sqrt(6 ** 2 - 0.8 ** 2), 2);
+  // Clear has no frost at rest.
+  expect(backdropGlassFrost({ material: "clear" }, 240)).toBe(0);
 });
 
 test("the box shadow follows the material and nesting", () => {
@@ -125,10 +137,11 @@ test("nine tiles place corners at their size and stretch the strips", () => {
     [40, 60, 120, 40],
     [160, 60, 40, 40],
   ]);
-  // Tiles are added, so the pixel two fractional edges share is whole.
-  expect(markup).not.toContain("feMerge");
-  expect(markup.match(/operator="arithmetic" k1="0" k2="1" k3="1"/g)).toHaveLength(8);
-  expect(markup).toContain('result="r"/>');
+  // One merge joins them; their edges lie on device pixels, so none shares a partly covered one.
+  expect(markup.match(/<feMerge /g)).toHaveLength(1);
+  const fractional = nineMapImage(maps(), "field", "r", -1.5, 0, 200.3, 100, 0.5);
+  for (const [, value] of fractional.matchAll(/<feImage [^>]*?\sx="([-\d.]+)"/g))
+    expect(Math.abs((Number(value) * 2) % 1)).toBe(0);
   // A box narrower than two corners squeezes them and drops the middle.
   expect(nineMapImage(maps(), "field", "r", 0, 0, 60, 100).match(/<feImage /g)).toHaveLength(6);
 });

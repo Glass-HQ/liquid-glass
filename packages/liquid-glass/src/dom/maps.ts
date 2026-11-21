@@ -49,11 +49,20 @@ function nineCut(g: MapGeometry): NineCut | undefined {
   // shades up to 20 points in, and the rim bends up to its depth.
   const reach = Math.max(1.8125 * radius, 24, refractionFor(g.material ?? "regular", short).height);
   const tile = Math.ceil((reach + 3) * scale);
+  const columns = Math.ceil((g.width + 4) * scale),
+    rows = Math.ceil((g.height + 4) * scale);
+  // Each image a filter reads costs it on every frame it draws, however small, as does each
+  // pass that joins tiles. Cutting pays only where it spares many pixels: a panel's maps, not a
+  // button's, which draws from one image per plane.
+  if (columns * rows < cutArea) return;
   return {
-    x: Math.min(tile, Math.ceil(Math.ceil((g.width + 4) * scale) / 2)),
-    y: Math.min(tile, Math.ceil(Math.ceil((g.height + 4) * scale) / 2)),
+    x: Math.min(tile, Math.ceil(columns / 2)),
+    y: Math.min(tile, Math.ceil(rows / 2)),
   };
 }
+/** Map pixels from which nine tiles cost a filter less than one whole image: a 160 by 160 point
+ * panel at 2x. */
+const cutArea = 320 * 320;
 /** Stored maps are only valid for the shader and encoder that produced them. */
 const version = (() => {
   let hash = 2166136261;
@@ -61,7 +70,7 @@ const version = (() => {
   const depths = (["clear", "regular", "lens"] as const)
     .map((material) => [16, 64, 160].map((size) => refractionFor(material, size).height).join())
     .join(";");
-  for (const char of `${materialShader.wgsl}|png-sub-5|${depths}`)
+  for (const char of `${materialShader.wgsl}|png-sub-6|${depths}`)
     hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
   return (hash >>> 0).toString(36);
 })();
