@@ -1,4 +1,5 @@
 import { encodeMapPixels } from "./map-encoding.js";
+import type { NineCut } from "./map-encoding.js";
 
 let worker: Worker | undefined;
 let unavailable = false;
@@ -42,7 +43,7 @@ async function encoder(): Promise<Worker | undefined> {
     }));
 }
 
-/** Encode map planes (and capsule slices) to `data:` URLs on a worker, so the
+/** Encode map planes (and capsule slices and nine-slice tiles) to `data:` URLs on a worker, so the
  * main thread never compresses images. Without workers (including under a
  * restrictive CSP) the identical encoder runs locally. The pixels are copied
  * for the worker, so they remain available for that fallback. */
@@ -51,6 +52,7 @@ export async function encodeMaterialPixels(
   width: number,
   height: number,
   cap?: number,
+  nine?: NineCut,
 ): Promise<string[][]> {
   const target = await encoder();
   if (target) {
@@ -59,7 +61,7 @@ export async function encodeMaterialPixels(
         const id = ++sequence;
         pending.set(id, { resolve, reject });
         try {
-          target.postMessage({ id, pixels, width, height, cap });
+          target.postMessage({ id, pixels, width, height, cap, nine });
         } catch (error) {
           pending.delete(id);
           reject(error);
@@ -69,5 +71,5 @@ export async function encodeMaterialPixels(
       /* Preserve the same pixels when a worker cannot run. */
     }
   }
-  return encodeMapPixels(pixels, width, height, cap);
+  return encodeMapPixels(pixels, width, height, cap, nine);
 }

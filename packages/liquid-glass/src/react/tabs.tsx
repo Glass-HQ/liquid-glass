@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CSSProperties, ComponentPropsWithRef, ReactNode, Ref } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { attachSelectionLens, resolveMotion } from "../dom/index.js";
-import type { GlassMotion } from "../dom/index.js";
+import type { GlassMotion, SelectionLens } from "../dom/index.js";
 import type { MaterialOptions } from "../core/materials.js";
 import { useMergedRef } from "./merged-ref.js";
 import { GlassShape } from "./shape.js";
@@ -28,7 +29,9 @@ export function GlassTabsList({
   refraction,
   tint,
   specular,
-  interactive = true,
+  frost,
+  // macOS's tab bar holds still under a press; its selection lifts instead.
+  interactive = false,
   motion,
   size = "default",
   className = "",
@@ -51,6 +54,7 @@ export function GlassTabsList({
         refraction={refraction}
         tint={tint}
         specular={specular}
+        frost={frost}
         interactive={interactive}
         motion={motion}
         style={style}
@@ -64,12 +68,15 @@ export function GlassTabsList({
   );
 }
 export function GlassTabsIndicator({
-  material = "clear",
+  // At rest the chosen tab sits on a plate of glass; a press lifts a Lens out
+  // of it that magnifies the labels beneath, as macOS 27's tabs do.
+  material = "regular",
   appearance,
   radius = "capsule",
   refraction,
   tint,
   specular,
+  frost,
   motion,
   className = "",
   style,
@@ -79,30 +86,68 @@ export function GlassTabsIndicator({
   MaterialOptions &
   Pick<GlassMotionProps, "motion"> & { className?: string; style?: CSSProperties }) {
   const inherited = useContext(TabsMaterialContext);
-  const { controller } = useScene();
+  const { controller, root } = useScene();
   const level = useGlassMotion(motion ?? inherited.motion);
-  // The indicator is the tab bar's selection lens: it springs between tabs,
-  // lifts under a press, and can be dragged to choose a tab.
-  const lens = useCallback(
+  const [selection, setSelection] = useState<SelectionLens | null>(null);
+  // The lens is a glass surface only while a press shows it.
+  const [lifted, setLifted] = useState(false);
+  const plate = useCallback(
     (element: HTMLElement | null) => {
-      if (element)
-        return controller.addAnimator(attachSelectionLens(element, () => resolveMotion(level)));
+      if (!element) return;
+      const lens = attachSelectionLens(element, () => resolveMotion(level), setLifted);
+      setSelection(lens);
+      const remove = controller.addAnimator(lens);
+      return () => {
+        remove();
+        setSelection(null);
+      };
     },
     [controller, level],
   );
+  const lens = useCallback(
+    (element: HTMLElement | null) => {
+      selection?.setLens(element, root);
+      return () => selection?.setLens(null, null);
+    },
+    [selection, root],
+  );
+  const resolvedAppearance = appearance ?? inherited.appearance;
   return (
-    <GlassSurface
-      material={material}
-      appearance={appearance ?? inherited.appearance}
-      radius={radius}
-      refraction={refraction}
-      tint={tint}
-      specular={specular}
-      style={style}
-      ref={useMergedRef(lens, ref)}
-      className={`lg-tab-indicator ${className}`}
-      render={<Tabs.Indicator {...props} />}
-    />
+    <>
+      <GlassSurface
+        material={material}
+        appearance={resolvedAppearance}
+        radius={radius}
+        refraction={refraction}
+        tint={tint}
+        specular={specular}
+        frost={frost}
+        style={style}
+        ref={useMergedRef(plate, ref)}
+        className={`lg-tab-indicator ${className}`}
+        render={<Tabs.Indicator {...props} />}
+      />
+      {root && selection && lifted
+        ? createPortal(
+            <GlassSurface
+              material="lens"
+              // macOS bends a lifted lens by 0.155 of its height at the rim, about 6
+              // pixels on a tab: the labels beneath stay legible as it passes.
+              refraction={6}
+              // Colored fringes where it bends, as on a pressed switch: red and blue part
+              // from green at the rim.
+              aberration
+              appearance={resolvedAppearance}
+              radius={radius}
+              ref={lens}
+              className="lg-tab-lens"
+              aria-hidden="true"
+              render={<span />}
+            />,
+            root,
+          )
+        : null}
+    </>
   );
 }
 export function GlassTabsTrigger({
@@ -147,6 +192,7 @@ export function GlassTabs({
   refraction,
   tint,
   specular,
+  frost,
   interactive,
   motion,
   size,
@@ -167,6 +213,7 @@ export function GlassTabs({
         refraction={refraction}
         tint={tint}
         specular={specular}
+        frost={frost}
         interactive={interactive}
         motion={motion}
         size={size}

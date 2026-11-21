@@ -7,10 +7,11 @@ export interface SpringOptions {
 
 /** Named springs shared by every glass interaction, so motion reads as one material. */
 export const springs = {
-  /** The material catching a finger or pointer. */
-  press: { duration: 0.24, bounce: 0.2 },
-  /** Letting go: gel-like overshoot back to rest. */
-  release: { duration: 0.5, bounce: 0.42 },
+  /** The material catching a finger or pointer: grown in about 100ms with a
+   * slight overshoot, as macOS glass does. */
+  press: { duration: 0.16, bounce: 0.25 },
+  /** Letting go: back to rest in about 200ms, dipping just under it. */
+  release: { duration: 0.26, bounce: 0.25 },
   /** Light settling into and out of the material. */
   glow: { duration: 0.42, bounce: 0 },
   /** A selection flowing to a new layout. */

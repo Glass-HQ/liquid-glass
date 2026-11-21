@@ -114,7 +114,7 @@ export function patchFilters(
     if (filter) relinked.add(filter);
   }
   // One settling sequence per graph update, not one for every map image.
-  if (linked && chromium) settle(defs);
+  if (linked && chromium) settle(defs, [...relinked]);
   if (relinked.size && webkit)
     settleWebKit([...live.values()].filter((filter) => relinked.has(filter.element)));
   return (id) => ids.get(id) ?? id;
@@ -297,13 +297,16 @@ const settling = new WeakMap<Element, number>();
 /** Chromium does not repaint a filtered element when an feImage becomes
  * ready by itself. Re-evaluate with growing gaps until the prepared image
  * has reached the filter renderer, without restarting it every frame. */
-function settle(defs: Element) {
+function settle(defs: Element, filters: readonly Element[]) {
   const generation = (settling.get(defs) ?? 0) + 1;
   settling.set(defs, generation);
   for (const delay of [16, 100, 300, 700, 1500, 3000])
     setTimeout(() => {
       if (settling.get(defs) !== generation || !defs.isConnected) return;
-      const image = defs.querySelector("feImage");
-      image?.setAttribute("x", image.getAttribute("x")!);
+      // One image per filter whose images arrived repaints that filter.
+      for (const filter of filters) {
+        const image = filter.isConnected ? filter.querySelector("feImage") : null;
+        image?.setAttribute("x", image.getAttribute("x")!);
+      }
     }, delay);
 }

@@ -1,3 +1,4 @@
+import { Spring } from "../core/spring.js";
 import type { GlassMotion } from "./interaction.js";
 /** Motion options for native-style value controls. */
 export interface ControlMotionOptions {
@@ -64,15 +65,16 @@ const tapEnvelope = [
 ] as const;
 function sampleTap(seconds: number): number {
   for (let i = 1; i < tapEnvelope.length; i++) {
-    const [t, p] = tapEnvelope[i]!;
+    const [t, p] = tapEnvelope[i];
     if (seconds <= t) {
-      const [before, value] = tapEnvelope[i - 1]!;
+      const [before, value] = tapEnvelope[i - 1];
       return value + (p - value) * Math.max(0, (seconds - before) / (t - before));
     }
   }
   return 0;
 }
-// Invert x for cubic-bezier(.42, 0, .58, 1), the native 200ms interaction curve.
+// Invert x for cubic-bezier(.42, 0, .58, 1), the native lift curve: a thumb
+// grows into its lens, and shrinks back, over 210ms.
 function easeInOut(x: number): number {
   if (x <= 0) return 0;
   if (x >= 1) return 1;
@@ -107,9 +109,11 @@ export function attachNativeControlMotion(
     initialized = false,
     targetX = 0,
     appliedX = 0;
-  // The lifted lens stretches along its path in proportion to its speed.
+  // The lifted lens stretches along its path with its speed, up to 2.5%, and
+  // wobbles once the other way when it stops, as macOS's does.
   let lastX: number | undefined,
     speed = 0;
+  const stretch = new Spring(0, { duration: 0.3, bounce: 0.45 });
   let transition = { time: 0, from: 0, to: 0 };
   const full = () => motion === "full" && !preference.matches;
   function tick(now: number) {
@@ -132,33 +136,54 @@ export function attachNativeControlMotion(
     else
       progress =
         transition.from +
-        (transition.to - transition.from) * easeInOut(Math.min(1, (now - transition.time) / 200));
+        (transition.to - transition.from) * easeInOut(Math.min(1, (now - transition.time) / 210));
     element.style.setProperty("--lg-control-progress", String(progress));
     element.dataset.glassMotion = enabled ? "full" : motion === "none" ? "none" : "reduced";
     // Only switch side changes spring. A slider follows its numeric input directly.
     const bounds = element.getBoundingClientRect();
     // The center is unaffected by the stretch scale applied below.
-    const nextX = bounds.left + bounds.width / 2 - appliedX;
-    if (!initialized || !enabled || !isSwitch) {
-      position.value = nextX;
-      position.velocity = 0;
-      initialized = true;
+    // A switch's thumb springs along its own track: the spring follows the
+    // switch's position (0 off, 1 on, and every point between while dragged),
+    // never where the thumb is on screen, so a menu moving into place or a
+    // track resizing never animates it.
+    let nextX: number, visualX: number;
+    if (isSwitch) {
+      const track = element.parentElement;
+      const target = Number(track?.style.getPropertyValue("--lg-switch-position") || 0) || 0;
+      let travel = 0;
+      if (track) {
+        const style = view.getComputedStyle(track);
+        const content =
+          track.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        travel = (content - element.offsetWidth) * (style.direction === "rtl" ? -1 : 1);
+      }
+      if (!initialized || !enabled) {
+        position.value = target;
+        position.velocity = 0;
+        initialized = true;
+      }
+      if (Math.abs(target - targetX) > 0.0001) deadline = now + 800;
+      targetX = target;
+      if (enabled) advanceSwitchPosition(position, targetX, dt);
+      appliedX = (position.value - targetX) * travel;
+      element.style.translate = `${appliedX}px 0`;
+      nextX = position.value * travel;
+      visualX = nextX;
+    } else {
+      nextX = bounds.left + bounds.width / 2;
+      visualX = nextX;
     }
-    if (Math.abs(nextX - targetX) > 0.01) deadline = now + 800;
-    targetX = nextX;
-    if (enabled && isSwitch) advanceSwitchPosition(position, targetX, dt);
-    appliedX = position.value - targetX;
-    if (isSwitch) element.style.translate = `${appliedX}px 0`;
-    const visualX = isSwitch ? position.value : nextX;
     if (lastX !== undefined && dt > 0)
       speed += ((visualX - lastX) / dt - speed) * Math.min(1, dt * 18);
     lastX = visualX;
     if (!enabled) speed = 0;
-    const stretch = Math.min(0.28, Math.abs(speed) * 0.0007) * progress;
-    if (stretch > 1e-4)
-      element.style.scale = `${(1 + stretch).toFixed(4)} ${(1 / Math.sqrt(1 + stretch)).toFixed(4)}`;
+    stretch.target = Math.min(0.025, Math.abs(speed) * 0.0001) * progress;
+    stretch.step(dt);
+    const amount = stretch.value;
+    if (Math.abs(amount) > 1e-4)
+      element.style.scale = `${(1 + amount).toFixed(4)} ${(1 - 1.25 * amount).toFixed(4)}`;
     else element.style.removeProperty("scale");
-    if (Math.abs(speed) > 1) deadline = Math.max(deadline, now + 100);
+    if (Math.abs(speed) > 1 || !stretch.settled) deadline = Math.max(deadline, now + 100);
     if (now < deadline || Math.abs(position.velocity) > 0.01)
       raf = view.requestAnimationFrame(tick);
     else previous = 0;
@@ -175,7 +200,14 @@ export function attachNativeControlMotion(
     },
     active: () => raf !== 0,
   });
-  const observer = new MutationObserver(wake);
+  // A change of the switch's side is applied before the browser paints it:
+  // the observer runs after React commits, before the frame is drawn, so the
+  // thumb never shows on its new side before its spring starts.
+  const observer = new MutationObserver(() => {
+    if (raf) view.cancelAnimationFrame(raf);
+    raf = 0;
+    tick(view.performance.now());
+  });
   observer.observe(element, { attributes: true, attributeFilter: ["data-press-phase"] });
   if (element.parentElement)
     observer.observe(element.parentElement, {

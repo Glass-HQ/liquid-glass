@@ -1,13 +1,16 @@
-import { materials } from "../core/materials.js";
-import type { GlassAppearance, MaterialOptions } from "../core/materials.js";
+import { glassRecipe } from "../core/materials.js";
+import type { MaterialOptions } from "../core/materials.js";
 import type { FilterBounds } from "./filter-bounds.js";
 import { unionSamplingBounds } from "./sampling-bounds.js";
+import { backdropMarkup } from "./material-graph.js";
 
 interface BackdropConsumer<T> {
   key: T;
   /** Stable material-unit identity, independent of the other consumers. */
   id: string;
   options: MaterialOptions;
+  /** The shorter side of the glass, which sets its frost. */
+  size: number;
   bounds: FilterBounds;
   /** Additional glass layers sampled alongside SourceGraphic. */
   inputs: readonly unknown[];
@@ -17,44 +20,45 @@ interface BackdropMaterial {
   markup: string;
 }
 
-/** Regular glass reading the same unmodified backdrop can reuse its two
- * blurs and their mix. Refraction, tone, tint and coverage remain per lens. */
+/** Glass reading the same unmodified backdrop, frosted alike, can reuse its
+ * blur. Refraction, tone, tint and coverage remain per lens. With `backdrop`,
+ * the scene's backdrop color lies beneath the source, across only what the
+ * blur reads. */
 export function sharedBackdropMaterials<T>(
   consumers: readonly BackdropConsumer<T>[],
   soften: number,
+  backdrop = false,
 ): Map<T, BackdropMaterial> {
-  const groups = new Map<GlassAppearance, BackdropConsumer<T>[]>();
+  // Glass of the same material, appearance and frost frosts its backdrop alike.
+  const groups = new Map<string, BackdropConsumer<T>[]>();
   for (const consumer of consumers) {
-    if (consumer.options.material !== "regular" || consumer.inputs.length) continue;
-    const appearance = consumer.options.appearance ?? "light";
-    const group = groups.get(appearance) ?? [];
+    if (consumer.inputs.length) continue;
+    const o = consumer.options;
+    const key = `${o.material ?? "regular"}-${o.appearance ?? "light"}-${o.frost ?? 0}-${glassRecipe(o, consumer.size).blur}`;
+    const group = groups.get(key) ?? [];
     group.push(consumer);
-    groups.set(appearance, group);
+    groups.set(key, group);
   }
   const result = new Map<T, BackdropMaterial>();
   const region = (box: FilterBounds) =>
     `x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}"`;
-  for (const [appearance, group] of groups) {
-    const spec = materials.regular[appearance];
-    const frost = materials.regular.blur * soften,
-      fill = spec.fillSigma * soften;
+  for (const [key, group] of groups) {
+    const frost = glassRecipe(group[0].options, group[0].size).blur * soften;
     // WebKit's software blur copies only its output rectangle before
     // convolving it. Keep the kernel away from every consumed pixel so a
     // newly opened lens cannot change another lens's blur at that edge.
-    const frostHalo = Math.ceil(3 * frost) + 2,
-      fillHalo = Math.ceil(3 * fill) + 2;
+    const frostHalo = Math.ceil(3 * frost) + 2;
     const padded = (box: FilterBounds, halo: number): FilterBounds => ({
       x: box.x - halo,
       y: box.y - halo,
       width: box.width + 2 * halo,
       height: box.height + 2 * halo,
     });
-    // Each Gaussian makes three convolution passes, followed by the blend
-    // and mix. A shared rectangle must save work rather than filling a large
-    // empty gap between distant lenses. Singletons retain their own pass.
+    // A Gaussian makes three convolution passes. A shared rectangle must save
+    // work rather than filling a large empty gap between distant lenses.
+    // Singletons retain their own pass.
     const areaOf = (box: FilterBounds) => box.width * box.height;
-    const cost = (box: FilterBounds) =>
-      3 * areaOf(padded(box, frostHalo)) + 3 * areaOf(padded(box, fillHalo)) + 2 * areaOf(box);
+    const cost = (box: FilterBounds) => 3 * areaOf(padded(box, frostHalo));
     const clusters: { members: BackdropConsumer<T>[]; bounds: FilterBounds }[] = [];
     for (const consumer of group) {
       let best = -1,
@@ -71,24 +75,23 @@ export function sharedBackdropMaterials<T>(
       }
       if (best < 0) clusters.push({ members: [consumer], bounds: consumer.bounds });
       else {
-        clusters[best]!.members.push(consumer);
-        clusters[best]!.bounds = joined;
+        clusters[best].members.push(consumer);
+        clusters[best].bounds = joined;
       }
     }
     for (const { members, bounds } of clusters) {
-      const frostRegion = region(padded(bounds, frostHalo)),
-        fillRegion = region(padded(bounds, fillHalo));
-      const area = region(bounds);
       const p =
         members.length === 1
-          ? members[0]!.id
-          : `shared${appearance === "dark" ? "Dark" : "Light"}-${members
+          ? members[0].id
+          : `shared-${key.replace(/[^a-z0-9]/gi, "")}-${members
               .map((member) => member.id)
               .sort()
               .join("-")}`;
+      const read = padded(bounds, frostHalo);
+      const source = backdrop ? `${p}backed` : "SourceGraphic";
       const material = {
         result: `${p}mix`,
-        markup: `<feGaussianBlur in="SourceGraphic" stdDeviation="${frost}" result="${p}frost" ${frostRegion}/><feGaussianBlur in="SourceGraphic" stdDeviation="${fill}" result="${p}fill" ${fillRegion}/><feBlend in="${p}frost" in2="${p}fill" mode="${appearance === "dark" ? "darken" : "lighten"}" result="${p}blend" ${area}/><feComposite in="${p}blend" in2="${p}frost" operator="arithmetic" k2="${spec.fillOpacity}" k3="${1 - spec.fillOpacity}" k4="0" result="${p}mix" ${area}/>`,
+        markup: `${backdrop ? `${backdropMarkup(`${p}frostBackdrop`, read)}<feMerge result="${source}" ${region(read)}><feMergeNode in="${p}frostBackdrop"/><feMergeNode in="SourceGraphic"/></feMerge>` : ""}<feGaussianBlur in="${source}" stdDeviation="${frost}" result="${p}mix" ${region(read)}/>`,
       };
       for (const consumer of members) result.set(consumer.key, material);
     }

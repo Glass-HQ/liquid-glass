@@ -4,6 +4,7 @@ import { effect, frame, init, target } from "vgpu";
 import type { Effect, Gpu, Target, ShaderSource } from "vgpu";
 import source from "./maps.wgsl";
 import { mapPlanes } from "./planes.js";
+import { refractionFor } from "../core/materials.js";
 export { mapPlanes } from "./planes.js";
 import { mapScale, maxAtlasRows } from "./geometry.js";
 import type { MapGeometry } from "./geometry.js";
@@ -73,7 +74,8 @@ export class MaterialRenderer {
       symmetric: 1,
       start: 0,
       count: 0,
-      pad: [0, 0],
+      rim: 0,
+      height: 20,
     };
     this.shader = effect(gpu, source, {
       label: "liquid-glass/material-field",
@@ -98,7 +100,7 @@ export class MaterialRenderer {
       try {
         shape = measure(geometry);
       } catch (error) {
-        reject(error as Error);
+        reject(error);
         return;
       }
       this.queue.push({ ...shape, resolve, reject, started });
@@ -171,14 +173,19 @@ export class MaterialRenderer {
           symmetric: s.geometry.outline ? 0 : 1,
           start,
           count: s.segments.length,
-          pad: [0, 0],
+          // Regular glass's outline runs all the way round; Clear's and a lens's only down the sides.
+          rim: s.geometry.material === undefined || s.geometry.material === "regular" ? 0 : 1,
+          height: refractionFor(
+            s.geometry.material ?? "regular",
+            Math.min(s.geometry.width, s.geometry.height),
+          ).height,
         };
         // Bands start on even rows so derivative quads never straddle two shapes.
         row += s.rows * mapPlanes + ((s.rows * mapPlanes) % 2);
         return entry;
       });
       const height = row;
-      while (entries.length < maxShapes) entries.push({ ...entries[0]!, row: height + 2 });
+      while (entries.length < maxShapes) entries.push({ ...entries[0], row: height + 2 });
       while (table.length < maxSegments) table.push([0, 0, 0, 0]);
       const slot = this.slot([width, height]);
       try {
@@ -195,7 +202,7 @@ export class MaterialRenderer {
           const planeRows = s.rows * mapPlanes;
           const pixels = new Uint8Array(s.columns * planeRows * 4);
           for (let y = 0; y < planeRows; y++) {
-            const from = (bands[i]! + y) * width * 4;
+            const from = (bands[i] + y) * width * 4;
             pixels.set(atlas.subarray(from, from + s.columns * 4), y * s.columns * 4);
           }
           s.resolve({ width: s.columns, height: s.rows, pixels, duration: now - s.started });

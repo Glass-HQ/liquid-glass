@@ -1,5 +1,5 @@
 export { edgeDisplacement } from "./optics.js";
-export { materials } from "./materials.js";
+export { glassRecipe, refraction } from "./materials.js";
 export type { MaterialOptions, GlassMaterial, GlassAppearance } from "./materials.js";
 
 export type { GlassRadius } from "./shape.js";

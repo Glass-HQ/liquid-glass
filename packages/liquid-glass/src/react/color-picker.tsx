@@ -32,7 +32,7 @@ const hexPattern = /^#?([\da-f]{6})$/i;
 function hexToHsv(hex: string): Hsv | undefined {
   const match = hexPattern.exec(hex);
   if (!match) return;
-  const n = parseInt(match[1]!, 16);
+  const n = parseInt(match[1], 16);
   const r = ((n >> 16) & 255) / 255,
     g = ((n >> 8) & 255) / 255,
     b = (n & 255) / 255;
@@ -165,7 +165,7 @@ export function GlassColorPicker({
   const [seen, setSeen] = useState(value);
   if (value !== seen) {
     setSeen(value);
-    if (value !== undefined && `#${hexPattern.exec(value)![1]!.toLowerCase()}` !== current) {
+    if (value !== undefined && `#${hexPattern.exec(value)![1].toLowerCase()}` !== current) {
       const next = hexToHsv(value)!;
       setHsv({
         h: next.s && next.v ? next.h : hsv.h,
@@ -247,7 +247,7 @@ export function GlassColorPicker({
   };
   return (
     <GlassScene
-      material="clear"
+      material="lens"
       appearance={appearance}
       motion={motion}
       maxSurfaces={2}

@@ -1,4 +1,4 @@
-import { materials } from "../core/materials.js";
+import { glassRecipe, glassSize, refractionFor } from "../core/materials.js";
 import type { MaterialOptions } from "../core/materials.js";
 import type { MaterialMaps } from "./maps.js";
 import { mapImage } from "./map-image.js";
@@ -95,9 +95,10 @@ export function foregroundFilter(
       );
     const map = anisotropic ? `${p}map` : `${p}raw`,
       mask = opaque ? `${p}raw` : `${p}mask`;
-    const blur = materials[lens.options.material ?? "clear"].blur;
+    const size = glassSize(lens.options, lens.w, lens.h);
+    const blur = glassRecipe(lens.options, size).blur;
     const refraction =
-      lens.options.refraction ?? materials[lens.options.material ?? "clear"].refraction;
+      lens.options.refraction ?? refractionFor(lens.options.material ?? "regular", size).amount;
     // Only the lens samples blurred foreground. Preserve its whole sampling
     // neighborhood while bounding the expensive intermediate; the untouched
     // input still carries all foreground overflow through the final merge.

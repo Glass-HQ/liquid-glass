@@ -20,6 +20,7 @@ export function GlassToolbar({
   refraction,
   tint,
   specular,
+  frost,
   interactive = true,
   motion,
   className = "",
@@ -54,6 +55,7 @@ export function GlassToolbar({
         refraction={refraction}
         tint={tint}
         specular={specular}
+        frost={frost}
         interactive={interactive}
         motion={motion}
         className="lg-toolbar-cluster"

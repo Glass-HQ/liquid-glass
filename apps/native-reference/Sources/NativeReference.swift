@@ -38,6 +38,9 @@ enum ReferenceImages {
 enum ExampleKind: String, CaseIterable, Identifiable {
     case surface, buttons, toolbar, tabs, menu, slider, toggle = "switch", progressive = "progressive-blur"
     var id: String { rawValue }
+    /// Apple lets an app pick Clear or Regular only for glass it draws itself; its tab, slider and
+    /// switch controls always use their own material.
+    var choosesMaterial: Bool { self != .tabs && self != .slider && self != .toggle }
     var title: String {
         switch self {
         case .surface: "Surface"
@@ -231,9 +234,10 @@ struct NativeExample: View {
         case .surface: DraggablePlayer(material: material, movable: movable, bounds: size)
         case .buttons:
             Button("Get started", systemImage: "arrow.up.right") { }
-                .buttonStyle(.glass).buttonBorderShape(.capsule).controlSize(.large).tint(tint.color)
+                .buttonStyle(.glass(material)).buttonBorderShape(.capsule).controlSize(.large)
         case .toolbar:
-            VStack(spacing: 12) {
+            VStack(spacing: 28) {
+                NativeSceneToolbar(material: material, variant: toolbarVariant, submenu: menuOptions.submenu)
                 Label("Playback", systemImage: "rectangle.topthird.inset.filled").font(.headline)
                 Button(showPlaybackToolbar ? "Hide playback from window toolbar" : "Show playback in window toolbar",
                        systemImage: "rectangle.topthird.inset.filled") {
@@ -246,7 +250,7 @@ struct NativeExample: View {
         case .tabs: NativeMusicTabs()
         case .menu:
             if menuOptions.toolbar { Text("Options is in the system window toolbar.").font(.callout) }
-            else { NativeMenu(options: menuOptions) }
+            else { NativeMenu(options: menuOptions, material: material) }
         case .slider, .toggle: NativeValueControls(kind: kind, tint: tint.color, stepped: stepped, api: controlAPI)
         case .progressive: EmptyView()
         }
@@ -254,10 +258,15 @@ struct NativeExample: View {
     private var customize: some View {
         Menu("Customize demo", systemImage: "slider.horizontal.3") {
             Picker("Material", selection: $regular) { Text("Clear").tag(false); Text("Regular").tag(true) }
-                .disabled(kind != .surface && kind != .progressive)
+                .disabled(!kind.choosesMaterial)
+            if !kind.choosesMaterial {
+                Text("Apple draws this control in one fixed material").disabled(true)
+            } else if kind == .menu {
+                Text("Sets the trigger; Apple's menus are always Regular").disabled(true)
+            }
             if kind == .progressive {
                 Picker("Layout", selection: $progressiveMode) {
-                    ForEach(["Library", "iMessage", "Article", "Image"], id: \.self) { Text($0) }
+                    ForEach(["Library", "Image"], id: \.self) { Text($0) }
                 }
                 if progressiveMode == "Image" {
                     Picker("Edge", selection: $edge) { Text("Bottom edge").tag("Bottom edge"); Text("Top edge").tag("Top edge") }

@@ -9,6 +9,8 @@ export interface MapGeometry {
   radius: GlassRadius;
   dpr?: number;
   appearance?: "light" | "dark";
+  /** The material, which sets how the rim's outline falls around the shape. */
+  material?: "clear" | "regular" | "lens";
 }
 export const maxAtlasRows = 8192;
 /** Pixels per CSS pixel a map is rendered at. Maps are stretched to their

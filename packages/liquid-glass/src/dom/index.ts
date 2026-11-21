@@ -12,6 +12,7 @@ import type { GlassMotion, SurfaceAnimator } from "./interaction.js";
 export { attachInteraction, resolveMotion } from "./interaction.js";
 export type { GlassMotion, SurfaceAnimator } from "./interaction.js";
 export { attachSelectionLens } from "./selection.js";
+export type { SelectionLens } from "./selection.js";
 import { comparePaintOrder, foregroundFilter, overlaps } from "./foreground.js";
 import type { ForegroundLens } from "./foreground.js";
 import { patchFilters } from "./filter-patch.js";
@@ -36,6 +37,8 @@ import { refractionSamplingBounds, unionSamplingBounds } from "./sampling-bounds
 import { sharedBackdropMaterials } from "./shared-backdrop.js";
 import { gecko } from "./filter-stages.js";
 import { chromium } from "./engine.js";
+import { backdropGlassFilter, backdropGlassShadow } from "./backdrop-glass.js";
+import { hexTint, resolveTint } from "./tint-color.js";
 import type { LayerFrame, LayerLens, LensLayers } from "./lens-layers.js";
 import { composeSparseLayers } from "./compose-layers.js";
 import { acquireFilterPaintRoot, acquireSceneCompositingLayer } from "./filter-paint-root.js";
@@ -45,9 +48,23 @@ import type { EscapedLayers, LayerGlass } from "./escaped-layers.js";
 import { zoomFilterMarkup } from "./page-zoom.js";
 import { boundsMeet } from "./filter-bounds.js";
 import type { FilterBounds } from "./filter-bounds.js";
-import { materials } from "../core/materials.js";
 import {
+  aberrationFor,
+  glassRecipe,
+  glassSize,
+  outlineFor,
+  refractionFor,
+  shadowFor,
+} from "../core/materials.js";
+import {
+  backdropMarkup,
+  fillMarkup,
   frostMarkup,
+  glassShadowMarkup,
+  lightMarkup,
+  outlineMarkup,
+  refractMarkup,
+  hasBackdrop,
   overlayTintMarkup,
   tintChannels,
   tintMarkup,
@@ -103,6 +120,16 @@ export interface GlassSceneController {
    * reserve the final host for progressive blur. */
   setContent(element: HTMLElement | null): void;
   addSurface(element: HTMLElement, options?: SurfaceOptions): () => void;
+  /** Change how an added surface looks (material, appearance, tint, frost,
+   * refraction, floating, aberration) without removing it: its shape, place
+   * and motion carry on, so nothing anchored to it moves. */
+  updateSurface(
+    element: HTMLElement,
+    options: Pick<
+      SurfaceOptions,
+      "material" | "appearance" | "tint" | "frost" | "refraction" | "floating" | "aberration"
+    >,
+  ): void;
   /** Live DOM above the backdrop that must pass through overlapping glass. */
   addForeground(element: HTMLElement): () => void;
   /** Step an animation each frame before the scene samples glass geometry. */
@@ -114,8 +141,18 @@ export interface GlassSceneController {
 interface Lens {
   /** Stable identity for this surface's retained filter. */
   serial: number;
+  /** A popup whose contents wait, hidden, for its first glass. */
+  pending?: {
+    reveal: () => void;
+    timer: ReturnType<typeof setTimeout>;
+    drawn?: boolean;
+    settled?: boolean;
+  };
   element: HTMLElement;
+  /** The options as the glass draws them: a tint is always hex here. */
   options: SurfaceOptions;
+  /** A tint given as any other CSS color, resolved on the element each frame. */
+  tintSource?: string;
   maps?: MaterialMaps;
   error?: Error;
   key?: string;
@@ -145,22 +182,33 @@ interface Lens {
   /** Inline styles as last written, so they are never read back to compare. */
   writtenClip?: string;
   writtenRadius?: string;
-  /** When the surface's box last moved or changed size. */
-  movedAt?: number;
-  /** The inline will-change a moving surface had before Chromium gave it a layer. */
-  promoted?: { value: string; priority: string };
+  /** The surface's layout size, which its own backdrop filter is drawn in. */
+  layoutWidth: number;
+  layoutHeight: number;
+  /** Inline backdrop filter and box shadow from before the surface was added. */
+  backdropFilter: string;
+  boxShadow: string;
+  /** The backdrop glass as last written. */
+  writtenGlass?: string;
+  /** The scroll offset last written for a glass layer beneath a scrolling surface's children. */
+  writtenScroll?: string;
+  /** Whether the surface itself is fading (its own opacity below 1). */
+  fading?: boolean;
+  /** Whether the surface is on screen or near it. Chromium carries every
+   * backdrop filter into every frame, so glass off screen has none. */
+  visible: boolean;
 }
 let serial = 0;
 let lensSerial = 0;
-const promotion = "transform";
-/** Return a moving surface's will-change to what it was before it moved. */
-function demote(l: Lens) {
-  const promoted = l.promoted;
-  l.promoted = undefined;
-  if (!promoted || promoted.value) return;
-  if (l.element.style.getPropertyValue("will-change") === promotion)
-    l.element.style.removeProperty("will-change");
-}
+/**
+ * Chromium draws each surface's glass as that surface's own backdrop filter
+ * (see backdrop-glass.ts): glass costs only its own pixels, and nothing else
+ * in the page refilters when it changes. A surface holding other glass draws
+ * its glass on a layer beneath its children instead, since a backdrop filter
+ * would hide the glass behind it from them. Other engines refract the scene's
+ * content layer in one filter.
+ */
+const perSurface = chromium;
 const mapKey = (g: MapGeometry) => JSON.stringify(capsuleMapGeometry(g) ?? g);
 /** Opacity the material inherits from its element and ancestors in the scene. */
 function effectiveOpacity(element: HTMLElement, root: HTMLElement): number {
@@ -254,6 +302,9 @@ export function createGlassScene(
       : undefined;
   const warmStyle = setTimeout(() => warmDocumentStyle(root.ownerDocument), 700);
   let surfaceFilters = "";
+  /** Whether the scene has a backdrop color (`--lg-backdrop`) to show where
+   * its content is transparent. */
+  let backdrop = false;
   let progressiveOutsets = 0;
   let composedZoom = `${pageZoom()} ${devicePixelRatio}`;
   /** Gecko draws each surface's glass in a layer of its own; only Gecko
@@ -336,9 +387,17 @@ export function createGlassScene(
   };
   /** Displacement travel of a lens, in CSS pixels. Nested glass already sees
    * its parent's refracted rim and keeps its travel within the inset. */
+  /** Options with a tint the filter can read: hex tints as they are, any
+   * other CSS color set apart to be resolved on the element. */
+  const authoredTint = (options: SurfaceOptions) =>
+    options.tint && !hexTint.test(options.tint)
+      ? { options: { ...options, tint: undefined }, source: options.tint }
+      : { options, source: undefined };
+  /** The shorter side of a surface, which sets how its glass looks. */
+  const sizeOf = (l: Lens) => glassSize(l.options, l.w, l.h);
   const refractionOf = (l: Lens, parents: Lens[]) => {
     if (l.options.refraction !== undefined) return l.options.refraction;
-    if (!parents.length) return materials[l.options.material ?? "clear"].refraction;
+    if (!parents.length) return refractionFor(l.options.material ?? "regular", sizeOf(l)).amount;
     const inset = Math.min(
       ...parents.map((parent) =>
         Math.min(
@@ -352,14 +411,8 @@ export function createGlassScene(
     return Math.max(0, Math.min(8, inset * 0.6));
   };
   const blurOf = (l: Lens, soften: number) => {
-    const regular = l.options.material === "regular";
-    return regular
-      ? Math.max(
-          materials.regular.blur,
-          (l.options.appearance === "dark" ? materials.regular.dark : materials.regular.light)
-            .fillSigma,
-        ) * soften
-      : 0;
+    const recipe = glassRecipe(l.options, sizeOf(l));
+    return Math.max(recipe.blur, recipe.fill) * soften;
   };
   /** Paint order changes only with the DOM: it is sorted again after a
    * mutation or a registration, never on every frame. */
@@ -397,12 +450,19 @@ export function createGlassScene(
   ) {
     const parentsOf = (l: Lens) =>
       ordered.filter((parent) => parent !== l && parent.element.contains(l.element));
+    // The backdrop lies beneath the content. A layer composited apart from
+    // the content draws its glass over the content's, which already has it.
+    const backed = backdrop && !onLayer;
     // One filter draws every surface of the scene. The source is extended
     // once; each surface works only inside its own crop and contributes its
     // masked material, rim, and light to a single final merge. A surface's
     // sampled backdrop includes earlier surfaces only when it is near enough
     // to see them, so full-size intermediates are built only where needed.
-    const drawn = ordered.filter((l) => l.maps && l.opacity >= 0.001);
+    // A popup waiting for its first glass joins once its maps are decoded,
+    // so its glass never draws empty for a frame.
+    const drawn = ordered.filter(
+      (l) => l.maps && l.opacity >= 0.001 && !(l.pending && !warmer.has(l.maps)),
+    );
     const parents = new Map(drawn.map((l) => [l, parentsOf(l)] as const));
     const wanted = new Map(drawn.map((l) => [l, refractionOf(l, parents.get(l)!)] as const));
     // Glass shows other glass when it overlaps it or bends it in from its
@@ -423,11 +483,11 @@ export function createGlassScene(
     // images, which a single material pass refracts. Elsewhere a shared
     // branch only spreads its passes over the empty space between surfaces.
     const branchKey = (l: Lens) =>
-      `${l.options.material ?? "clear"},${l.options.appearance ?? "light"},${l.options.tint ?? ""},${wanted.get(l)}`;
+      `${l.options.material ?? "regular"},${l.options.appearance ?? "light"},${l.options.frost ?? 0},${l.options.tint ?? ""},${l.options.floating ?? false},${Math.min(160, Math.round(sizeOf(l)))},${wanted.get(l)}`;
     const independent = (l: Lens) => webkit && l.opacity >= 0.999 && !parents.get(l)!.length;
     // Neighbors drawn in the same pass need no finished glass of each other.
     // A shared branch sees no glass beneath it, so only earlier surfaces can
-    // keep a surface out; glass above reads its overlay either way, and the
+    // keep a surface out; glass above reads its rim and light either way, and the
     // shared branch is drawn where its first member is.
     const drawnIndex = new Map(drawn.map((l, index) => [l, index] as const));
     const shareable = (l: Lens) =>
@@ -461,12 +521,8 @@ export function createGlassScene(
     const scale = filterPixelRatio();
     const outsetsOf = new Map(
       drawn.map((l) => {
-        const spec =
-          l.options.appearance === "dark" ? materials.regular.dark : materials.regular.light;
-        const blur =
-          l.options.material === "regular"
-            ? blurOutsets(materials.regular.blur) + blurOutsets(spec.fillSigma)
-            : 0;
+        const recipe = glassRecipe(l.options, sizeOf(l));
+        const blur = blurOutsets(Math.max(recipe.blur, recipe.fill));
         return [l, scale * (blur + wanted.get(l)!)] as const;
       }),
     );
@@ -517,8 +573,8 @@ export function createGlassScene(
     const cluster = (extra: number) =>
       units.flatMap((unit) => {
         if (unit.length < 2) return [unit];
-        const regular = unit[0]!.options.material === "regular";
-        const tinted = /^#[\da-f]{6}$/i.test(unit[0]!.options.tint ?? "");
+        const saturated = glassRecipe(unit[0].options, sizeOf(unit[0])).saturation !== 1;
+        const tinted = /^#[\da-f]{6}$/i.test(unit[0].options.tint ?? "");
         const split = clusterFilterBranches(
           unit,
           (l) => {
@@ -535,7 +591,8 @@ export function createGlassScene(
               },
             };
           },
-          { output: (regular ? 4 : 3) + (tinted ? 3 : 0), sampled: regular ? 4 : 0 },
+          // The frost is sampled; displacement, tone and the mask are not.
+          { output: (saturated ? 5 : 4) + (tinted ? 3 : 0), sampled: 1 },
           1 + extra,
         );
         extra -= split.length - 1;
@@ -562,7 +619,7 @@ export function createGlassScene(
             .map((member) => member.serial)
             .sort((a, b) => a - b)
             .join("-")}`
-        : `s${unit[0]!.serial}`;
+        : `s${unit[0].serial}`;
     const crops = drawn.map(cropOf);
     const unionOf = (boxes: readonly FilterBounds[]): FilterBounds => {
       const x = Math.min(...boxes.map((b) => b.x)),
@@ -600,7 +657,7 @@ export function createGlassScene(
       const source = "SourceGraphic";
       const beneathOf = new Map(
         stageUnits.map((unit, index) => {
-          const lens = unit[0]!;
+          const lens = unit[0];
           const beneath =
             unit.length > 1
               ? []
@@ -620,11 +677,13 @@ export function createGlassScene(
             stageUnits.map((unit) => ({
               key: unit,
               id: unitName(unit),
-              options: unit[0]!.options,
+              options: unit[0].options,
+              size: sizeOf(unit[0]),
               bounds: unionSamplingBounds(unit.map((member) => sampling.get(member)!)),
               inputs: beneathOf.get(unit)!,
             })),
             soften,
+            backed,
           )
         : undefined;
       const emitted = new Set<string>();
@@ -649,11 +708,11 @@ export function createGlassScene(
         for (const unit of eligible) {
           let group = { units: [unit], box: unionOf(unit.map(cropOf)) };
           for (let index = 0; index < groups.length;) {
-            if (!boundsMeet(group.box, groups[index]!.box)) {
+            if (!boundsMeet(group.box, groups[index].box)) {
               index++;
               continue;
             }
-            const joined = groups.splice(index, 1)[0]!;
+            const joined = groups.splice(index, 1)[0];
             group = {
               units: [...joined.units, ...group.units],
               box: unionOf([joined.box, group.box]),
@@ -671,7 +730,8 @@ export function createGlassScene(
             .map((key) => tiles.names[key])
             .filter((name): name is string => Boolean(name));
           const name = `crop${group.units.map(unitName).sort().join("")}`;
-          const markup = `<feMerge result="${name}" ${region(group.box)}>${edges.map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/></feMerge>`;
+          const below = backed ? [`${name}backdrop`] : [];
+          const markup = `${backed ? backdropMarkup(`${name}backdrop`, group.box) : ""}<feMerge result="${name}" ${region(group.box)}>${[...below, ...edges].map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/></feMerge>`;
           const entry = { name, markup, emitted: false };
           for (const unit of group.units) sharedCrops.set(unit, entry);
         }
@@ -681,7 +741,7 @@ export function createGlassScene(
       stageUnits.forEach((unit) => {
         // The first surface of a shared branch stands for all: they share
         // material, appearance, tint, and refraction.
-        const l = unit[0]!;
+        const l = unit[0];
         const o = l.options,
           // Names follow the surface, not its position, so primitives persist
           // as other surfaces enter and leave the scene. A shared identity
@@ -748,79 +808,93 @@ export function createGlassScene(
           if (touching) inputs.push(...layersOf.get(unitOf.get(earlier)!)!);
           else {
             const q = `s${earlier.serial}`;
-            parts.push(
-              mapImage(
-                earlier.maps!,
-                "overlay",
-                `${p}by${q}overlay`,
-                earlier.x - 2,
-                earlier.y - 2,
-                earlier.w + 4,
-                earlier.h + 4,
-              ),
-            );
-            inputs.push(`${p}by${q}overlay`);
+            for (const plane of ["rim", "light"] as const) {
+              parts.push(
+                mapImage(
+                  earlier.maps!,
+                  plane,
+                  `${p}by${q}${plane}`,
+                  earlier.x - 2,
+                  earlier.y - 2,
+                  earlier.w + 4,
+                  earlier.h + 4,
+                ),
+              );
+              inputs.push(`${p}by${q}${plane}`);
+            }
           }
         }
         const edges = tilesFor(width, height, crop)
           .map((key) => tiles.names[key])
           .filter((name): name is string => Boolean(name));
+        // Glass in WebKit can share its frost with neighbors frosted alike.
+        const material = shared?.get(unit);
         // Glass well inside its content reads the source directly. Only a
-        // surface past the content's edge or above other glass gathers its
-        // backdrop into a cropped merge, which software filters pay for.
-        const gathered = edges.length || inputs.length;
+        // surface past the content's edge, above other glass, or over a
+        // backdrop color gathers what is behind it into a cropped merge,
+        // which software filters pay for. The backdrop color lies beneath
+        // the rest, limited to the crop: it shows only through the glass.
+        const gathered = edges.length || inputs.length || (backed && !material);
         const sharedCrop = sharedCrops.get(unit);
         if (sharedCrop) {
           if (!sharedCrop.emitted) {
             parts.push(sharedCrop.markup);
             sharedCrop.emitted = true;
           }
-        } else if (gathered)
+        } else if (gathered) {
+          const below = backed ? [`${p}backdrop`] : [];
           parts.push(
-            `<feMerge result="${p}crop" ${region(crop)}>${edges.map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/>${inputs.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`,
+            `${backed ? backdropMarkup(`${p}backdrop`, crop) : ""}<feMerge result="${p}crop" ${region(crop)}>${[...below, ...edges].map((n) => `<feMergeNode in="${n}"/>`).join("")}<feMergeNode in="${source}"/>${inputs.map((n) => `<feMergeNode in="${n}"/>`).join("")}</feMerge>`,
           );
+        }
         const cropped = sharedCrop?.name ?? (gathered ? `${p}crop` : source);
         let base = cropped;
-        if (o.material === "regular") {
-          const backdrop = shared?.get(unit);
-          if (backdrop) {
-            if (!emitted.has(backdrop.result)) {
-              parts.push(backdrop.markup);
-              emitted.add(backdrop.result);
-            }
-            base = backdrop.result;
-          } else {
-            const frost = frostMarkup(p, cropped, o, soften);
-            parts.push(frost.markup);
-            base = frost.result;
+        if (material) {
+          if (!emitted.has(material.result)) {
+            parts.push(material.markup);
+            emitted.add(material.result);
           }
+          base = material.result;
+        } else {
+          const frost = frostMarkup(p, cropped, o, sizeOf(l), soften);
+          parts.push(frost.markup);
+          base = frost.result;
         }
         const amount = amounts.get(l)!;
         // Blur needs the sampling neighborhood, while pointwise tone and
         // chroma only need the pixels that refraction delivers to the lens.
-        parts.push(
-          `<feDisplacementMap in="${base}" in2="${p}field" scale="${amount * 2}" xChannelSelector="R" yChannelSelector="G" result="${p}refracted"/>`,
-          toneMarkup(p, o, nested.length > 0),
+        parts.push(refractMarkup(p, base, amount, aberrationFor(o, sizeOf(l)) * soften));
+        const filled = fillMarkup(
+          p,
+          `${p}refracted`,
+          cropped,
+          o,
+          sizeOf(l),
+          soften,
+          base === cropped ? undefined : base,
         );
+        parts.push(filled.markup, toneMarkup(p, o, sizeOf(l), filled.result));
         let color = `${p}color`;
-        let overlay = `${p}overlay`;
+        let light = `${p}light`;
         const tint = tintChannels(o);
         if (tint) {
           const tinted = tintMarkup(p, o, tint);
           parts.push(tinted.markup);
           color = tinted.color;
-          overlay = `${p}tintOverlay`;
+          light = `${p}tintLight`;
         }
+        // The rim's light adds to the face; its outline darkens what is
+        // behind the glass just outside it, faded with the surface.
         parts.push(
-          `<feComposite in="${color}" in2="${mask}" operator="in" result="${p}inside"/>`,
-          image("overlay", `${p}overlay`),
-          ...(tint ? [overlayTintMarkup(`${p}overlay`, overlay, o, tint)] : []),
-          // Fully opaque glass needs no opacity pass over its rim and light.
-          ...(opaque
-            ? []
-            : [
-                `<feComponentTransfer in="${overlay}" result="${p}fadedOverlay"><feFuncA type="linear" slope="${l.opacity}"/></feComponentTransfer>`,
-              ]),
+          image("light", `${p}light`),
+          ...(tint ? [overlayTintMarkup(`${p}light`, light, tint)] : []),
+          lightMarkup(p, color, light, mask, o.material),
+          image("rim", `${p}rim`),
+          // The frosted copy already holds what is behind the rim; reading it
+          // spares another pass over the whole content.
+          outlineMarkup(p, base, `${p}rim`, l.opacity, outlineFor(o, sizeOf(l))),
+          // Inside the shape, the rim map is a faint shade over the face.
+          `<feComposite in="${p}rim" in2="${mask}" operator="in" result="${p}ring"/>`,
         );
         // Over a layer composited apart from the content, the content's own
         // glass lies beneath. Refraction only moves pixels, so the glass
@@ -829,8 +903,8 @@ export function createGlassScene(
         if (onLayer)
           parts.push(
             `<feColorMatrix in="${p}refracted" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0" result="${p}cover"/>`,
-            `<feComposite in="${p}inside" in2="${p}cover" operator="in" result="${p}ownInside"/>`,
-            `<feComposite in="${opaque ? overlay : `${p}fadedOverlay`}" in2="${p}cover" operator="in" result="${p}ownOverlay"/>`,
+            `<feComposite in="${p}litInside" in2="${p}cover" operator="in" result="${p}ownInside"/>`,
+            `<feComposite in="${p}outline" in2="${p}cover" operator="in" result="${p}ownOutline"/>`,
           );
         // Without a subregion every primitive covers the whole filter region,
         // the scene plus padding. Only the surface's box matters, plus the
@@ -840,12 +914,13 @@ export function createGlassScene(
         // subregion and writes transparent pixels for any sample beyond it,
         // so it must cover every pixel it reaches; the mask clips it after.
         const sampledStages = new Set(
-          [...["frost", "fill", "blend", "mix"], ...(webkit ? ["refracted"] : [])].map(
-            (name) => `${p}${name}`,
-          ),
+          [
+            ...["frost", "fill", "blend", "mix"],
+            ...(webkit ? ["refracted", "refractedR", "refractedB"] : []),
+          ].map((name) => `${p}${name}`),
         );
         for (let index = first; index < parts.length; index++)
-          parts[index] = parts[index]!.replace(
+          parts[index] = parts[index].replace(
             /<(feFlood|feComposite|feDisplacementMap|feColorMatrix|feComponentTransfer|feGaussianBlur|feBlend)\b([^>]*?)(\/?)>/g,
             (tag, name: string, attributes: string, close: string) => {
               if (/\sx="/.test(attributes)) return tag;
@@ -855,11 +930,23 @@ export function createGlassScene(
               return `<${name}${attributes} x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}"${close}>`;
             },
           );
+        // Regular glass casts a soft shadow around itself, as on macOS: its
+        // coverage blurred, nudged down, kept outside the shape, faint.
+        const cast = !onLayer && !nested.length ? shadowFor(o, sizeOf(l)) : undefined;
+        const shadow = cast ? glassShadowMarkup(p, mask, box, l.opacity, cast) : undefined;
+        if (shadow) parts.push(shadow.markup);
         const layer = onLayer
-          ? [`${p}ownInside`, `${p}ownOverlay`]
-          : [`${p}inside`, opaque ? overlay : `${p}fadedOverlay`];
+          ? [`${p}ownOutline`, `${p}ownInside`, `${p}ring`]
+          : [`${p}outline`, ...(shadow ? [shadow.result] : []), `${p}litInside`, `${p}ring`];
         layersOf.set(unit, layer);
-        maskOf.set(unit, mask);
+        // The content is cut away only where the glass covers it fully. At a
+        // partly covered edge pixel the glass draws over the content instead:
+        // cutting there too would leave the two partial coverages short of
+        // whole, and the page behind would show through the rim.
+        parts.push(
+          `<feComponentTransfer in="${mask}" x="${x}" y="${y}" width="${w}" height="${h}" result="${p}cut"><feFuncA type="discrete" tableValues="${"0 ".repeat(63)}1"/></feComponentTransfer>`,
+        );
+        maskOf.set(unit, `${p}cut`);
       });
       // Replace covered input, rather than painting a sparse refracted copy
       // over its sharp original. Remove covered source pixels even when the
@@ -930,6 +1017,7 @@ export function createGlassScene(
    * bounding box is the content layer, which can be taller than the scene
    * when it uses flow layout inside a scroller. */
   function compose(width: number, height: number) {
+    if (perSurface) return composeBackdrops();
     if (!content || (gecko && !layers)) return;
     if (!width || !height) {
       if (contentStyle) applyFilter(content, contentStyle, "");
@@ -967,6 +1055,8 @@ export function createGlassScene(
                   serial: l.serial,
                   element: l.element,
                   options: l.options,
+                  // Every surface sits beside the content and paints a copy of it.
+                  mode: "copy",
                   maps: l.maps!,
                   x: l.x,
                   y: l.y,
@@ -1005,6 +1095,7 @@ export function createGlassScene(
         content,
         contentRect,
         blurHost?.matches ? { left: 0, top: 0, regions: progressive.regions() } : undefined,
+        backdrop,
       );
     } else if (drawn.length) {
       const primitives = graph.primitives();
@@ -1092,6 +1183,100 @@ export function createGlassScene(
     surfaceFilters = applied.map((id) => `url("#${liveId(id)}")`).join(" ");
     notify();
   }
+  /** Each surface's glass as its own backdrop filter, in Chromium. The
+   * content keeps only its progressive blur. */
+  function composeBackdrops() {
+    const ordered = order();
+    // A popup waiting for its first glass joins once its maps are decoded,
+    // so its glass never draws empty for a frame.
+    const drawn = ordered.filter(
+      (l) =>
+        l.maps &&
+        l.visible &&
+        l.layoutWidth > 0 &&
+        l.layoutHeight > 0 &&
+        !(l.pending && !warmer.has(l.maps)),
+    );
+    const filters: string[] = [];
+    const planned = new Map<Lens, { filter: string; shadow: string; host: boolean }>();
+    const pixel = 1 / (devicePixelRatio || 1);
+    for (const l of drawn) {
+      const parents = ordered.filter(
+        (parent) => parent !== l && parent.element.contains(l.element),
+      );
+      const filter = `lg-${owner}-b${l.serial}`;
+      filters.push(
+        backdropGlassFilter({
+          id: filter,
+          maps: l.maps!,
+          options: l.options,
+          width: l.layoutWidth,
+          height: l.layoutHeight,
+          size: sizeOf(l),
+          refraction: refractionOf(l, parents),
+          backed: backdrop,
+          pixel,
+        }),
+      );
+      planned.set(l, {
+        filter,
+        shadow: backdropGlassShadow(l.options, sizeOf(l), parents.length > 0),
+        // A surface holding other glass draws its glass on a layer among its children, which
+        // the surface's own fade would cut off from what is behind it: while it fades it draws
+        // its glass itself, as a surface without glass inside does.
+        host:
+          !l.fading && ordered.some((child) => child !== l && l.element.contains(child.element)),
+      });
+    }
+    filterError = undefined;
+    const liveId = patchFilters(defs, filters, mapUrl);
+    for (const l of lenses) {
+      const plan = planned.get(l);
+      writeBackdrop(
+        l,
+        plan ? `url("#${liveId(plan.filter)}")` : "",
+        plan?.shadow ?? "",
+        plan?.host ?? false,
+      );
+    }
+    surfaceFilters = "";
+    notify();
+  }
+  /** Show a surface's backdrop glass: on the surface itself, or, for a
+   * surface holding other glass, on the layer beneath its children. */
+  function writeBackdrop(l: Lens, filter: string, shadow: string, host: boolean) {
+    const key = `${filter}|${shadow}|${host}`;
+    if (l.writtenGlass === key) return;
+    l.writtenGlass = key;
+    const style = l.element.style;
+    if (host && filter) {
+      style.backdropFilter = l.backdropFilter;
+      style.setProperty("--lg-glass-filter", filter);
+      if (!l.element.hasAttribute("data-glass-host")) l.element.setAttribute("data-glass-host", "");
+    } else {
+      style.removeProperty("--lg-glass-filter");
+      l.element.removeAttribute("data-glass-host");
+      style.backdropFilter = filter || l.backdropFilter;
+    }
+    style.boxShadow = shadow || l.boxShadow;
+  }
+  /** Put a surface's inline styles back as they were before it was added. */
+  function restoreSurface(l: Lens) {
+    const style = l.element.style;
+    style.clipPath = l.clip;
+    style.borderRadius = l.borderRadius;
+    style.removeProperty("--lg-radius");
+    style.removeProperty("--lg-scroll");
+    l.writtenScroll = undefined;
+    if (l.tintSource !== undefined) style.removeProperty("--lg-tint");
+    if (l.writtenGlass !== undefined) {
+      style.backdropFilter = l.backdropFilter;
+      style.boxShadow = l.boxShadow;
+      style.removeProperty("--lg-glass-filter");
+      l.element.removeAttribute("data-glass-host");
+      l.writtenGlass = undefined;
+    }
+  }
   /** Request maps for a lens geometry. Decoded maps already in the cache
    * apply at once, so a resting shape never waits a task for glass it has
    * shown before. Otherwise one request per lens is in flight; while geometry
@@ -1172,8 +1357,7 @@ export function createGlassScene(
     if (disposed) return false;
     const writes: (() => void)[] = [];
     let busy = updateControlMotion(root, now);
-    let lensMoved = false,
-      settling = false;
+    let lensMoved = false;
     // Lenses are positioned in the content layer's space, which scrolls in flow layout.
     const r = (content ?? root).getBoundingClientRect();
     const contentWidth = content ? content.offsetWidth : root.clientWidth;
@@ -1193,12 +1377,15 @@ export function createGlassScene(
         if (animator.frame(now)) busy = true;
       }),
     );
-    const setClip = (l: Lens, clip: string) => {
-      if (l.writtenClip === clip) return;
-      l.writtenClip = clip;
+    // Backdrop glass draws its own shape and casts its shadow past it, which
+    // a clip would cut: the surface takes rounded corners that hold the shape.
+    const setClip = (l: Lens, clip: string, radius = "0px") => {
+      const key = `${clip}|${radius}`;
+      if (l.writtenClip === key) return;
+      l.writtenClip = key;
       writes.push(() => {
         l.element.style.clipPath = clip;
-        l.element.style.borderRadius = "0px";
+        l.element.style.borderRadius = radius;
       });
     };
     const setRadius = (l: Lens, radius: string) => {
@@ -1236,17 +1423,49 @@ export function createGlassScene(
         h = rect.height;
       if ([x - l.x, y - l.y, w - l.w, h - l.h].some((n) => Math.abs(n) > 0.05)) {
         Object.assign(l, { x, y, w, h });
-        l.movedAt = now;
         lensMoved = true;
         dirty = true;
       }
-      const opacity = effectiveOpacity(l.element, root);
+      if (perSurface && l.writtenGlass !== undefined) {
+        const fading = Number(getComputedStyle(l.element).opacity) < 0.999;
+        if (fading !== Boolean(l.fading)) {
+          l.fading = fading;
+          dirty = true;
+        }
+      }
+      // A surface holding other glass draws its glass on a layer among its children; if the
+      // surface scrolls, the layer is held in view, as the surface's own glass would be.
+      if (perSurface && l.element.hasAttribute("data-glass-host")) {
+        const scroll = `${l.element.scrollLeft}px ${l.element.scrollTop}px`;
+        if (scroll !== l.writtenScroll) {
+          l.writtenScroll = scroll;
+          writes.push(() =>
+            scroll === "0px 0px"
+              ? l.element.style.removeProperty("--lg-scroll")
+              : l.element.style.setProperty("--lg-scroll", scroll),
+          );
+        }
+      }
+      if (l.tintSource !== undefined) {
+        const tint = resolveTint(l.element, l.tintSource);
+        if (tint !== l.options.tint) {
+          l.options = { ...l.options, tint };
+          dirty = true;
+        }
+      }
+      // A backdrop filter fades with its surface on its own.
+      const opacity = perSurface ? 1 : effectiveOpacity(l.element, root);
       if (Math.abs(opacity - l.opacity) > 0.001) {
         l.opacity = opacity;
         dirty = true;
       }
       const dpr = Math.min(devicePixelRatio || 1, 2);
       const { width, height } = getLayoutSize(l.element);
+      if (width !== l.layoutWidth || height !== l.layoutHeight) {
+        l.layoutWidth = width;
+        l.layoutHeight = height;
+        dirty = true;
+      }
       if (!width || !height) return;
       const radius = l.options.radius ?? 8;
       const outline = l.resolveShape?.();
@@ -1269,9 +1488,15 @@ export function createGlassScene(
         radius,
         dpr,
         appearance: l.options.appearance,
+        material: l.options.material ?? "regular",
       };
       // A capsule stretched unevenly keeps round ends in its content clip too.
-      if (radius === "capsule" && !outline && Math.abs(w / width - h / height) > 0.004) {
+      if (
+        !perSurface &&
+        radius === "capsule" &&
+        !outline &&
+        Math.abs(w / width - h / height) > 0.004
+      ) {
         const points = shapePolygon(w, h, "capsule").map(([px, py]): ShapePoint => [
           (px * width) / w,
           (py * height) / h,
@@ -1286,11 +1511,11 @@ export function createGlassScene(
         // A first measurement is not a resize: start with the exact map.
         if (l.geometryKey !== undefined) l.resized = now;
         l.geometryKey = geometryKey;
-        setClip(l, outline ? polygonClip(outline) : shapeClip(width, height, radius));
-        setRadius(
-          l,
-          `${typeof radius === "number" ? Math.min(radius, width / 2, height / 2) : Math.min(width, height) / 2}px`,
-        );
+        const corner = `${typeof radius === "number" ? Math.min(radius, width / 2, height / 2) : Math.min(width, height) / 2}px`;
+        if (!perSurface)
+          setClip(l, outline ? polygonClip(outline) : shapeClip(width, height, radius));
+        else setClip(l, "none", outline ? "0px" : radius === "capsule" ? "9999px" : corner);
+        setRadius(l, corner);
       }
       // A capsule whose size is changing reuses one sliced map at every width;
       // at rest it uses an exact map, which draws with a quarter of the images.
@@ -1298,26 +1523,6 @@ export function createGlassScene(
       if (resizing) busy = true;
       request(l, g, resizing);
     });
-    // Chromium repaints filtered content whenever anything painted into its
-    // layer changes, so a surface moving every frame would re-filter the whole
-    // content every frame. While it moves it gets a layer of its own, and the
-    // content is filtered again only when the glass is rebuilt.
-    if (chromium)
-      lenses.forEach((l) => {
-        const moving = now - (l.movedAt ?? -Infinity) < 400;
-        if (moving) settling = true;
-        if (moving === Boolean(l.promoted)) return;
-        if (moving) {
-          l.promoted = {
-            value: l.element.style.getPropertyValue("will-change"),
-            priority: l.element.style.getPropertyPriority("will-change"),
-          };
-          if (!l.promoted.value)
-            writes.push(() => l.element.style.setProperty("will-change", promotion));
-        } else {
-          writes.push(() => demote(l));
-        }
-      });
     if (lit) {
       const dt = litAt ? Math.min(0.1, Math.max(0, (now - litAt) / 1000)) : 1 / 60;
       litAt = now;
@@ -1411,11 +1616,24 @@ export function createGlassScene(
       progressiveOutsets = nextOutsets;
       dirty = true;
     }
+    // The backdrop color resolves where the glass draws; only whether there
+    // is one changes the filters.
+    const backed = hasBackdrop(getComputedStyle(root).getPropertyValue("--lg-backdrop"));
+    if (backed !== backdrop) {
+      backdrop = backed;
+      dirty = true;
+    }
     // Filters are written in the zoom they were composed for.
     const zoom = `${pageZoom()} ${devicePixelRatio}`;
     if (zoom !== composedZoom) {
       composedZoom = zoom;
       dirty = true;
+    }
+    const waiting = [...lenses].filter((l) => l.pending);
+    if (waiting.length) {
+      busy = true;
+      // Its maps finishing their decode changes what is drawn.
+      if (waiting.some((l) => l.maps && warmer.has(l.maps) && !l.pending!.drawn)) dirty = true;
     }
     const changed = dirty;
     const moving = (busy || lensMoved) && now - composedAt < 15;
@@ -1427,8 +1645,18 @@ export function createGlassScene(
     const progressiveErrorChanged =
       progressiveFilterError?.message !== nextProgressiveError?.message;
     progressiveFilterError = nextProgressiveError;
+    // A popup shows its contents in the frame its glass first draws.
+    // ...one frame after it is first drawn, once its layout has settled under
+    // the shape the scene gave it (concentric rows resize on that first frame).
+    const revealed = rebuild || !changed ? waiting.filter((l) => l.pending!.settled) : [];
+    for (const l of waiting)
+      if (l.maps && warmer.has(l.maps) && l.w > 0) {
+        if (l.pending!.drawn) l.pending!.settled = true;
+        l.pending!.drawn = true;
+      }
     writes.push(() => {
       if (rebuild) compose(contentWidth, contentHeight);
+      for (const l of revealed) l.pending?.reveal();
       if (content) {
         const filters = blurHost?.matches
           ? surfaceFilters
@@ -1441,7 +1669,7 @@ export function createGlassScene(
       if (progressiveErrorChanged) notify();
     });
     return {
-      active: busy || changed || settling || pending > 0,
+      active: busy || changed || pending > 0,
       write: () => {
         for (const write of writes) write();
       },
@@ -1457,6 +1685,22 @@ export function createGlassScene(
       litAt = 0;
     }
   };
+  /** Which surfaces are on screen, for Chromium's backdrop glass. */
+  const visibility =
+    perSurface && typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries)
+              for (const l of lenses)
+                if (l.element === entry.target && l.visible !== entry.isIntersecting) {
+                  l.visible = entry.isIntersecting;
+                  dirty = true;
+                }
+            ticker.wake();
+          },
+          { rootMargin: "50%" },
+        )
+      : undefined;
   const ticker = createTicker(tick, {
     root,
     // The filters and the warmer are this scene's own output.
@@ -1498,7 +1742,8 @@ export function createGlassScene(
       const lens: Lens = {
         serial: ++lensSerial,
         element,
-        options,
+        options: authoredTint(options).options,
+        tintSource: authoredTint(options).source,
         resolveShape: options.concentric
           ? createConcentricResolver(
               element,
@@ -1509,6 +1754,11 @@ export function createGlassScene(
         releaseShape: registerShapeContainer(element, options.radius ?? 8),
         clip: element.style.clipPath,
         borderRadius: element.style.borderRadius,
+        backdropFilter: element.style.backdropFilter,
+        boxShadow: element.style.boxShadow,
+        layoutWidth: 0,
+        layoutHeight: 0,
+        visible: true,
         x: 0,
         y: 0,
         w: 0,
@@ -1538,34 +1788,85 @@ export function createGlassScene(
         element.dataset.glassAppearance = options.appearance ?? "light";
       lenses.add(lens);
       ticker.observe(element);
+      visibility?.observe(element);
       structure++;
       dirty = true;
-      // A popup raises its scene above sibling scenes while it is present.
+      // A popup raises its scene above sibling scenes while it is present,
+      // and keeps its contents hidden until its glass is drawn, so it never
+      // shows as text without glass. A popup whose glass cannot be drawn
+      // shows after a short wait.
       if (options.popup) {
         popups++;
         root.dataset.glassPopup = "";
+        element.dataset.glassPending = "";
+        const reveal = () => {
+          if (!lens.pending) return;
+          clearTimeout(lens.pending.timer);
+          lens.pending = undefined;
+          delete element.dataset.glassPending;
+        };
+        lens.pending = { reveal, timer: setTimeout(reveal, 250) };
       }
       ticker.wake();
       return () => {
+        lens.pending?.reveal();
         lens.animators.forEach((animator) => animator.dispose());
         releaseSpecular(lens);
         if (options.interactive) delete element.dataset.glassInteractive;
         setResolvedShape(element);
         lens.releaseShape();
         restoreForeground(element);
-        element.style.clipPath = lens.clip;
-        element.style.borderRadius = lens.borderRadius;
-        element.style.removeProperty("--lg-radius");
-        demote(lens);
+        restoreSurface(lens);
         lenses.delete(lens);
         structure++;
         ticker.unobserve(element);
+        visibility?.unobserve(element);
         if (options.popup && --popups === 0) delete root.dataset.glassPopup;
         if (previousAppearance === null) element.removeAttribute("data-glass-appearance");
         else element.setAttribute("data-glass-appearance", previousAppearance);
         dirty = true;
-        ticker.wake();
+        // Glass leaves in the frame its surface does.
+        ticker.flush();
       };
+    },
+    updateSurface(element, next) {
+      const lens = [...lenses].find((l) => l.element === element);
+      if (!lens) return;
+      if (!Number.isFinite(next.refraction ?? 60) || (next.refraction ?? 60) < 0)
+        throw new RangeError("Refraction must be finite and nonnegative.");
+      const authored = authoredTint({
+        ...lens.options,
+        ...(lens.tintSource === undefined ? {} : { tint: lens.tintSource }),
+        ...next,
+      });
+      const options = {
+        ...authored.options,
+        tint: authored.source ? lens.options.tint : authored.options.tint,
+      };
+      const sourceChanged = authored.source !== lens.tintSource;
+      lens.tintSource = authored.source;
+      if (
+        !sourceChanged &&
+        (
+          [
+            "material",
+            "appearance",
+            "tint",
+            "frost",
+            "refraction",
+            "floating",
+            "aberration",
+          ] as const
+        ).every((key) => options[key] === lens.options[key])
+      )
+        return;
+      lens.options = options;
+      const appearance = options.appearance ?? "light";
+      if (element.dataset.glassAppearance !== appearance)
+        element.dataset.glassAppearance = appearance;
+      structure++;
+      dirty = true;
+      ticker.wake();
     },
     addForeground(element) {
       const target = {
@@ -1630,6 +1931,7 @@ export function createGlassScene(
       animators.clear();
       disposed = true;
       ticker.dispose();
+      visibility?.disconnect();
       if (content) releaseContent(content);
       for (const element of foregroundStyles.keys()) restoreForeground(element);
       svg.remove();
@@ -1640,10 +1942,7 @@ export function createGlassScene(
         releaseSpecular(lens);
         setResolvedShape(lens.element);
         lens.releaseShape();
-        lens.element.style.clipPath = lens.clip;
-        lens.element.style.borderRadius = lens.borderRadius;
-        lens.element.style.removeProperty("--lg-radius");
-        demote(lens);
+        restoreSurface(lens);
       });
       lenses.clear();
       foregrounds.clear();

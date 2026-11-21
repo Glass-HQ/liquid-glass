@@ -1,5 +1,5 @@
 import type { MaterialOptions } from "../core/materials.js";
-import { materials } from "../core/materials.js";
+import { glassSize, refractionFor } from "../core/materials.js";
 import {
   animatesInCompositor,
   animatesPaint,
@@ -184,7 +184,8 @@ export function createEscapedLayers(wake: () => void): EscapedLayers {
       }
       promotions = promote;
       const refraction = (l: EscapeLens) =>
-        l.options.refraction ?? materials[l.options.material ?? "clear"].refraction;
+        l.options.refraction ??
+        refractionFor(l.options.material ?? "regular", glassSize(l.options, l.w, l.h)).amount;
       for (const [element, reason] of candidates) {
         if (!element.isConnected || !content.contains(element)) continue;
         const rect = element.getBoundingClientRect();
@@ -235,7 +236,7 @@ export function createEscapedLayers(wake: () => void): EscapedLayers {
             );
             if (!region) continue;
             for (let index = regions.length - 1; index >= 0; index--) {
-              const other = regions[index]!;
+              const other = regions[index];
               if (!intersects(region, other)) continue;
               const x = Math.min(region.x, other.x),
                 y = Math.min(region.y, other.y);

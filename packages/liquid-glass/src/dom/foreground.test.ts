@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { glassRecipe } from "../core/materials.js";
 import { foregroundFilter, overlaps, comparePaintOrder } from "./foreground.js";
 import type { ForegroundLens } from "./foreground.js";
 import type { MaterialMaps } from "./maps.js";
@@ -63,12 +64,14 @@ test("upper lenses process the result of preceding foreground passes", () => {
   const overlay = {
     ...target,
     opacity: 1,
-    options: { material: "clear" },
+    // Frosted Clear, so each lens blurs what it refracts.
+    options: { material: "clear", frost: 1 },
     maps: { field: "field" },
   } as ForegroundLens;
   const filter = foregroundFilter("test", target, [overlay, overlay]);
-  expect(filter).toContain('<feDisplacementMap in="f0result"');
-  expect(filter).not.toContain("feGaussianBlur");
+  // The upper lens frosts and refracts what the lower one produced.
+  expect(filter).toContain('<feGaussianBlur in="f0result"');
+  expect(filter).toContain('<feDisplacementMap in="f1blur"');
   expect(filter).not.toContain("feComponentTransfer");
 });
 
@@ -92,7 +95,8 @@ test("scaled foreground targets keep the glass in the same viewport location", (
   const markup = foregroundFilter("scaled", target, [overlay]);
   expect(markup).toContain('x="24" y="9" width="42" height="32"');
   expect(markup).toContain('scale="8"');
-  expect(markup).toContain('stdDeviation="3.665 3.665"');
+  const sigma = glassRecipe({ material: "regular" }, Math.min(overlay.w, overlay.h)).blur / 2;
+  expect(markup).toContain(`stdDeviation="${sigma} ${sigma}"`);
   expect(markup).not.toContain('result="f0map"');
 });
 
@@ -115,7 +119,8 @@ test("unequal target scales preserve displacement on each viewport axis without 
   } as ForegroundLens;
   const markup = foregroundFilter("stretched", target, [overlay]);
   expect(markup).toContain('x="24" y="36" width="42" height="128"');
-  expect(markup).toContain('stdDeviation="3.665 14.66"');
+  const sigma = glassRecipe({ material: "regular" }, Math.min(overlay.w, overlay.h)).blur;
+  expect(markup).toContain(`stdDeviation="${sigma / 2} ${sigma * 2}"`);
   const scale = Number(/<feDisplacementMap[^>]* scale="([^"]+)"/.exec(markup)![1]);
   for (const [channel, cssScale] of [
     ["R", 2],

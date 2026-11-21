@@ -13,7 +13,7 @@ type Phase = "idle" | "pressed" | "settling";
 function usePressPhase(pressed: boolean): Phase {
   const [retained, setRetained] = useState(pressed);
   useEffect(() => {
-    const finish = setTimeout(() => setRetained(pressed), pressed ? 0 : 320);
+    const finish = setTimeout(() => setRetained(pressed), pressed ? 0 : 240);
     return () => clearTimeout(finish);
   }, [pressed]);
   return pressed ? "pressed" : retained ? "settling" : "idle";
@@ -56,10 +56,8 @@ export function ControlThumb({
           {phase !== "idle" && (
             <GlassSurface
               {...options}
-              material={options.material ?? "clear"}
-              refraction={
-                options.refraction ?? (props.className?.includes("lg-switch-thumb") ? 7.75 : 5)
-              }
+              material={options.material ?? "lens"}
+              aberration
               radius={options.radius ?? "capsule"}
               render={<span />}
               className="lg-control-lens"

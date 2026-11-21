@@ -1,3 +1,11 @@
+/* What glass treats as behind it wherever the scene's content is
+   transparent: its frost, tone and refraction show this color there. Set it
+   on a scene or any ancestor. Transparent, the default, adds nothing. */
+@property --lg-backdrop {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
 :where(.lg-scene) {
   position: relative;
   isolation: isolate;
@@ -50,6 +58,23 @@
   box-sizing: border-box;
   --lg-material-foreground: var(--lg-foreground, #111113);
   color: var(--lg-material-foreground);
+}
+/* In Chromium each surface draws its glass as its own backdrop filter. One
+   holding other glass draws it on this layer beneath its children instead,
+   so the glass inside it sees it. */
+.lg-surface[data-glass-host] {
+  isolation: isolate;
+}
+.lg-surface[data-glass-host]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  backdrop-filter: var(--lg-glass-filter);
+  /* Held in view while the surface scrolls its children. */
+  translate: var(--lg-scroll, 0px 0px);
 }
 :where(.lg-surface)[data-glass-appearance="dark"] {
   --lg-material-foreground: var(--lg-foreground, #fff);
@@ -183,15 +208,23 @@
 /* Interactive glass illuminates from within, starting beneath the pointer.
    The scene writes --lg-glow (0–1) and its position on the surface. */
 :where(.lg-surface[data-glass-interactive]) {
+  /* A soft light under the finger, and the whole face brightening a little. */
   --lg-glow-color: rgb(255 255 255 / 0.3);
-  background-image: radial-gradient(
-    var(--lg-glow-size, 64px) circle at var(--lg-glow-x, 50%) var(--lg-glow-y, 50%),
-    color-mix(in srgb, var(--lg-glow-color) calc(var(--lg-glow, 0) * 100%), transparent),
-    transparent
-  );
+  --lg-glow-fill: rgb(255 255 255 / 0.12);
+  background-image:
+    radial-gradient(
+      var(--lg-glow-size, 36px) circle at var(--lg-glow-x, 50%) var(--lg-glow-y, 50%),
+      color-mix(in srgb, var(--lg-glow-color) calc(var(--lg-glow, 0) * 100%), transparent),
+      transparent
+    ),
+    linear-gradient(
+      color-mix(in srgb, var(--lg-glow-fill) calc(var(--lg-glow, 0) * 100%), transparent),
+      color-mix(in srgb, var(--lg-glow-fill) calc(var(--lg-glow, 0) * 100%), transparent)
+    );
 }
 :where(.lg-surface[data-glass-interactive][data-glass-appearance="dark"]) {
-  --lg-glow-color: rgb(255 255 255 / 0.16);
+  --lg-glow-color: rgb(255 255 255 / 0.2);
+  --lg-glow-fill: rgb(255 255 255 / 0.07);
 }
 :where(.lg-surface[data-glass-interactive]) {
   touch-action: manipulation;
@@ -220,6 +253,16 @@
   width: var(--active-tab-width);
   height: var(--active-tab-height);
   pointer-events: none;
+  /* The chosen tab's plate of glass is lit a little brighter than the bar. */
+  background: var(--lg-tab-selection, color-mix(in oklab, currentColor 9%, transparent));
+}
+/* The lens a press lifts out of the plate: drawn over the labels, so it
+   magnifies them, and outside the bar, so the bar's shape never clips it. */
+:where(.lg-tab-lens) {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  box-sizing: border-box;
 }
 
 :where(.lg-button)[data-size="xs"],
@@ -362,6 +405,11 @@
 :where(.lg-scene[data-glass-popup]) {
   z-index: 20;
 }
+/* A popup's contents wait for its glass, for at most a few frames. The popup
+   itself stays visible so it can take focus. */
+.lg-surface[data-glass-pending] > * {
+  visibility: hidden !important;
+}
 
 :where(.lg-content[data-layout="flow"]) {
   position: relative;
@@ -391,6 +439,11 @@
   width: var(--lg-blur-size);
 }
 
+/* The fill of a slider and the track of a switch that's on. `tint` sets it on
+   the element; a stylesheet can set it too. */
+:where(.lg-slider, .lg-switch) {
+  --lg-accent: #8e8e93;
+}
 :where(.lg-slider) {
   position: relative;
   width: 280px;
@@ -437,8 +490,10 @@
   --lg-control-grow-y: 2px;
 }
 :where(.lg-switch-thumb) {
-  --lg-control-grow-x: 9px;
-  --lg-control-grow-y: 5.5px;
+  /* While pressed the thumb lifts into a lens about 1.55 times its size, as on
+     macOS: 9px and 5.5px each side at the default 32x20 thumb, so 50x31. */
+  --lg-control-grow-x: calc(100cqh * 0.45);
+  --lg-control-grow-y: calc(100cqh * 0.275);
 }
 :where(.lg-control-lens, .lg-control-face) {
   position: absolute;
@@ -495,6 +550,8 @@
   flex-direction: column-reverse;
 }
 :where(.lg-switch) {
+  /* The thumb sizes itself and its travel from the switch's content box. */
+  container-type: size;
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -524,19 +581,21 @@
 :where(.lg-switch)[data-presentation-checked="false"] > .lg-switch-track {
   background: rgb(128 128 128 / 0.4);
 }
-/* The switch sizes its thumb: as tall as the switch inside its padding, and
-   32:20 wide. An "on" thumb takes the free space before it, so it travels
-   whatever width the switch leaves it, in either direction. */
+/* The track brightens a little while its thumb is held. */
+:where(.lg-switch):has(.lg-control-thumb[data-press-phase="pressed"]) > .lg-switch-track {
+  background-image: linear-gradient(rgb(255 255 255 / 0.1), rgb(255 255 255 / 0.1));
+}
+/* The thumb is as tall as the switch inside its padding and 32:20 wide, and
+   travels the width that leaves it, following --lg-switch-position (0 off, 1
+   on, and every point between while dragged) in either writing direction. At
+   the default 54x24 size that is a 32x20 thumb travelling 18px. */
 :where(.lg-switch-thumb) {
   position: relative;
   display: block;
-  height: 100%;
-  aspect-ratio: 32 / 20;
+  width: calc(100cqh * 1.6);
+  height: 100cqh;
   flex-shrink: 0;
-}
-:where(.lg-switch)[data-checked]:not([data-presentation-checked="false"]) > .lg-switch-thumb,
-:where(.lg-switch)[data-presentation-checked="true"] > .lg-switch-thumb {
-  margin-inline-start: auto;
+  inset-inline-start: calc(var(--lg-switch-position, 0) * (100cqw - 100cqh * 1.6));
 }
 
 :where(.lg-switch):focus-visible {
@@ -605,7 +664,6 @@
 :where(.lg-color-picker-canvas) {
   box-sizing: border-box;
   padding: var(--lg-color-picker-padding);
-  background: var(--lg-color-picker-background, transparent);
 }
 :where(.lg-color-wheel-colors, .lg-color-wheel) {
   position: relative;

@@ -17,7 +17,7 @@ function materialRows(kind: ExampleKind): readonly Row[] {
       "material",
       '"clear" | "regular"',
       thumb
-        ? "Pressed thumb material. Default: clear."
+        ? "Pressed thumb material. Default: lens."
         : kind === "menu"
           ? "Default: regular."
           : "Inherits from the scene.",
@@ -28,8 +28,8 @@ function materialRows(kind: ExampleKind): readonly Row[] {
       "refraction",
       "number",
       thumb
-        ? `Pressed thumb displacement in pixels. Default: ${kind === "slider" ? 5 : 7.75}.`
-        : "Displacement in pixels. Default: 60; nested surfaces limit it to their inset.",
+        ? "Pressed thumb displacement in pixels. Default: a quarter of the lifted lens's height."
+        : "Displacement in pixels. Default: half the shorter side, up to 60; nested surfaces limit it to their inset.",
     ],
     [
       "tint",
@@ -49,7 +49,7 @@ function materialRows(kind: ExampleKind): readonly Row[] {
 }
 const motionRows: Record<"surface" | "control" | "menu", readonly Row[]> = {
   surface: [
-    ["interactive", "boolean", "Press and drag feedback. Default: false."],
+    ["interactive", "boolean", "Grow 2.5px and light up under a press. Default: false."],
     [
       "motion",
       '"full" | "reduced" | "none"',
@@ -57,7 +57,7 @@ const motionRows: Record<"surface" | "control" | "menu", readonly Row[]> = {
     ],
   ],
   control: [
-    ["interactive", "boolean", "Press and drag feedback. Default: true."],
+    ["interactive", "boolean", "Grow 2.5px and light up under a press. Default: true."],
     [
       "motion",
       '"full" | "reduced" | "none"',
@@ -321,9 +321,9 @@ const parts: Record<ExampleKind, readonly Part[]> = {
         ["refraction", "number", "The lens's displacement in pixels. Default: 16."],
         ["specular", "boolean", "Rim highlights on the lens. Default: true."],
         [
-          "--lg-color-picker-background",
+          "--lg-backdrop",
           "CSS color",
-          "Backdrop behind the wheel, refracted at the bubble's edge. Set it to your page color in Safari, which needs an opaque backdrop. Default: transparent.",
+          "The color behind the picker, refracted at the bubble's edge where the wheel ends. Inherited, so it can be set on any ancestor. Default: transparent.",
         ],
       ],
     },

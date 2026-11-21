@@ -1,4 +1,4 @@
-import { materials } from "../core/materials.js";
+import { aberrationFor, glassRecipe, glassSize, outlineFor } from "../core/materials.js";
 import type { MaterialOptions } from "../core/materials.js";
 import { patchFilters } from "./filter-patch.js";
 import { mapImage, mapUrl } from "./map-image.js";
@@ -6,8 +6,13 @@ import type { MapPlane } from "./map-image.js";
 import type { MaterialMaps } from "./maps.js";
 import { touchMaps } from "./maps.js";
 import {
+  backdropColor,
+  fillMarkup,
   frostMarkup,
+  lightMarkup,
+  outlineMarkup,
   overlayTintMarkup,
+  refractMarkup,
   tintChannels,
   tintMarkup,
   toneMarkup,
@@ -24,8 +29,17 @@ export interface LayerFrame {
   clientLeft: number;
   clientTop: number;
 }
+/** How a surface's layer gets what is behind it. `copy` paints a live
+ * `-moz-element()` view of the content and refracts it: Gecko, for glass
+ * beside the content. `backdrop` filters the surface's own backdrop with the
+ * material on the GPU, without refraction: Gecko, for glass inside the
+ * content, which a copy of the content would show its own face. `flat` gives
+ * the glass a body of the backdrop color: WebKit, for glass inside the
+ * content, which WebKit cannot filter from beneath. */
+export type LayerMode = "copy" | "backdrop" | "flat";
 export interface LayerLens {
   serial: number;
+  mode: LayerMode;
   element: HTMLElement;
   options: MaterialOptions;
   maps: MaterialMaps;
@@ -50,8 +64,9 @@ interface Box {
   height: number;
 }
 /** `glass` holds the material over a plain copy of the backdrop (`source`)
- * and its refracted copy; `light` holds the rim and light above it. */
-type Part = "glass" | "source" | "refracted" | "light";
+ * and its refracted copy; `light` adds the rim's light to it, and `rim` holds
+ * the outline just outside it. */
+type Part = "glass" | "source" | "refracted" | "light" | "rim";
 interface Layer {
   element: HTMLDivElement;
   host: HTMLElement;
@@ -64,6 +79,10 @@ interface Layer {
   split?: Record<Part, HTMLDivElement>;
   /** The layer's box on screen this frame. */
   screen?: Box;
+  mode?: LayerMode;
+  /** The host's inline backdrop filter as authored, while the layer filters
+   * the host's backdrop. */
+  backdrop?: { value: string; priority: string };
 }
 let serial = 0;
 const ns = "http://www.w3.org/2000/svg";
@@ -104,7 +123,7 @@ export function createLensLayers(root: HTMLElement) {
   };
   const splitOf = (layer: Layer) => {
     if (layer.split) return layer.split;
-    const names: Part[] = ["glass", "source", "refracted", "light"];
+    const names: Part[] = ["glass", "source", "refracted", "light", "rim"];
     const parts = Object.fromEntries(
       names.map((name) => {
         const element = document.createElement("div");
@@ -119,8 +138,10 @@ export function createLensLayers(root: HTMLElement) {
       }),
     ) as Record<Part, HTMLDivElement>;
     parts.refracted.style.inset = "auto";
+    // Light adds to the glass beneath it, as it does on macOS.
+    parts.light.style.mixBlendMode = "plus-lighter";
     parts.glass.append(parts.source, parts.refracted);
-    layer.element.append(parts.glass, parts.light);
+    layer.element.append(parts.glass, parts.light, parts.rim);
     return (layer.split = parts);
   };
   /** The images of one map plane across a box: one, or the two caps and the
@@ -138,26 +159,164 @@ export function createLensLayers(root: HTMLElement) {
       { url: middle, left: box.left + cap - 0.5, width: box.width - cap * 2 + 1 },
     ];
   };
+  const restoreBackdrop = (layer: Layer) => {
+    const original = layer.backdrop;
+    if (!original) return;
+    layer.backdrop = undefined;
+    if (original.value)
+      layer.host.style.setProperty("backdrop-filter", original.value, original.priority);
+    else layer.host.style.removeProperty("backdrop-filter");
+  };
   const release = (key: number, layer: Layer) => {
+    restoreBackdrop(layer);
     layer.element.remove();
     if (layer.isolation) layer.host.style.isolation = layer.isolation;
     else layer.host.style.removeProperty("isolation");
     layers.delete(key);
   };
   const reference = (element: HTMLElement) => `-moz-element(#${CSS.escape(element.id)})`;
+  type Images = ReturnType<typeof planeImages>;
+  /** Paint map images over a box as a part's mask or background. */
+  const paintImages = (
+    layer: Layer,
+    part: Part | undefined,
+    property: "mask" | "background",
+    images: Images,
+    box: Box,
+  ) => {
+    write(
+      layer,
+      `${property}-image`,
+      images.length ? images.map((i) => `url("${i.url}")`).join(", ") : "none",
+      part,
+    );
+    write(
+      layer,
+      `${property}-position`,
+      images.map((i) => `${i.left}px ${box.top}px`).join(", "),
+      part,
+    );
+    write(
+      layer,
+      `${property}-size`,
+      images.map((i) => `${i.width}px ${box.height}px`).join(", "),
+      part,
+    );
+  };
+  const filterOpen = (id: string) =>
+    `<filter id="${id}" x="0" y="0" width="1" height="1" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">`;
+  /** Glass drawn in the surface's own box, from what is behind it rather
+   * than a copy of the content: the material as a filter, the rim and light
+   * as the overlay map. `color` is the resolved backdrop color. */
+  const drawOwn = (
+    lens: LayerLens,
+    layer: Layer,
+    local: Box,
+    box: Box,
+    color: string,
+  ): string[] => {
+    const o = lens.options,
+      f = lens.frame,
+      p = "l";
+    const tint = tintChannels(o);
+    write(layer, "left", `${local.left}px`);
+    write(layer, "top", `${local.top}px`);
+    write(layer, "width", `${local.width}px`);
+    write(layer, "height", `${local.height}px`);
+    // The surface's own opacity fades the layer and the backdrop with it.
+    write(layer, "opacity", "1");
+    const size = glassSize(lens.options, lens.w, lens.h);
+    const material = (input: string, frost: boolean) => {
+      const parts: string[] = [];
+      let base = input;
+      if (frost) {
+        const frosted = frostMarkup(p, base, o, size, 1 / Math.max(f.sx, f.sy));
+        parts.push(frosted.markup);
+        base = frosted.result;
+        const filled = fillMarkup(p, base, input, o, size, 1 / Math.max(f.sx, f.sy));
+        parts.push(filled.markup);
+        base = filled.result;
+      }
+      parts.push(toneMarkup(p, o, size, base));
+      if (tint) parts.push(tintMarkup(p, o, tint).markup);
+      return parts.join("");
+    };
+    const markup: string[] = [];
+    if (lens.mode === "backdrop") {
+      // The host's own backdrop excludes its face. Its clip path keeps the
+      // filtered backdrop to the shape.
+      const backed = color
+        ? `<feFlood flood-color="${color}" result="${p}back"/><feMerge result="${p}backed"><feMergeNode in="${p}back"/><feMergeNode in="SourceGraphic"/></feMerge>`
+        : "";
+      markup.push(
+        `${filterOpen(`${layer.base}-backdrop`)}${backed}${material(color ? `${p}backed` : "SourceGraphic", true)}</filter>`,
+      );
+      paintImages(
+        layer,
+        undefined,
+        "background",
+        [...planeImages(lens.maps, "light", box), ...planeImages(lens.maps, "rim", box)],
+        box,
+      );
+    } else {
+      // A body of the backdrop color takes the material's tone; blurring a
+      // single color changes nothing, so it is not frosted.
+      splitOf(layer);
+      write(layer, "display", "block", "glass");
+      write(layer, "display", "none", "source");
+      write(layer, "display", "none", "refracted");
+      write(layer, "display", "block", "light");
+      write(layer, "display", "block", "rim");
+      write(layer, "background-color", backdropColor, "glass");
+      paintImages(layer, "glass", "mask", planeImages(lens.maps, "field", box), box);
+      paintImages(layer, "light", "background", planeImages(lens.maps, "light", box), box);
+      paintImages(layer, "rim", "background", planeImages(lens.maps, "rim", box), box);
+      markup.push(
+        `${filterOpen(`${layer.base}-material`)}${material("SourceGraphic", false)}</filter>`,
+      );
+    }
+    if (tint)
+      markup.push(
+        `${filterOpen(`${layer.base}-light`)}${overlayTintMarkup("SourceGraphic", `${p}light`, tint)}</filter>`,
+      );
+    return markup;
+  };
+  const applyOwn = (layer: Layer, live: (id: string) => string, defined: Set<string>) => {
+    const url = (id: string) => `url("#${live(id)}")`;
+    const light = defined.has(`${layer.base}-light`) ? url(`${layer.base}-light`) : "none";
+    if (layer.mode === "flat") {
+      write(layer, "filter", "none");
+      write(layer, "filter", url(`${layer.base}-material`), "glass");
+      write(layer, "filter", light, "light");
+      return;
+    }
+    const host = layer.host.style;
+    layer.backdrop ??= {
+      value: host.getPropertyValue("backdrop-filter"),
+      priority: host.getPropertyPriority("backdrop-filter"),
+    };
+    const value = url(`${layer.base}-backdrop`);
+    if (host.getPropertyValue("backdrop-filter") !== value)
+      host.setProperty("backdrop-filter", value);
+    write(layer, "filter", light);
+  };
 
   return {
     /** `blur` is the scene's progressive blur when it is drawn on a host
      * around the content rather than on the content: layers then blur their
      * own copy of the content the same way, so they never render the whole
-     * blurred content to sample a small part of it. */
+     * blurred content to sample a small part of it. With `backdrop`, each
+     * layer's copy lies over the scene's backdrop color, which a backdrop
+     * filter receives resolved as `backdropColor`. */
     update(
       lenses: readonly LayerLens[],
-      content: HTMLElement,
+      content: HTMLElement | null,
       contentRect: Box,
       blur?: { left: number; top: number; regions: readonly ProgressiveRegion[] },
+      backdrop = false,
+      resolvedBackdrop = "",
     ) {
-      if (contentId?.element !== content) {
+      if (content && contentId?.element !== content) {
         if (contentId) restoreContentId();
         contentId = {
           element: content,
@@ -173,7 +332,8 @@ export function createLensLayers(root: HTMLElement) {
         if (voidElements.test(lens.element.tagName)) continue;
         keep.add(lens.serial);
         let layer = layers.get(lens.serial);
-        if (layer && layer.host !== lens.element) {
+        // A surface moving into or out of the content starts a fresh layer.
+        if (layer && (layer.host !== lens.element || layer.mode !== lens.mode)) {
           release(lens.serial, layer);
           layer = undefined;
         }
@@ -188,6 +348,7 @@ export function createLensLayers(root: HTMLElement) {
             base: `lg-lens-${owner}-${lens.serial}`,
             isolation: lens.element.style.isolation,
             written: new Map(),
+            mode: lens.mode,
           };
           // A stacking context keeps the layer above the surface's own
           // background and below its children.
@@ -198,15 +359,10 @@ export function createLensLayers(root: HTMLElement) {
         const o = lens.options;
         const f = lens.frame;
         // Sampling reach around the glass: blur and the largest displacement.
-        const blur =
-          o.material === "regular"
-            ? Math.max(
-                materials.regular.blur,
-                (o.appearance === "dark" ? materials.regular.dark : materials.regular.light)
-                  .fillSigma,
-              )
-            : 0;
-        const margin = Math.ceil(3 * blur + lens.refraction + 4);
+        const recipe = glassRecipe(o, glassSize(lens.options, lens.w, lens.h));
+        const blur = Math.max(recipe.blur, recipe.fill);
+        // Only a copy samples around the glass; the others draw in its box.
+        const margin = lens.mode === "copy" ? Math.ceil(3 * blur + lens.refraction + 4) : 0;
         const glass = {
           left: contentRect.left + lens.x - 2,
           top: contentRect.top + lens.y - 2,
@@ -237,6 +393,11 @@ export function createLensLayers(root: HTMLElement) {
       }
       for (const [key, layer] of layers) if (!keep.has(key)) release(key, layer);
       for (const { lens, layer, screen, local, lens_ } of plans) {
+        if (lens.mode !== "copy") {
+          markup.push(...drawOwn(lens, layer, local, lens_, resolvedBackdrop));
+          continue;
+        }
+        if (!content) continue;
         const f = lens.frame,
           o = lens.options,
           p = "l";
@@ -296,16 +457,19 @@ export function createLensLayers(root: HTMLElement) {
           );
         // Gecko keeps a filter of blurs, blends and color passes on the GPU,
         // and renders one with an image or a displacement in software, where
-        // the frost's two blurs cost most of the glass and every composite
-        // runs a pixel at a time. A resting Regular surface therefore only
-        // displaces in software, over a plain copy of its backdrop, and the
-        // GPU masks that to the shape, frosts both, and adds rim and light.
-        const split = o.material === "regular";
+        // the frost costs most of the glass and every composite runs a pixel
+        // at a time. Frosted glass therefore only displaces in software, over
+        // a plain copy of its backdrop, and the GPU masks that to the shape,
+        // frosts it, and adds rim and light.
+        const size = glassSize(lens.options, lens.w, lens.h);
+        const recipe = glassRecipe(o, size);
+        const split = recipe.blur > 0 || recipe.fill > 0;
         const part = split ? ("source" as const) : undefined;
         if (split) splitOf(layer);
         if (layer.split) {
           write(layer, "display", split ? "block" : "none", "glass");
           write(layer, "display", split ? "block" : "none", "light");
+          write(layer, "display", split ? "block" : "none", "rim");
         }
         write(layer, "left", `${local.left}px`);
         write(layer, "top", `${local.top}px`);
@@ -315,6 +479,16 @@ export function createLensLayers(root: HTMLElement) {
         if (layer.split)
           write(layer, "background-image", split ? "none" : sources.map((s) => s.image).join(", "));
         write(layer, "background-image", sources.map((s) => s.image).join(", "), part);
+        // The backdrop color paints beneath every copy, inside the layer's
+        // box; the glass's mask keeps it to the shape. A split layer is not
+        // filtered itself, so only its masked parts carry it.
+        const behind = backdrop ? backdropColor : "";
+        const paintBackdrop = (value: string, on?: Part) => {
+          if (value || layer.written.has(on ? `${on} background-color` : "background-color"))
+            write(layer, "background-color", value, on);
+        };
+        paintBackdrop(split ? "" : behind);
+        if (layer.split) paintBackdrop(split ? behind : "", "source");
         write(
           layer,
           "background-position",
@@ -340,7 +514,8 @@ export function createLensLayers(root: HTMLElement) {
           `<filter id="${id}" x="0" y="0" width="1" height="1" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">`;
         if (split) {
           const tint = tintChannels(o);
-          const frost = frostMarkup(p, "SourceGraphic", o, 1 / scale);
+          const frost = frostMarkup(p, "SourceGraphic", o, size, 1 / scale);
+          const filled = fillMarkup(p, frost.result, "SourceGraphic", o, size, 1 / scale);
           // The refracted copy spans the shape and what its displacement
           // reads; the whole layer when a blur is placed in it.
           const reach = Math.ceil(lens.refraction / scale) + 2;
@@ -367,30 +542,13 @@ export function createLensLayers(root: HTMLElement) {
           const displaced = `<feDisplacementMap in="SourceGraphic" in2="${p}field" scale="${(2 * lens.refraction) / scale}" xChannelSelector="R" yChannelSelector="G" ${box}`;
           markup.push(
             `${open(layer.base)}${mapImage(lens.maps, "field", `${p}field`, shape.left, shape.top, shape.width, shape.height)}${displaced}/></filter>`,
-            `${open(`${layer.base}-material`)}${frost.markup}${toneMarkup(p, o, lens.parents.length > 0).replace(`in="${p}refracted"`, `in="${frost.result}"`)}${tint ? tintMarkup(p, o, tint).markup : ""}</filter>`,
+            `${open(`${layer.base}-material`)}${frost.markup}${filled.markup}${toneMarkup(p, o, size, filled.result)}${tint ? tintMarkup(p, o, tint).markup : ""}</filter>`,
             ...(tint
               ? [
-                  `${open(`${layer.base}-light`)}${overlayTintMarkup("SourceGraphic", `${p}light`, o, tint)}</filter>`,
+                  `${open(`${layer.base}-light`)}${overlayTintMarkup("SourceGraphic", `${p}light`, tint)}</filter>`,
                 ]
               : []),
           );
-          type Images = ReturnType<typeof planeImages>;
-          const position = (images: Images, top: number) =>
-            images.map((i) => `${i.left}px ${top}px`).join(", ");
-          const size = (images: Images, height: number) =>
-            images.map((i) => `${i.width}px ${height}px`).join(", ");
-          const urls = (images: Images) => images.map((i) => `url("${i.url}")`).join(", ");
-          const paint = (
-            part: Part,
-            property: "mask" | "background",
-            images: Images,
-            top: number,
-            height: number,
-          ) => {
-            write(layer, `${property}-image`, images.length ? urls(images) : "none", part);
-            write(layer, `${property}-position`, position(images, top), part);
-            write(layer, `${property}-size`, size(images, height), part);
-          };
           for (const [name, value] of Object.entries({
             left: inner.left,
             top: inner.top,
@@ -399,6 +557,7 @@ export function createLensLayers(root: HTMLElement) {
           }))
             write(layer, name, `${value}px`, "refracted");
           write(layer, "background-image", sources.map((s) => s.image).join(", "), "refracted");
+          paintBackdrop(behind, "refracted");
           write(
             layer,
             "background-position",
@@ -416,48 +575,45 @@ export function createLensLayers(root: HTMLElement) {
             sources.map((s) => `${s.box.width / f.sx}px ${s.box.height / f.sy}px`).join(", "),
             "refracted",
           );
-          paint(
-            "refracted",
-            "mask",
-            planeImages(lens.maps, "field", shape),
-            shape.top,
-            shape.height,
-          );
-          paint("glass", "mask", planeImages(lens.maps, "field", lens_), lens_.top, lens_.height);
-          paint(
-            "light",
-            "background",
-            planeImages(lens.maps, "overlay", lens_),
-            lens_.top,
-            lens_.height,
-          );
+          paintImages(layer, "refracted", "mask", planeImages(lens.maps, "field", shape), shape);
+          paintImages(layer, "glass", "mask", planeImages(lens.maps, "field", lens_), lens_);
+          paintImages(layer, "light", "background", planeImages(lens.maps, "light", lens_), lens_);
+          paintImages(layer, "rim", "background", planeImages(lens.maps, "rim", lens_), lens_);
           continue;
         }
         let base = "SourceGraphic";
         const parts = [image("field", `${p}field`)];
-        if (o.material === "regular") {
-          const frost = frostMarkup(p, base, o, 1 / scale);
-          parts.push(frost.markup);
-          base = frost.result;
-        }
+        const frost = frostMarkup(p, base, o, size, 1 / scale);
+        parts.push(frost.markup);
+        base = frost.result;
         parts.push(
-          `<feDisplacementMap in="${base}" in2="${p}field" scale="${(2 * lens.refraction) / scale}" xChannelSelector="R" yChannelSelector="G" ${region} result="${p}refracted"/>`,
-          toneMarkup(p, o, lens.parents.length > 0),
+          refractMarkup(p, base, lens.refraction / scale, aberrationFor(o, size) / scale).replace(
+            /<feDisplacementMap\b/g,
+            `<feDisplacementMap ${region}`,
+          ),
         );
+        const filled = fillMarkup(p, `${p}refracted`, "SourceGraphic", o, size, 1 / scale);
+        parts.push(filled.markup, toneMarkup(p, o, size, filled.result));
         let color = `${p}color`,
-          overlay = `${p}overlay`;
+          light = `${p}light`;
         const tint = tintChannels(o);
         if (tint) {
           const tinted = tintMarkup(p, o, tint);
           parts.push(tinted.markup);
           color = tinted.color;
-          overlay = `${p}tintOverlay`;
+          light = `${p}tintLight`;
         }
         parts.push(
-          `<feComposite in="${color}" in2="${p}field" operator="in" ${region} result="${p}inside"/>`,
-          image("overlay", `${p}overlay`),
-          ...(tint ? [overlayTintMarkup(`${p}overlay`, overlay, o, tint)] : []),
-          `<feMerge ${region} result="${p}glass"><feMergeNode in="${p}inside"/><feMergeNode in="${overlay}"/></feMerge>`,
+          image("light", `${p}light`),
+          ...(tint ? [overlayTintMarkup(`${p}light`, light, tint)] : []),
+          lightMarkup(p, color, light, `${p}field`, o.material).replace(
+            /<feComposite\b/g,
+            `<feComposite ${region}`,
+          ),
+          image("rim", `${p}rim`),
+          outlineMarkup(p, "SourceGraphic", `${p}rim`, 1, outlineFor(o, size)),
+          `<feComposite in="${p}rim" in2="${p}field" operator="in" ${region} result="${p}ring"/>`,
+          `<feMerge ${region} result="${p}glass"><feMergeNode in="${p}outline"/><feMergeNode in="${p}litInside"/><feMergeNode in="${p}ring"/></feMerge>`,
         );
         // Pointwise passes only need the glass; the tone tables otherwise
         // run over the whole sampled neighborhood.
@@ -471,7 +627,11 @@ export function createLensLayers(root: HTMLElement) {
       }
       const live = patchFilters(defs, markup, mapUrl);
       const blurred = new Set(markup.map((m) => /id="([^"]+)"/.exec(m)![1]));
-      for (const { layer } of plans) {
+      for (const { lens, layer } of plans) {
+        if (lens.mode !== "copy") {
+          applyOwn(layer, live, blurred);
+          continue;
+        }
         const id = `${layer.base}-blur`;
         const own = [blurred.has(id) ? `url("#${live(id)}")` : "", `url("#${live(layer.base)}")`]
           .filter(Boolean)

@@ -52,17 +52,19 @@ class DocumentStub {
     return this.createElement(tag);
   }
 }
-/** Eight images: two planes and their capsule slices. */
+/** Twelve images: three planes and their capsule slices. */
 const maps = (id: number): MaterialMaps => ({
   field: `${id}-field`,
-  overlay: `${id}-overlay`,
+  rim: `${id}-rim`,
+  light: `${id}-light`,
   duration: 0,
   capsule: {
     cap: 10,
     height: 20,
     planes: {
       field: [`${id}-f-left`, `${id}-f-middle`, `${id}-f-right`],
-      overlay: [`${id}-o-left`, `${id}-o-middle`, `${id}-o-right`],
+      rim: [`${id}-r-left`, `${id}-r-middle`, `${id}-r-right`],
+      light: [`${id}-l-left`, `${id}-l-middle`, `${id}-l-right`],
     },
   },
 });
@@ -110,9 +112,9 @@ test("96 prepared images use separate bounded filter targets, including during e
   const doc = new DocumentStub(),
     root = doc.createElement("main");
   const warmer = createMapWarmer(root as unknown as HTMLElement);
-  const groups = Array.from({ length: 13 }, (_, index) => maps(index));
+  const groups = Array.from({ length: 9 }, (_, index) => maps(index));
   try {
-    for (let index = 0; index < 12; index++) warmer.warm(groups[index]!);
+    for (let index = 0; index < 8; index++) warmer.warm(groups[index]!);
     clock.advance(mapWarmup);
     const svg = root.children.find((element) => element.tagName === "svg")!;
     const probes = root.children.filter((element) => element.tagName === "div");
@@ -122,22 +124,22 @@ test("96 prepared images use separate bounded filter targets, including during e
       svg.children.map((filter) => `url("#${filter.id}")`),
     );
     for (const filter of svg.children) expect(filter.maximumChildren).toBeLessThanOrEqual(49);
-    for (let index = 0; index < 12; index++) expect(warmer.has(groups[index]!)).toBe(true);
+    for (let index = 0; index < 8; index++) expect(warmer.has(groups[index]!)).toBe(true);
     const images = () =>
       svg.children.flatMap((filter) =>
         filter.children.filter((child) => child.tagName === "feImage"),
       );
     expect(images()).toHaveLength(96);
     const retained = images();
-    warmer.warm(groups[11]!);
+    warmer.warm(groups[7]!);
     expect(images()).toEqual(retained);
-    warmer.warm(groups[12]!);
+    warmer.warm(groups[8]!);
     expect(images()).toHaveLength(96);
     expect(warmer.has(groups[0]!)).toBe(true);
     expect(warmer.has(groups[1]!)).toBe(true);
-    expect(warmer.has(groups[12]!)).toBe(false);
+    expect(warmer.has(groups[8]!)).toBe(false);
     clock.advance(mapWarmup);
-    expect(warmer.has(groups[12]!)).toBe(true);
+    expect(warmer.has(groups[8]!)).toBe(true);
     expect(svg.children).toHaveLength(2);
     for (const filter of svg.children) expect(filter.maximumChildren).toBeLessThanOrEqual(49);
     for (const element of [svg, ...probes, ...images()])
@@ -180,30 +182,30 @@ test("reentering a path larger than probe capacity retains completed history wit
   const doc = new DocumentStub(),
     root = doc.createElement("main");
   const warmer = createMapWarmer(root as unknown as HTMLElement);
-  const path = Array.from({ length: 20 }, (_, index) => maps(index));
+  const path = Array.from({ length: 16 }, (_, index) => maps(index));
   try {
     for (const maps of path) warmer.warm(maps);
-    expect(doc.imageLinks).toBe(160);
+    expect(doc.imageLinks).toBe(192);
     expect(path.some((maps) => warmer.has(maps))).toBe(false);
     clock.advance(mapWarmup - 1);
-    warmer.warm(path[19]!);
-    expect(warmer.has(path[19]!)).toBe(false);
-    expect(doc.imageLinks).toBe(160);
+    warmer.warm(path[15]!);
+    expect(warmer.has(path[15]!)).toBe(false);
+    expect(doc.imageLinks).toBe(192);
     clock.advance(1);
-    // The first64 URLs were evicted before any grace period completed;
+    // The first 96 URLs were evicted before any grace period completed;
     // their preparation must not be mistaken for a successful warm attempt.
     expect(path.map((maps) => warmer.has(maps))).toEqual([
       ...Array(8).fill(false),
-      ...Array(12).fill(true),
+      ...Array(8).fill(true),
     ]);
     for (const maps of path) warmer.warm(maps);
-    // Completed maps no longer recirculate through the96 live probe slots.
-    expect(doc.imageLinks).toBe(224);
+    // Completed maps no longer recirculate through the 96 live probe slots.
+    expect(doc.imageLinks).toBe(288);
     expect(warmer.has(path[0]!)).toBe(false);
     clock.advance(mapWarmup);
     expect(path.every((maps) => warmer.has(maps))).toBe(true);
     for (const maps of path) warmer.warm(maps);
-    expect(doc.imageLinks).toBe(224);
+    expect(doc.imageLinks).toBe(288);
     warmer.dispose();
     expect(path.some((maps) => warmer.has(maps))).toBe(false);
     expect(clock.scheduled.size).toBe(0);

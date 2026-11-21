@@ -1,5 +1,5 @@
-export { GlassShape, GlassShapeContainer, GlassCorner } from "./shape.js";
-export type { GlassShapeProps, GlassCornerProps } from "./shape.js";
+export { GlassShape, GlassShapeContainer, GlassCorner, GlassRow } from "./shape.js";
+export type { GlassShapeProps, GlassCornerProps, GlassRowProps } from "./shape.js";
 export type { GlassMotion } from "../dom/index.js";
 export type { GlassBlurEdge, ProgressiveBlurOptions } from "../core/progressive.js";
 export {

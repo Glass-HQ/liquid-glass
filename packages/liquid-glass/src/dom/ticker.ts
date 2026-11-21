@@ -12,6 +12,9 @@
 export interface Ticker {
   /** Run on the next frame, if not already scheduled. */
   wake(): void;
+  /** Run before this frame paints: in a microtask, so a DOM change made by
+   * an event handler and the step's writes show in the same frame. */
+  flush(): void;
   /** Wake when this element's size changes. */
   observe(element: Element): void;
   unobserve(element: Element): void;
@@ -67,10 +70,19 @@ class Driver {
     this.pending.add(entry);
     if (!this.raf) this.raf = this.view.requestAnimationFrame((now) => this.frame(now));
   }
+  /** Run one entry now, outside the frame, then keep it scheduled. */
+  run(entry: Entry) {
+    if (entry.disposed) return;
+    this.step([entry], this.view.performance.now());
+    this.schedule(entry);
+  }
   private frame(now: number) {
     this.raf = 0;
     const entries = [...this.pending];
     this.pending.clear();
+    this.step(entries, now);
+  }
+  private step(entries: Entry[], now: number) {
     const writes: (() => void)[] = [];
     for (const entry of entries) {
       if (entry.disposed) continue;
@@ -113,6 +125,15 @@ export function createTicker(step: (now: number) => StepResult, options: TickerO
     })();
   const entry: Entry = { step, idle: 0, disposed: false };
   const wake = () => driver.schedule(entry);
+  let flushing = false;
+  const flush = () => {
+    if (flushing) return;
+    flushing = true;
+    queueMicrotask(() => {
+      flushing = false;
+      driver.run(entry);
+    });
+  };
   const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(wake) : undefined;
   const mutations =
     typeof MutationObserver === "function"
@@ -138,6 +159,7 @@ export function createTicker(step: (now: number) => StepResult, options: TickerO
   wake();
   return {
     wake,
+    flush,
     observe(element) {
       sizes?.observe(element);
     },

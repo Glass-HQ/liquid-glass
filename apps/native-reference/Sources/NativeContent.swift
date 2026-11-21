@@ -6,28 +6,9 @@ struct ReferenceAlbum: Decodable, Identifiable {
     var art: String
     var id: String { title }
 }
-struct ReferenceMessage: Decodable, Identifiable {
-    var id: Int
-    var from: String
-    var text: String?
-    var photo: String?
-    var link: Bool?
-}
-struct ReferenceArticleBlock: Decodable {
-    var kind: String
-    var text: String
-}
-struct ReferenceArticle: Decodable {
-    var title: String
-    var dek: String
-    var byline: String
-    var blocks: [ReferenceArticleBlock]
-}
 struct ReferenceContent: Decodable {
     var nowPlaying: ReferenceAlbum
     var albums: [ReferenceAlbum]
-    var messages: [ReferenceMessage]
-    var article: ReferenceArticle
     static let shared: ReferenceContent = {
         guard let url = Bundle.main.url(forResource: "site-content", withExtension: "json"),
               let data = try? Data(contentsOf: url),

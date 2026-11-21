@@ -83,7 +83,7 @@ export function GlassSlider({
       max={max}
       step={step}
       className={`lg-slider ${className}`}
-      style={{ "--lg-accent": tint ?? "#8e8e93", ...style } as CSSProperties}
+      style={{ ...(tint === undefined ? {} : { "--lg-accent": tint }), ...style }}
       data-ticks={ticks ? "" : undefined}
     >
       <Slider.Control
@@ -173,7 +173,7 @@ export function GlassSwitch({
       ref={mergedRef}
       nativeButton={false}
       className={`lg-switch ${className}`}
-      style={{ "--lg-accent": tint ?? "#8e8e93", ...style } as CSSProperties}
+      style={{ ...(tint === undefined ? {} : { "--lg-accent": tint }), ...style }}
       render={(rootProps, state) => (
         <span
           {...rootProps}

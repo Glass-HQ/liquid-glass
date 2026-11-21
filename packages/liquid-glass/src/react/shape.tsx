@@ -17,6 +17,21 @@ export interface GlassShapeProps extends HTMLAttributes<HTMLElement> {
   concentric?: boolean | ConcentricOptions;
   container?: RefObject<HTMLElement | null>;
 }
+export interface GlassRowProps extends Omit<
+  GlassShapeProps,
+  "concentric" | "container" | "radius"
+> {
+  /** Room between the row's content and the curve of the corner it nears. Default: 8. */
+  contentPadding?: number;
+}
+/**
+ * A row in a glass panel, such as a menu's item, a select's option or a palette's result: where
+ * it nears the panel's corners it follows their curve moved inward (concentric), and its side
+ * padding keeps its content clear of that curve. Render any element as the row with `render`.
+ */
+export function GlassRow({ contentPadding = 8, ...props }: GlassRowProps) {
+  return <GlassShape {...props} concentric={{ contentPadding }} />;
+}
 export function GlassShape({ concentric, container, ...props }: GlassShapeProps) {
   return concentric ? (
     <ConcentricShape {...props} concentric={concentric} container={container} />

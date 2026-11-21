@@ -59,20 +59,33 @@ Buttons, toolbars, tabs, menus, sliders, and switches use Base UI behavior. Stan
 
 ## Material and motion
 
-Set defaults on `GlassScene`; individual surfaces can override them. Menu popups default to Regular.
+Set defaults on `GlassScene`; individual surfaces can override them.
 
-| Prop          | Default            | Usage                                                                                                                                                                                               |
-| ------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `material`    | `"clear"`          | `"clear"` or `"regular"`.                                                                                                                                                                           |
-| `appearance`  | `"light"`          | `"light"` or `"dark"`.                                                                                                                                                                              |
-| `radius`      | Component-specific | Continuous corner radius in CSS pixels, `"capsule"`, or `"circle"`. Generic surfaces default to 8px.                                                                                                |
-| `refraction`  | `60`               | Nonnegative displacement in CSS pixels. Nested surfaces limit their default to the parent inset.                                                                                                    |
-| `tint`        | None               | Six-digit hex color. Colors the glass without changing text or icons.                                                                                                                               |
-| `interactive` | Component-specific | Press and drag feedback; on by default for buttons, toolbars, and tab bars. While pressed, links and images inside stop starting a native browser drag; mark content `draggable="true"` to keep it. |
-| `specular`    | `false`            | Two equal rim highlights on opposite corners that turn toward the pointer, and with the device's tilt on Android. Reduced motion holds them at the top left and bottom right.                       |
-| `motion`      | `"full"`           | `"full"`, `"reduced"`, or `"none"`; inherited from the scene.                                                                                                                                       |
+The materials follow macOS's own glass in an active window, taken from the filter values Core Animation gives `NSGlassEffectView` on macOS 27 and checked against captures in both appearances. Like macOS's, glass changes with its size: every value follows the shorter side of the shape. Glass up to 64px, such as buttons and capsules, stays nearly clear and bends its rim by half its height; from there to 160px it gathers frost, a darker face in dark appearance and a soft shadow, as panels and menus have. **Clear** keeps what is behind it sharp, lifts it a little, and bends it hard at the rim. **Regular** reads what is behind it nearly sharp and blends in a softer copy, keeping the darker of the two in dark appearance and the lighter in light, then compresses bright backdrops in dark appearance and lifts dark ones in light. The rim is lit as on macOS: a key light from above and a fill light from below add to the glass along its top and bottom edges, strongest on the outermost half pixel and fading over a few pixels and about 45 degrees around the shape, and a fine outline darkens what is behind the glass by its outermost pixel, most where the edge faces sideways. Regular glass also shades its face faintly along a ring a few pixels in. **Lens** is a clear magnifier with colored fringes where it bends, as a control's thumb lifts into under a press: it passes the pixels under it unchanged. `frost` moves Regular and Clear toward opaque, like the Liquid Glass slider in macOS's Appearance settings. Glass that floats above the window, a menu or popover, casts a deeper shadow; set `floating` on any other surface that does. macOS draws its menus Regular: Clear glass keeps what is behind it sharp, so a Clear menu over text or other glass is hard to read.
 
-Slider and switch pressed thumbs default to Clear, with refraction of 5px and 7.75px respectively. Their `tint` sets the track color.
+| Prop          | Default            | Usage                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `material`    | `"regular"`        | `"regular"`, `"clear"` or `"lens"`.                                                                                                                                                                                                                                                                                                                                                       |
+| `appearance`  | `"light"`          | `"light"` or `"dark"`.                                                                                                                                                                                                                                                                                                                                                                    |
+| `radius`      | Component-specific | Continuous corner radius in CSS pixels, `"capsule"`, or `"circle"`. Generic surfaces default to 8px.                                                                                                                                                                                                                                                                                      |
+| `refraction`  | By size            | Nonnegative displacement in CSS pixels. By default half the shorter side, up to 60 (Clear: 0.65 of it; Lens: a quarter). Nested surfaces limit their default to the parent inset.                                                                                                                                                                                                         |
+| `tint`        | None               | Six-digit hex color. Colors the glass without changing text or icons.                                                                                                                                                                                                                                                                                                                     |
+| `interactive` | Component-specific | Press feedback as on macOS: the glass grows 2.5px wider under a press, keeping its proportions, a soft light gathers under the pointer, and it settles back on release; a drag neither moves nor stretches it. On by default for buttons, toolbars, and tab bars. While pressed, links and images inside stop starting a native browser drag; mark content `draggable="true"` to keep it. |
+| `specular`    | `false`            | Two equal rim highlights on opposite corners that turn toward the pointer, and with the device's tilt on Android. Reduced motion holds them at the top left and bottom right.                                                                                                                                                                                                             |
+| `frost`       | `0`                | From 0 (most see-through) to 1 (most frosted): more blur, and Regular darkens (dark appearance) or lightens (light) toward opaque. Clear changes only past 0.5, as on macOS. Lens ignores it.                                                                                                                                                                                             |
+| `motion`      | `"full"`           | `"full"`, `"reduced"`, or `"none"`; inherited from the scene.                                                                                                                                                                                                                                                                                                                             |
+
+Pressed thumbs lift into Lens glass as macOS's do: a switch's grows to about 1.55 times its size and a slider's to 1.25, over 210ms, and while dragged the lens stretches up to 2.5% along its path and wobbles once when it stops. Their `tint` sets the track color; without one, the `--lg-accent` custom property does, so a stylesheet or a theme variable can color them (`--lg-accent: var(--accent)`).
+
+Glass takes its look from what is behind it, so over transparent content, such as a control in a small scene of its own, Regular and Clear glass would show only their rims. Set `--lg-backdrop` to the color behind the scene, and glass treats that color as its backdrop wherever the content is transparent: its frost, tone, and refraction look as they would over content of that color. Set it on the scene or any ancestor, with a stylesheet or a theme variable:
+
+```css
+.toolbar {
+  --lg-backdrop: var(--window-background);
+}
+```
+
+The color paints only through the glass; the content and the space around the glass stay transparent. A new color applies without rebuilding the filter. Unset or transparent, it changes nothing.
 
 System reduced-motion preferences always apply, including with `motion="full"`. Reduced motion removes stretching and travel; `"none"` removes transitions. Safari uses the same motion settings as other browsers.
 
@@ -137,6 +150,8 @@ Tabs select the first enabled item unless `defaultValue` is set. Use `value` and
 
 The list also works within an existing Base UI tabs root; do not nest another root. Keep interactive elements out of tab labels.
 
+The selection moves as macOS 27's tabs do. At rest the chosen tab sits on a small plate of glass (`GlassTabsIndicator`, Regular by default; `--lg-tab-selection` sets its fill). A press lifts a Lens out of it, a third of the tab's height wider at each end and taller above and below, which magnifies the labels under it while the plate fades. Pressing another tab carries the lens there as it lifts. Dragging moves the lens with the pointer at the size it lifted at, squashing with speed and wobbling as it stops; only at either end of the bar does it take on that tab's size. Letting go settles it onto the tab under its centre, at that tab's size. The lens is a glass surface only while it shows: it is added to the scene's root, beside the bar, so the bar's shape never clips it. The bar itself holds still under a press; set `interactive` on `GlassTabsList` to have it grow.
+
 Sliders accept a numeric `value` or `defaultValue`, `min`, `max`, `step`, `onValueChange`, and `onValueCommitted`. Defaults are 0–100 with a 0.1 step. With `ticks`, the step must divide the range evenly, with at most 100 intervals. `thumbProps` exposes input refs and accessible value text. `disabled` dims the slider and stops pointer and keyboard changes.
 
 Switches accept Base UI switch props, including `checked`, `defaultChecked`, `onCheckedChange`, `name`, `inputRef`, `readOnly`, and `disabled`. A disabled switch is dimmed, ignores pointer, drag and keyboard input, leaves the tab order, and is announced as disabled.
@@ -145,7 +160,7 @@ A switch is 54 × 24 pixels by default. To resize it, set only its own `width` a
 
 ## Color picker
 
-`GlassColorPicker` is a hue and saturation wheel. A small dot of the chosen color marks it exactly, and pressing the wheel grows the dot into a Clear glass bubble that follows the pointer, with a point at its center on the exact color. It renders its own scene, so it does not need a `GlassScene` around it.
+`GlassColorPicker` is a hue and saturation wheel. A small dot of the chosen color marks it exactly, and pressing the wheel grows the dot into a Lens glass bubble that follows the pointer, with a point at its center on the exact color. It renders its own scene, so it does not need a `GlassScene` around it.
 
 ```tsx
 const [color, setColor] = useState("#0a84ff");
@@ -153,7 +168,7 @@ const [color, setColor] = useState("#0a84ff");
 <GlassColorPicker value={color} onValueChange={setColor} name="color" />;
 ```
 
-Values are six-digit hex colors, picked at full brightness. `onValueCommitted` fires when a drag or key press ends. Arrow keys change hue (left and right) and saturation (up and down); Shift takes larger steps. `size` sets the wheel diameter (default 240). The lens is always Clear glass, so the color under it shows as it is; it defaults to `refraction={16}` and `specular`. Set `--lg-color-picker-background` to the color behind the picker: the lens refracts it at the wheel's edge, and Safari needs it opaque.
+Values are six-digit hex colors, picked at full brightness. `onValueCommitted` fires when a drag or key press ends. Arrow keys change hue (left and right) and saturation (up and down); Shift takes larger steps. `size` sets the wheel diameter (default 240). The lens is always Lens glass, with no frost, so the color under it shows as it is; it defaults to `refraction={16}` and `specular`. Set [`--lg-backdrop`](#material-and-motion) to the color behind the picker: the lens refracts it at the wheel's edge.
 
 ## Progressive blur
 
@@ -219,6 +234,18 @@ The viewport needs an explicit height and scrolling overflow. Keep fixed headers
 
 Use `GlassForeground` for ordinary DOM above the background that should refract beneath a higher glass surface. For an existing element ref, use `useGlassForeground()`. Keep overlapping content and menus in the same scene.
 
+`GlassRow` makes any element a row of the glass panel it sits in, like a menu's items: rows in the panel's corners follow its curve moved inward, and their side padding clears it.
+
+```tsx
+<GlassSurface radius={28} className="my-list">
+  {options.map((option) => (
+    <GlassRow key={option.id} render={<button type="button" />}>
+      {option.label}
+    </GlassRow>
+  ))}
+</GlassSurface>
+```
+
 ## Without React
 
 ```ts
@@ -239,6 +266,8 @@ scene.dispose();
 
 Use the positioned scene/content/surface structure from the React example. `scene.addForeground(element)` registers foreground content and returns a cleanup function. `scene.addAnimator(animator)` updates custom animation before scene measurements.
 
+In Chromium and Electron, each surface draws its own glass as an inline `backdrop-filter` on the surface, so a change anywhere redraws only the glass over it, and glass over other glass sees that glass as it is. The surface gets inline `border-radius` and `box-shadow` (its shadow), and `clip-path: none`; its original inline values come back when it is removed. A surface with glass inside it draws its glass on a `::before` layer beneath its children instead, and gets `isolation: isolate` and a `data-glass-host` attribute, because a backdrop filter on the surface itself would hide the glass behind it from the glass inside. Such a surface should not use `::before` for anything else. An ancestor with `filter`, `opacity` below 1, `mask`, `clip-path` or `backdrop-filter` limits what a backdrop filter sees to that ancestor, so glass inside one shows only what is inside it; fade a glass surface itself rather than a wrapper. Glass well off screen draws nothing until it comes near.
+
 In Firefox, each surface draws its own glass: the scene adds an `aria-hidden` layer as the surface's last child, beneath its other children, which paints a live `-moz-element()` view of the content and refracts it. The content layer itself is not filtered there. Firefox otherwise repaints a filtered content layer in software on every frame anything on the page animates. If the content element has no `id`, the scene gives it one while it is attached. Surfaces should not rely on `:last-child` styling of their own children.
 
 In Safari, content that WebKit composites on its own layer, such as video, WebGL and WebGPU canvases, 3D transforms, `will-change`, running transform or opacity animations, nested glass scenes, and positioned elements over any of them, would otherwise cover the glass. While glass is over such a layer, the scene gives the layer its own copy of the glass through an inline `filter`. For `<video>` and `<canvas>` it also inserts `aria-hidden` mirror canvases just before the element and cuts the glass's shape out of the element with an inline `clip-path`. A media element with an authored `clip-path` is hidden with `opacity: 0` instead, while glass is over it. All of these are removed once the glass moves away. An element in glass content with a long-running animation that Safari repaints every frame, such as an animated gradient or `background-position` shimmer, gets `will-change: transform` while it runs, so its repaints do not re-run the glass filter of the whole content. Elements with positioned descendants are left alone, because the new layer would change their stacking. Selectors such as `:first-child` or `+` that match the media's siblings can see the mirror canvases while they are present.
@@ -249,7 +278,7 @@ The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, 
 
 - React 19+ and Base UI (`@base-ui/react`, a peer dependency) for React components; HTTPS or localhost and an available WebGPU adapter to render glass material maps. Progressive blur needs no WebGPU.
 - SVG filter performance varies between browser engines. Safari can spend substantially longer filtering large content layers than Chromium, even when material maps are cached. Keep scenes close to the content they need to refract, and test moving glass on the devices you support. Chromium, Firefox, Safari, and Electron are acceptance targets; they do not have identical performance.
-- For consistent refraction in Safari, give `GlassContent` an opaque background. Transparent source pixels can leave the original content visible beneath its refracted image.
+- For consistent refraction in Safari, give `GlassContent` an opaque background, or set `--lg-backdrop`. Transparent source pixels can leave the original content visible beneath its refracted image.
 - Use bounded scenes with explicit content layers. Arbitrary page-backdrop sampling, rotated/transformed ancestors, and native ports are outside the supported scope.
 - In Safari, glass over a rotated or skewed composited layer, such as an element in a rotating CSS animation, draws beneath it. Encrypted (DRM) video cannot be drawn by any page, so glass over it also draws beneath it. Cross-origin video and canvas content refract without CORS, because the mirror never reads its pixels back.
 - `GlassScene.maxSurfaces` defaults to 16 and accepts at most 64. Use `onDiagnostic` for map readiness, construction timing, filter graph limits, and GPU errors.
@@ -257,7 +286,7 @@ The `/core`, `/gpu`, and `/dom` exports provide geometry, materials, rendering, 
 
 ## How it works
 
-vgpu renders WGSL material maps; SVG filters apply them to live DOM content. Maps are cached and reused as surfaces move. Geometry changes prepare new maps. The library does not capture DOM screenshots.
+vgpu renders WGSL material maps; SVG filters apply them to live DOM content: in Chromium as each surface's backdrop filter, elsewhere as a filter on the scene's content layer. Chromium copies a backdrop filter's images into every frame it draws, so there each map is cut into its four corners and the single column and row between them, which the filter stretches along the straight edges. Maps are cached and reused as surfaces move. Geometry changes prepare new maps. The library does not capture DOM screenshots. A `--lg-backdrop` color is composited beneath the content only in the area each surface samples, before frost and refraction; in Firefox it is the background color of each surface's glass layer.
 
 ## Contributing and license
 

@@ -28,6 +28,7 @@ export function GlassButton({
   refraction,
   tint,
   specular,
+  frost,
   interactive = true,
   motion,
   size = "default",
@@ -44,6 +45,7 @@ export function GlassButton({
       refraction={refraction}
       tint={tint}
       specular={specular}
+      frost={frost}
       interactive={interactive}
       motion={motion}
       className={`lg-button ${className}`}

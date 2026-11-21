@@ -1313,6 +1313,10 @@ footer a:focus-visible,
   flex: 1;
   min-height: 0;
   display: flex;
+  /* This scene's content is only the sidebar's links, on nothing. Its menus
+     treat the sidebar's color as what is behind them, so Clear and Regular
+     menus there look as they would over the sidebar itself. */
+  --lg-backdrop: var(--site-background);
 }
 .sidebar-menu-content {
   display: flex;

@@ -38,12 +38,11 @@ try {
     radius: 30,
     dpr: 1,
   });
-  const pixel = (plane, x, y) => [
-    ...map.pixels.slice(
+  const pixel = (plane, x, y) =>
+    map.pixels.slice(
       ((plane * map.height + y) * map.width + x) * 4,
       ((plane * map.height + y) * map.width + x) * 4 + 4,
-    ),
-  ];
+    );
   assertInwardField(map);
   console.log({
     size: [map.width, map.height],
@@ -60,8 +59,9 @@ try {
     pixel(0, 100, 32)[0] >= 128
   )
     throw new Error("GPU map invariant failed");
-  // Capsules must leave their side arcs to the outline, rather than wrapping
-  // the bright top/bottom band around the full perimeter.
+  // Capsules must leave their side arcs mostly to the outline, rather than
+  // wrapping the bright top/bottom band around the full perimeter. Light
+  // Regular glass's key light reaches a little past the corners, as on macOS.
   for (const dpr of [1, 2]) {
     const capsule = await renderer.render({ width: 284, height: 112, radius: 56, dpr });
     assertInwardField(capsule);
@@ -70,18 +70,18 @@ try {
       outline = 0;
     for (let y = 0; y < capsule.height; y++) {
       for (let x = 0; x < capsule.width; x++) {
-        // The overlay is white light over a black rim: its color carries the light.
-        const offset = ((capsule.height + y) * capsule.width + x) * 4;
-        const alpha = (capsule.pixels[offset + 3] * capsule.pixels[offset]) / 255;
+        // Plane 1 is the outline as black coverage; plane 2 the light as white coverage.
+        const rim = ((capsule.height + y) * capsule.width + x) * 4;
+        const light = ((2 * capsule.height + y) * capsule.width + x) * 4;
+        const alpha = capsule.pixels[light + 3];
         highlight += alpha;
-        // The corner transition shares light and outline; the middle of each
-        // side remains free of the top/bottom highlight.
+        // The middle of each side stays free of the top and bottom light.
         if (y / dpr >= 40 && y / dpr <= 76) sideHighlight += alpha;
-        outline += (capsule.pixels[offset + 3] * (255 - capsule.pixels[offset])) / 255;
+        outline += capsule.pixels[rim + 3];
       }
     }
     console.log({ dpr, highlight, sideHighlight, outline });
-    if (highlight === 0 || outline === 0 || sideHighlight / highlight > 0.01)
+    if (highlight === 0 || outline === 0 || sideHighlight / highlight > 0.04)
       throw new Error("Capsule highlight overlaps the side outline");
   }
   // Fixed end caps plus a stretched straight middle must reproduce the GPU
@@ -93,7 +93,7 @@ try {
     for (const width of [75, 100, 118]) {
       const actual = await renderer.render({ width, height: 30, radius: "capsule", dpr });
       let maxError = 0;
-      for (let plane = 0; plane < 2; plane++)
+      for (let plane = 0; plane < 3; plane++)
         for (let y = 0; y < actual.height; y++)
           for (let x = 0; x < actual.width; x++) {
             const sx =

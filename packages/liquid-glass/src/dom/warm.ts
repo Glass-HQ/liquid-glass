@@ -1,5 +1,6 @@
 import { webkit } from "./engine.js";
 import type { MaterialMaps } from "./maps.js";
+import { drawnMapUrls } from "./maps.js";
 
 const ns = "http://www.w3.org/2000/svg";
 // Firefox drops a CSS filter chain above 64 primitives. Each independent
@@ -119,11 +120,7 @@ export function createMapWarmer(root: HTMLElement) {
       }, delay),
     );
   };
-  const urls = (maps: MaterialMaps) => [
-    maps.field,
-    maps.overlay,
-    ...Object.values(maps.capsule?.planes ?? {}).flat(),
-  ];
+  const urls = drawnMapUrls;
   const completePreparations = () => {
     const now = performance.now();
     for (const [maps, ready] of pending)

@@ -9,7 +9,13 @@ test("optical sampling sees the spring position before paint, once per frame", (
   } as unknown as typeof MutationObserver;
   const callbacks = new Map<number, FrameRequestCallback>();
   let id = 0,
-    layoutX = 100;
+    switchPosition = 0;
+  // A 54px switch with 2px padding and a 32px thumb: 18px of travel.
+  const layoutX = () => 100 + switchPosition * 18;
+  const track = {
+    clientWidth: 54,
+    style: { getPropertyValue: () => String(switchPosition) },
+  };
   const style = {
     translate: "",
     setProperty() {},
@@ -26,21 +32,26 @@ test("optical sampling sees the spring position before paint, once per frame", (
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
     addEventListener() {},
     removeEventListener() {},
+    getComputedStyle: () => ({ paddingLeft: "2px", paddingRight: "2px", direction: "ltr" }),
   };
   const element = {
     ownerDocument: { defaultView: view },
     classList: { contains: (name: string) => name === "lg-switch-thumb" },
     dataset: { pressPhase: "idle" },
-    parentElement: null,
+    parentElement: track,
+    offsetWidth: 32,
     style,
-    getBoundingClientRect: () => ({ left: layoutX + (parseFloat(style.translate) || 0), width: 0 }),
+    getBoundingClientRect: () => ({
+      left: layoutX() + (parseFloat(style.translate) || 0),
+      width: 0,
+    }),
   } as unknown as HTMLElement;
   const root = { contains: (candidate: HTMLElement) => candidate === element } as HTMLElement;
   let dispose: (() => void) | undefined;
   try {
     dispose = attachNativeControlMotion(element, "full", true);
     updateControlMotion(root, 100);
-    layoutX = 118; // React commits the other side before the next scene frame.
+    switchPosition = 1; // React commits the other side before the next scene frame.
     updateControlMotion(root, 116.667);
     const sampledX = element.getBoundingClientRect().left;
     expect(sampledX).toBeGreaterThan(100);

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { sharedBackdropMaterials } from "./shared-backdrop.js";
+import { glassRecipe } from "../core/materials.js";
 import type { MaterialOptions } from "../core/materials.js";
 import type { FilterBounds } from "./filter-bounds.js";
 
@@ -12,17 +13,18 @@ const consumer = (
   key,
   id: key,
   options,
+  size: 160,
   bounds: { x, y: 20, width: 40, height: 30 },
   inputs,
 });
 const attributes = (text: string) =>
   Object.fromEntries(
-    [...text.matchAll(/([\w:-]+)="([^"]*)"/g)].map((match) => [match[1]!, match[2]!]),
+    [...text.matchAll(/([\w:-]+)="([^"]*)"/g)].map((match) => [match[1], match[2]]),
   );
 const primitives = (markup: string): Record<string, string | undefined>[] =>
   [...markup.matchAll(/<(fe\w+)\s+([^>]+)\/>/g)].map((match) => ({
     tag: match[1],
-    ...attributes(match[2]!),
+    ...attributes(match[2]),
   }));
 const rect = (p: Record<string, string | undefined>): FilterBounds => ({
   x: Number(p.x),
@@ -31,31 +33,31 @@ const rect = (p: Record<string, string | undefined>): FilterBounds => ({
   height: Number(p.height),
 });
 
-test("only regular consumers of the unchanged source share a material", () => {
+test("consumers of the unchanged source frosted alike share a material", () => {
   const members = [
     consumer("a", 10),
     consumer("tinted", 35, { material: "regular", tint: "#123456", refraction: 12 }),
     consumer("dark", 230, { material: "regular", appearance: "dark" }),
     consumer("lower-glass", 10000, { material: "regular" }, ["previousInside"]),
     consumer("clear", 20000, { material: "clear" }),
+    consumer("frosted", 60, { material: "regular", frost: 1 }),
   ];
   const shared = sharedBackdropMaterials(members, 0.8);
-  expect([...shared.keys()]).toEqual(["a", "tinted", "dark"]);
+  expect([...shared.keys()]).toEqual(["a", "tinted", "dark", "clear", "frosted"]);
   expect(shared.get("a")).toBe(shared.get("tinted"));
   expect(shared.get("dark")).not.toBe(shared.get("a"));
-  expect(rect(primitives(shared.get("a")!.markup).find((p) => p.tag === "feBlend")!)).toEqual({
-    x: 10,
-    y: 20,
-    width: 65,
-    height: 30,
-  });
+  expect(shared.get("frosted")).not.toBe(shared.get("a"));
   const dark = primitives(shared.get("dark")!.markup);
-  expect(dark.find((p) => p.tag === "feBlend")!.mode).toBe("darken");
-  expect(dark[0]!.in).toBe("SourceGraphic");
-  expect(dark[1]!.in).toBe("SourceGraphic");
-  expect(Number(dark[0]!.stdDeviation)).toBeCloseTo(7.33 * 0.8);
-  expect(Number(dark[1]!.stdDeviation)).toBeCloseTo(21.8 * 0.8);
-  expect(Number(dark.at(-1)!.k2)).toBe(0.65);
+  expect(dark).toHaveLength(1);
+  expect(dark[0].tag).toBe("feGaussianBlur");
+  expect(dark[0].in).toBe("SourceGraphic");
+  expect(Number(dark[0].stdDeviation)).toBeCloseTo(
+    glassRecipe({ material: "regular", appearance: "dark" }, 160).blur * 0.8,
+  );
+  const clear = primitives(shared.get("clear")!.markup);
+  expect(Number(clear[0].stdDeviation)).toBeCloseTo(
+    glassRecipe({ material: "clear" }, 160).blur * 0.8,
+  );
   expect(sharedBackdropMaterials([], 1).size).toBe(0);
 });
 
@@ -68,9 +70,9 @@ test("distant consumers keep local work and stable identities while close consum
   expect(together.get("s1")).toBe(together.get("s2"));
   expect(together.get("s3")).not.toBe(together.get("s1"));
   expect(together.get("s1")!.markup).toBe(pair.get("s1")!.markup);
-  expect(together.get("s1")!.result).toBe("sharedLight-s1-s2mix");
+  expect(together.get("s1")!.result).toBe("shared-regularlight09-s1-s2mix");
   expect(together.get("s3")!.result).toBe("s3mix");
-  expect(primitives(together.get("s3")!.markup)).toHaveLength(4);
+  expect(primitives(together.get("s3")!.markup)).toHaveLength(1);
   expect(sharedBackdropMaterials([b, a], 1).get("s1")!.result).toBe(pair.get("s1")!.result);
   // Toolbar controls and a distant customization button must not make one
   // scene-sized blur merely because their material matches.
@@ -84,10 +86,9 @@ test("distant consumers keep local work and stable identities while close consum
   };
   const scattered = sharedBackdropMaterials([toolbar, button], 1);
   expect(scattered.get("toolbar")).not.toBe(scattered.get("button"));
-  expect(rect(primitives(scattered.get("toolbar")!.markup)[2]!)).toEqual(toolbar.bounds);
 });
 
-test("shared blur has unique ordered dependencies and keeps pointwise work inside consumed bounds", () => {
+test("shared blur has unique ordered dependencies and reads around what it is consumed for", () => {
   const shared = sharedBackdropMaterials(
     [consumer("light", -10), consumer("dark", 100, { material: "regular", appearance: "dark" })],
     1,
@@ -99,22 +100,14 @@ test("shared blur has unique ordered dependencies and keeps pointwise work insid
         key === "light"
           ? { x: -10, y: 20, width: 40, height: 30 }
           : { x: 100, y: 20, width: 40, height: 30 };
-    expect(graph).toHaveLength(4);
+    expect(graph).toHaveLength(1);
     for (const p of graph) {
       expect(seen.has(p.in!)).toBe(true);
-      if (p.in2) expect(seen.has(p.in2)).toBe(true);
       expect(seen.has(p.result!)).toBe(false);
       seen.add(p.result!);
     }
     expect(graph.at(-1)!.result).toBe(material.result);
-    expect(rect(graph[2]!)).toEqual(bounds);
-    expect(rect(graph[3]!)).toEqual(bounds);
-    const blur = rect(graph[0]!);
-    const fill = rect(graph[1]!);
-    expect(fill.x).toBeLessThan(blur.x);
-    expect(fill.y).toBeLessThan(blur.y);
-    expect(fill.width).toBeGreaterThan(blur.width);
-    expect(fill.height).toBeGreaterThan(blur.height);
+    const blur = rect(graph[0]);
     expect(blur.x).toBeLessThan(bounds.x);
     expect(blur.y).toBeLessThan(bounds.y);
     expect(blur.x + blur.width).toBeGreaterThan(bounds.x + bounds.width);
@@ -122,7 +115,7 @@ test("shared blur has unique ordered dependencies and keeps pointwise work insid
   }
 });
 
-test("the narrower frost halo preserves every sampled premultiplied color and alpha pixel", () => {
+test("the frost halo preserves every sampled premultiplied color and alpha pixel", () => {
   const own = consumer("own", 10);
   for (const appearance of ["light", "dark"] as const)
     for (const soften of [0.1, 0.53, 1])
@@ -133,12 +126,19 @@ test("the narrower frost halo preserves every sampled premultiplied color and al
             soften,
           ).get("own")!;
           const graph = primitives(material.markup),
-            sigma = Number(graph[0]!.stdDeviation);
-          const narrow = convolve(rect(graph[0]!), sigma, dpr, alpha);
-          // Before separating the halos, frost used the wider fill rectangle.
-          const previous = convolve(rect(graph[1]!), sigma, dpr, alpha);
+            sigma = Number(graph[0].stdDeviation);
+          const box = rect(graph[0]);
+          const halo = convolve(box, sigma, dpr, alpha);
+          // A far wider rectangle is the reference: what the blur would read
+          // with nothing cut away.
+          const wide = convolve(
+            { x: box.x - 200, y: box.y, width: box.width + 400, height: box.height },
+            sigma,
+            dpr,
+            alpha,
+          );
           for (let x = own.bounds.x; x < own.bounds.x + own.bounds.width; x += 1 / dpr)
-            expect(narrow(x)).toBeCloseTo(previous(x), 10);
+            expect(halo(x)).toBeCloseTo(wide(x), 6);
         }
 });
 
@@ -162,10 +162,10 @@ function convolve(bounds: FilterBounds, sigma: number, dpr: number, alpha: boole
     pixels = pixels.map((_, index) => {
       let sum = 0;
       for (let offset = -radius; offset <= radius; offset++)
-        sum += pixels[Math.max(0, Math.min(pixels.length - 1, index + offset))]!;
+        sum += pixels[Math.max(0, Math.min(pixels.length - 1, index + offset))];
       return sum / kernel;
     });
-  return (x: number) => pixels[Math.floor(x * dpr) - left]!;
+  return (x: number) => pixels[Math.floor(x * dpr) - left];
 }
 
 test("opening a distant consumer cannot alter blur pixels already being sampled", () => {
@@ -177,13 +177,13 @@ test("opening a distant consumer cannot alter blur pixels already being sampled"
       for (const alpha of [false, true]) {
         const single = primitives(sharedBackdropMaterials([own], soften).get("own")!.markup);
         for (const other of [nearby, distant])
-          for (const index of [0, 1]) {
+          for (const index of [0]) {
             const joined = primitives(
               sharedBackdropMaterials([own, other], soften).get("own")!.markup,
             );
-            const sigma = Number(single[index]!.stdDeviation);
-            const a = convolve(rect(single[index]!), sigma, dpr, alpha);
-            const b = convolve(rect(joined[index]!), sigma, dpr, alpha);
+            const sigma = Number(single[index].stdDeviation);
+            const a = convolve(rect(single[index]), sigma, dpr, alpha);
+            const b = convolve(rect(joined[index]), sigma, dpr, alpha);
             for (let x = own.bounds.x; x < own.bounds.x + own.bounds.width; x += 1 / dpr)
               expect(a(x)).toBeCloseTo(b(x), 10);
           }
@@ -192,4 +192,27 @@ test("opening a distant consumer cannot alter blur pixels already being sampled"
   const tight = convolve(own.bounds, 23, 1, false);
   const full = convolve({ ...own.bounds, x: -61, width: 182 }, 23, 1, false);
   expect(Math.abs(tight(11) - full(11))).toBeGreaterThan(0.01);
+});
+
+test("a backdrop color lies beneath the source across everything the blurs read", () => {
+  const members = [consumer("a", 10), consumer("b", 35)];
+  const plain = sharedBackdropMaterials(members, 1);
+  const backed = sharedBackdropMaterials(members, 1, true);
+  expect(plain.get("a")!.markup).not.toContain("feFlood");
+  const markup = backed.get("a")!.markup;
+  const flood = primitives(markup).find((p) => p.tag === "feFlood")!;
+  expect(flood.style).toBe("flood-color:var(--lg-backdrop, transparent)");
+  const merge = /<feMerge result="([^"]+)" ([^>]+)>(.*?)<\/feMerge>/.exec(markup)!;
+  expect(merge[3]).toBe(`<feMergeNode in="${flood.result}"/><feMergeNode in="SourceGraphic"/>`);
+  expect(rect(attributes(merge[2]))).toEqual(rect(flood));
+  for (const blur of primitives(markup).filter((p) => p.tag === "feGaussianBlur")) {
+    expect(blur.in).toBe(merge[1]);
+    const box = rect(blur);
+    expect(box.x).toBeGreaterThanOrEqual(rect(flood).x);
+    expect(box.x + box.width).toBeLessThanOrEqual(rect(flood).x + rect(flood).width);
+  }
+  // Only the source changes: the blur is the same.
+  expect(
+    markup.slice(markup.indexOf("<feGaussianBlur")).replaceAll(merge[1], "SourceGraphic"),
+  ).toBe(plain.get("a")!.markup);
 });

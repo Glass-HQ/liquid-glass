@@ -511,7 +511,7 @@ function MenuControls({
 
 function ExamplePreview({ kind, theme }: { kind: ExampleKind; theme: GlassAppearance }) {
   const { material: siteMaterial } = useSiteMaterial();
-  const [material, setMaterial] = useState<GlassMaterial>("clear");
+  const [material, setMaterial] = useState<GlassMaterial>("regular");
   const [tint, setTint] = useState("none");
   const [background, setBackground] = useState<Background>("landscape");
   const [menuOptions, setMenuOptions] = useState<MenuOptions>({

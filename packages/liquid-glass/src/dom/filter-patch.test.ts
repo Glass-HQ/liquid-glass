@@ -139,7 +139,7 @@ test("adding and reordering branches preserves existing images and merge nodes",
 
 test("absorbing a group member and splitting the survivors retains every unchanged map image", () => {
   const { defs, apply } = scene();
-  const planes: MapPlane[] = ["field", "overlay"];
+  const planes: MapPlane[] = ["field", "rim", "light"];
   const maps = new Map(
     [1, 2, 3].map((serial) => [
       serial,
