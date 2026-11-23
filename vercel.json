@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "",
+  "buildCommand": "",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "destination": "https://glassapp.dev/liquid-glass",
+      "permanent": true
+    }
+  ]
+}

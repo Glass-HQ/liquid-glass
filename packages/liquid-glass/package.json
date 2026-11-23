@@ -1,0 +1,68 @@
+{
+  "name": "@glass-sdk/liquid-glass",
+  "version": "0.0.3-beta.2",
+  "description": "Liquid Glass for the web: one WebGL2 renderer in a worker, identical in every browser, up to 120 Hz.",
+  "keywords": [
+    "electron",
+    "liquid-glass",
+    "react",
+    "refraction",
+    "webgl2"
+  ],
+  "homepage": "https://glassapp.dev/liquid-glass",
+  "bugs": {
+    "url": "https://github.com/Glass-HQ/liquid-glass/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Glass-HQ/liquid-glass.git",
+    "directory": "packages/liquid-glass"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/types/react/index.d.ts",
+      "import": "./dist/react.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp build && tsc -p tsconfig.build.json",
+    "dev": "vp build --watch --emptyOutDir false",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0",
+    "react-dom": ">=19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  }
+}

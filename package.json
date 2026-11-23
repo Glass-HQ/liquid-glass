@@ -1,0 +1,46 @@
+{
+  "name": "liquid-glass-workspace",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "@types/react": "^19.3.0",
+      "@types/react-dom": "^19.3.0",
+      "@vitejs/plugin-react": "^6.3.0",
+      "react": "^19.3.1",
+      "react-dom": "^19.3.1",
+      "typescript": "^7.0.2",
+      "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8000",
+      "vite-plus": "1.7.0"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "prepare": "vp config --no-agent",
+    "dev": "vp run --filter @liquid-glass/lab dev",
+    "check": "vp check",
+    "fmt": "vp fmt",
+    "lint": "vp lint",
+    "build": "vp run -r build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "vite-plus": "catalog:"
+  },
+  "overrides": {
+    "vite": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": ">=1.4.4",
+      "onFail": "warn"
+    }
+  },
+  "engines": {
+    "node": "^26.13.1"
+  }
+}

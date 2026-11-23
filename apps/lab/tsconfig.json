@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    // The lab runs against the library's source, so it type-checks and hot-reloads without a
+    // build. vite.config.ts has the same mapping.
+    "paths": {
+      "@glass-sdk/liquid-glass": ["../../packages/liquid-glass/src/index.ts"],
+      "@glass-sdk/liquid-glass/react": ["../../packages/liquid-glass/src/react/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "../../packages/liquid-glass/src/assets.d.ts"]
+}

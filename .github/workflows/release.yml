@@ -1,0 +1,86 @@
+# Publishes a release from its tag. Set the version in packages/liquid-glass/package.json, add
+# its section to CHANGELOG.md, commit, then push the tag liquid-glass@<version>.
+# Run it by hand for a dry run of the current version: it checks, builds and packs everything,
+# but publishes nothing.
+name: Release
+on:
+  push:
+    tags:
+      - "liquid-glass@*"
+  workflow_dispatch:
+permissions:
+  contents: write
+  id-token: write
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version-file: package.json
+          package-manager: false
+          run-install: false
+      - run: bun install --frozen-lockfile
+      - name: Check the tag, the version and the notes
+        run: |
+          version="$(node -p 'require("./packages/liquid-glass/package.json").version')"
+          if [ "$DRY_RUN" != true ] && [ "$GITHUB_REF_NAME" != "liquid-glass@$version" ]; then
+            echo "The tag $GITHUB_REF_NAME doesn't match the package version $version." >&2
+            exit 1
+          fi
+          # A prerelease (0.0.3-beta.2) uses the notes of the version it leads to (0.0.3).
+          notes="$RUNNER_TEMP/notes.md"
+          awk -v heading="## ${version%%-*}" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$notes"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "CHANGELOG.md has no section for ${version%%-*}." >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=liquid-glass@$version" >> "$GITHUB_ENV"
+          echo "NOTES=$notes" >> "$GITHUB_ENV"
+      - run: vp run -r build
+      - run: vp check
+      - name: Pack the package
+        run: |
+          mkdir -p "$RUNNER_TEMP/packages"
+          (cd packages/liquid-glass && bun pm pack --destination "$RUNNER_TEMP/packages")
+          ls -l "$RUNNER_TEMP/packages"
+      - name: Publish to npm
+        run: |
+          # Trusted publishing needs npm 11.5.1 or later; provenance is automatic. Node 26 on
+          # the runner comes with npm 10, so publishing runs npm 11 itself.
+          npm() { npx --yes npm@11 "$@"; }
+          # A prerelease goes out under `next`, so plain installs keep the latest stable
+          # version; anything else becomes `latest`.
+          case "$VERSION" in *-*) dist_tag=next ;; *) dist_tag=latest ;; esac
+          cd "$RUNNER_TEMP/packages"
+          for tgz in *.tgz; do
+            if npm view "@glass-sdk/liquid-glass@$VERSION" version >/dev/null 2>&1; then
+              echo "@glass-sdk/liquid-glass@$VERSION is already on npm, skipping."
+            elif [ "$DRY_RUN" = true ]; then
+              npm publish "$tgz" --access public --tag "$dist_tag" --dry-run
+            else
+              npm publish "$tgz" --access public --tag "$dist_tag"
+            fi
+          done
+      - name: Create the GitHub release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease=--prerelease ;; esac
+          gh release create "$TAG" --verify-tag $prerelease --title "Liquid Glass $VERSION" --notes-file "$NOTES"
