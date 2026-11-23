@@ -95,7 +95,9 @@ const css = `
 :where([data-lg-tab-icon]){display:inline-flex;align-items:center;justify-content:center;width:var(--lg-tab-icon-size,26px);height:var(--lg-tab-icon-size,26px);--icon-size:var(--lg-tab-icon-size,26px)}
 :where([data-lg-tab-icon] svg){width:100%;height:100%}
 :where([data-lg-tab-label]){line-height:1.1;white-space:nowrap}
-:where([data-lg-menu-popup]){box-sizing:border-box;min-width:var(--lg-menu-width,128px);padding:var(--lg-menu-padding,4px);outline:none;font-size:12px;line-height:16px}
+:where([data-lg-menu-popup]){display:flex;flex-direction:column;box-sizing:border-box;min-width:var(--lg-menu-width,128px);padding:var(--lg-menu-padding,4px);outline:none;font-size:12px;line-height:16px}
+:where([data-lg-menu-content]){min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+:where([data-lg-menu-content])::-webkit-scrollbar{display:none}
 :where([data-lg-menu-popup]>*:not([data-lg-canvas])){opacity:var(--lg-menu-content,1)}
 :where([aria-haspopup=menu]) :where(svg,img){opacity:var(--lg-menu-icon,1);scale:var(--lg-menu-icon-scale,1);translate:var(--lg-menu-icon-x,0px) var(--lg-menu-icon-y,0px)}
 :where([data-lg-menu]>[data-lg-button][aria-haspopup=menu][aria-expanded=true]){position:relative;z-index:51}

@@ -116,8 +116,8 @@ export function GlassScene({
         : "light"
       : appearance;
   const context = useMemo<SceneContextValue>(
-    () => ({ scene, engine: loaded?.engine ?? null, failed: failedAppearance }),
-    [scene, loaded, failedAppearance],
+    () => ({ scene, engine: loaded?.engine ?? null, failed: failedAppearance, root }),
+    [scene, loaded, failedAppearance, root],
   );
 
   return (

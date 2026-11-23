@@ -27,6 +27,8 @@ export interface SceneContextValue {
    * to CSS, as they do when the renderer fails.
    */
   readonly failed: Appearance | null;
+  /** The scene's root element, where popups render over the page. */
+  readonly root: HTMLElement | null;
 }
 
 export const SceneContext = createContext<SceneContextValue | null>(null);

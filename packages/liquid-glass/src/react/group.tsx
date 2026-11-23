@@ -132,8 +132,7 @@ export function GlassGroup({
     const shapes: Shape[] = [];
     for (const member of members.current.values()) {
       // A member another part draws for a while (a menu's button while it morphs) is skipped.
-      if (!member.element.isConnected || member.element.hasAttribute("data-lg-group-hidden"))
-        continue;
+      if (!member.element.isConnected || member.element.hasAttribute("data-lg-hidden")) continue;
       const at = rectIn(member.element, host);
       const own = [...member.layers.values()].flat();
       if (

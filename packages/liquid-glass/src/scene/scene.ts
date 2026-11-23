@@ -844,9 +844,14 @@ export function createGlassScene(options: GlassSceneOptions = {}): GlassScene {
     let reached = 0;
     let reachedBottom = 0;
     for (const record of surfaces.values()) {
-      if (!record.visible) {
-        if (record.host === "sibling" && record.canvas.style.display !== "none")
+      // Glass another part draws for a while (a menu's button while it morphs) is hidden.
+      const hidden = record.element.hasAttribute("data-lg-hidden");
+      if (!record.visible || hidden) {
+        if ((hidden || record.host === "sibling") && record.canvas.style.display !== "none") {
           writes.push(() => (record.canvas.style.display = "none"));
+          // Shown again, the canvas is placed and shown afresh.
+          record.canvasKey = "";
+        }
         continue;
       }
       let surfaceMaterial = materialOf(record);

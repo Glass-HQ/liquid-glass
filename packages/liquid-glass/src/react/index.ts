@@ -26,6 +26,8 @@ export type {
 export { GlassTabBar, GlassTab } from "./tabbar";
 export type { GlassTabBarProps, GlassTabProps } from "./tabbar";
 export {
+  GlassContextMenu,
+  GlassContextMenuTrigger,
   GlassMenu,
   GlassMenuTrigger,
   GlassMenuPopup,
@@ -37,6 +39,8 @@ export {
   GlassMenuSubmenuPopup,
 } from "./menu";
 export type {
+  GlassContextMenuProps,
+  GlassContextMenuTriggerProps,
   GlassMenuProps,
   GlassMenuTriggerProps,
   GlassMenuPopupProps,

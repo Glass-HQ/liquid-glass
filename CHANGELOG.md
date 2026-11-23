@@ -14,7 +14,9 @@ Chrome, Safari, Firefox and Electron, and moves at the display's rate, up to 120
 - `GlassColorPicker`: a hue and saturation wheel whose knob lifts into a lens while dragged.
 - `GlassHighlight`: a pill inside a surface that follows a target, like the row under the pointer.
 - `GlassToolbarSeparator`, and `GlassToolbarSpacer` is fixed or flexible.
-- Menus morph out of their button and back into it.
+- Menus morph out of their button and back into it. They render over the whole page, stay inside
+  the window, scroll when long, and jump to a row as you type its first letters.
+- `GlassContextMenu` and `GlassContextMenuTrigger`: the same menu, opened at the pointer.
 - `specular`: the glass's highlights turn toward the pointer, or with the device's tilt. Off by
   default.
 - `tintAmount` on the scene: regular glass from clear to tinted.
