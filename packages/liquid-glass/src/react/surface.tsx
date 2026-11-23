@@ -52,10 +52,13 @@ type AnyProps = Record<string, unknown> & { ref?: Ref<HTMLElement> };
 
 /** Props of a `render` element merged with the surface's own: theirs win, except as noted. */
 export function mergeProps(base: AnyProps, own: AnyProps): AnyProps {
-  const merged: AnyProps = { ...base, ...own };
+  const merged: AnyProps = { ...base };
   for (const key of Object.keys(own)) {
     const a = base[key];
     const b = own[key];
+    // An undefined prop leaves the element's own in place (its class, its handlers).
+    if (b === undefined) continue;
+    merged[key] = b;
     if (key === "className" && typeof a === "string" && typeof b === "string")
       merged[key] = `${a} ${b}`;
     else if (key === "style" && a && b)
