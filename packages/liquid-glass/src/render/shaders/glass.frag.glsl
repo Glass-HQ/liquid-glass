@@ -62,7 +62,6 @@ uniform vec4 uFace;
 // Lighting: specular rims, sheen, hairline on the flanks, hairline kept at top and bottom
 uniform vec4 uLighting;
 // A progressive blur instead of glass: on, and the direction (x, y) from its strongest side in
-uniform vec4 uEdge;
 // Frosted glass's sharp share: in the middle, and added towards the rim
 uniform vec2 uSharp;
 // The light: its axis on screen (y down) and the strength of specular glass's highlight (0: none)
@@ -378,25 +377,8 @@ vec4 pillsAt(vec2 p) {
 
 // The bodies with everything on them, premultiplied: glass, pills and labels inside, the shadow
 // and outline outside.
-// A progressive blur: the frost, most opaque at the strong side and gone at the other, laid
-// over the live page, so where it fades out the page shows exactly as it is.
-vec4 edgeAt(vec2 p) {
-  vec4 box = uBox[0];
-  vec2 rel = (p - box.xy) / max(box.zw, vec2(1e-3));
-  float along = dot(rel, uEdge.yz);
-  // 1 at the strong side, 0 at the other; eased so the blur thins out gradually.
-  float t = clamp(0.5 - 0.5 * along, 0.0, 1.0);
-  float a = t * t * (3.0 - 2.0 * t);
-  float inside = coverage(shapeDistanceOnly(0, p));
-  vec3 seen = behindAt(p);
-  if (uTint.a > 0.0) seen = mix(seen, uTint.rgb, uTint.a * a);
-  a *= inside;
-  return vec4(seen * a, a);
-}
-
 vec4 groundAt(vec2 p) {
   if (uBodyEnd <= 0) return vec4(0.0);
-  if (uEdge.x > 0.5) return edgeAt(p);
   Field f = groupField(0, uBodyEnd, p);
   float cover = coverage(f.d) * f.alpha;
   float dark = 0.0;

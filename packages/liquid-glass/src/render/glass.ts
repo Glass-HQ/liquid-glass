@@ -40,7 +40,6 @@ const UNIFORMS = [
   "uDispersion",
   "uFace",
   "uLighting",
-  "uEdge",
   "uSharp",
   "uLight",
   "uTint",
@@ -269,14 +268,6 @@ export class GlassPass {
       angle === null ? -1 : Math.sin(angle),
     );
     gl.uniform4f(u.uFace, material.lift, material.gain, material.curve, material.saturation);
-    const edge = material.edge;
-    gl.uniform4f(
-      u.uEdge,
-      edge ? 1 : 0,
-      edge === "left" ? 1 : edge === "right" ? -1 : 0,
-      edge === "top" ? 1 : edge === "bottom" ? -1 : 0,
-      0,
-    );
     gl.uniform4f(
       u.uLighting,
       material.shine,

@@ -9,7 +9,6 @@
  */
 
 import type {
-  BlurEdge,
   Appearance,
   Material,
   MaterialKind,
@@ -132,11 +131,6 @@ export interface SurfaceOptions {
   readonly body?: boolean;
   /** Adapt to what is behind (see the scene's `adaptive`). Default: the scene's. */
   readonly adaptive?: boolean;
-  /**
-   * Draw a progressive blur instead of glass: what is behind is blurred most at this side of
-   * the element and not at all at the opposite side (a scroll edge under a toolbar).
-   */
-  readonly edge?: BlurEdge | null;
   /** 0..1: the shadow moving from resting glass's towards floating glass's (see material). */
   readonly shadowLift?: number;
   /**
@@ -235,7 +229,6 @@ interface SurfaceRecord {
     appearance: Appearance | null;
     body: boolean;
     adaptive: boolean | null;
-    edge: BlurEdge | null;
     shadowLift: number;
     specular: boolean | null;
   };
@@ -658,7 +651,7 @@ export function createGlassScene(options: GlassSceneOptions = {}): GlassScene {
     const height = Math.round(record.size.height);
     // Variables follow the theme, so a tint like `var(--accent)` is resolved each frame.
     const tint = record.options.tint ? resolveColor(record.options.tint, record.element) : null;
-    const { floating, overhang, lensHeight, edge, shadowLift } = record.options;
+    const { floating, overhang, lensHeight, shadowLift } = record.options;
     const adapts = adaptsOf(record);
     const { mix, shown, tone } = record.adapt;
     const levels = adapts ? shown : null;
@@ -666,7 +659,7 @@ export function createGlassScene(options: GlassSceneOptions = {}): GlassScene {
     const levelsKey = levels
       ? `${levels.luma.toFixed(3)},${levels.contrast.toFixed(3)},${levels.bright.toFixed(3)},${levels.detail.toFixed(3)}`
       : "";
-    const key = `${kind}|${String(tintAmount)}|${look}|${width}|${height}|${tint?.join(",") ?? ""}|${floating}|${flipping ? mix.toFixed(3) : ""}|${levelsKey}|${tone}|${edge ?? ""}|${shadowLift.toFixed(3)}`;
+    const key = `${kind}|${String(tintAmount)}|${look}|${width}|${height}|${tint?.join(",") ?? ""}|${floating}|${flipping ? mix.toFixed(3) : ""}|${levelsKey}|${tone}|${shadowLift.toFixed(3)}`;
     if (!record.material || key !== record.materialKey) {
       const resolve = (appearance: Appearance) =>
         resolveMaterial({
@@ -677,7 +670,6 @@ export function createGlassScene(options: GlassSceneOptions = {}): GlassScene {
           tint,
           floating,
           tintAmount,
-          edge,
           shadowLift,
         });
       // A small regular surface shows the glass its backdrop calls for, cross-fading on a flip.
@@ -699,7 +691,6 @@ export function createGlassScene(options: GlassSceneOptions = {}): GlassScene {
             tint,
             floating: true,
             tintAmount,
-            edge,
           })
         : base;
       const deepest = adapts
@@ -1063,7 +1054,6 @@ export function createGlassScene(options: GlassSceneOptions = {}): GlassScene {
         }
         if ("body" in next) o.body = next.body ?? true;
         if ("adaptive" in next) o.adaptive = next.adaptive ?? null;
-        if ("edge" in next) o.edge = next.edge ?? null;
         if ("shadowLift" in next) o.shadowLift = next.shadowLift ?? 0;
         if ("specular" in next) {
           o.specular = next.specular ?? null;
@@ -1121,7 +1111,6 @@ export function createGlassScene(options: GlassSceneOptions = {}): GlassScene {
         appearance: surfaceOptions.appearance ?? null,
         body: surfaceOptions.body ?? true,
         adaptive: surfaceOptions.adaptive ?? null,
-        edge: surfaceOptions.edge ?? null,
         shadowLift: surfaceOptions.shadowLift ?? 0,
         specular: surfaceOptions.specular ?? null,
       },

@@ -120,7 +120,6 @@ export function useGlassSurface(options: SurfaceOptions): {
     floating,
     appearance,
     adaptive,
-    edge,
     specular,
   } = options;
 
@@ -153,7 +152,6 @@ export function useGlassSurface(options: SurfaceOptions): {
     floating,
     appearance,
     adaptive,
-    edge,
     specular,
   ]);
 

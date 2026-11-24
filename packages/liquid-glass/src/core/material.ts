@@ -1,4 +1,4 @@
-import type { Appearance, BlurEdge, BoxShadow, Material, MaterialKind, Rgba } from "../protocol";
+import type { Appearance, BoxShadow, Material, MaterialKind, Rgba } from "../protocol";
 
 /**
  * The glass materials.
@@ -32,17 +32,12 @@ export interface MaterialOptions {
   readonly floating?: boolean;
   /** How tinted regular glass is (see `TintAmount`). Default: "default", 0.5. */
   readonly tintAmount?: TintAmount;
-  /** A progressive blur strongest at this side, instead of glass. */
-  readonly edge?: BlurEdge | null;
   /**
    * 0..1: how far the shadow has moved from resting glass's towards floating glass's, as a
    * button's does while it opens into a menu panel.
    */
   readonly shadowLift?: number;
 }
-
-/** Frost (Gaussian sigma, CSS px) of a progressive blur at its strongest side. */
-export const EDGE_FROST = 12;
 
 /**
  * How tinted regular glass is: from 0, "clear" (more of what is behind shows through, sharper), to 1, "tinted" (frostier, a
@@ -107,32 +102,6 @@ export function resolveMaterial(options: MaterialOptions): Material {
       ? mixShadow(restingShadow(panel), floatingShadow(dark), lifted)
       : restingShadow(panel);
 
-  if (options.edge) {
-    return {
-      kind,
-      appearance,
-      frost: EDGE_FROST,
-      bezel: 0,
-      pull: 0,
-      falloff: 1,
-      dispersion: 0,
-      sharp: 0,
-      rimSharp: 0,
-      lift: 0,
-      gain: 1,
-      curve: 0,
-      saturation: 1,
-      shine: 0,
-      sheen: 0,
-      hairline: 0,
-      hairlineCap: 0,
-      tint,
-      dim: 0,
-      shadow: null,
-      edge: options.edge,
-    };
-  }
-
   if (kind === "clear") {
     return {
       kind,
@@ -149,7 +118,6 @@ export function resolveMaterial(options: MaterialOptions): Material {
       tint,
       dim: 0,
       shadow,
-      edge: null,
     };
   }
 
@@ -174,7 +142,6 @@ export function resolveMaterial(options: MaterialOptions): Material {
     tint,
     dim: 0,
     shadow,
-    edge: null,
   };
 }
 

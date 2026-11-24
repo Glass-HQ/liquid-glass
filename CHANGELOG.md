@@ -21,6 +21,11 @@ Chrome, Safari, Firefox and Electron, and moves at the display's rate, up to 120
   default.
 - `tintAmount` on the scene: regular glass from clear to tinted.
 - Glass adapts to what is behind it, so labels on it stay readable (`adaptive`, `useGlassTone`).
+- `GlassProgressiveBlur` deepens towards its edge in five layers of the browser's backdrop blur,
+  each reaching less far in, so content softens gradually and its colours run together at the
+  edge. `GlassProgressiveBlurFilter` draws the same blur as an SVG filter on the element itself,
+  for surfaces that are see-through, where a blur laid over them would let the sharp content
+  show. Neither needs a glass scene.
 
 ### Breaking changes
 

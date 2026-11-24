@@ -190,11 +190,6 @@ export interface Material {
   readonly dim: number;
   readonly shadow: BoxShadow | null;
   /**
-   * A progressive blur instead of glass: frost only, strongest at this side of the surface and
-   * gone at the other, with no rim, tone, light or shadow.
-   */
-  readonly edge: BlurEdge | null;
-  /**
    * Specular glass: the axis its two moving highlights lie on, radians on screen (y down,
    * following the pointer or the device's tilt). Null: the fixed light from above.
    */
