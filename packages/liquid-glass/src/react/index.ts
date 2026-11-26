@@ -53,12 +53,9 @@ export { GlassColorPicker } from "./color-picker";
 export type { GlassColorPickerProps } from "./color-picker";
 export { GlassGroup } from "./group";
 export type { GlassGroupProps } from "./group";
-export { GlassProgressiveBlur, GlassProgressiveBlurFilter } from "./progressive";
-export type {
-  GlassProgressiveBlurBand,
-  GlassProgressiveBlurFilterProps,
-  GlassProgressiveBlurProps,
-} from "./progressive";
+export { GlassProgressiveBlur } from "./progressive";
+export type { GlassProgressiveBlurProps } from "./progressive";
+export { progressiveBlurMask } from "../core/progressive";
 export {
   useGlassScene,
   useGlassTelemetry,

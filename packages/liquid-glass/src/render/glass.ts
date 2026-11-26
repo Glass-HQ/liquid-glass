@@ -1,3 +1,4 @@
+import { EDGE_COVER_END } from "../core/material";
 import type { Material, Shape, SurfaceFrame } from "../protocol";
 import type { Frost } from "./frost";
 import { compileProgram, type GL, uniforms } from "./gl";
@@ -21,6 +22,10 @@ const UNIFORMS = [
   "uFrosted",
   "uFrostScale",
   "uFrostGamma",
+  "uEdge",
+  "uEdgeFrostA",
+  "uEdgeFrostB",
+  "uEdgeScale",
   "uLabels",
   "uLabeled",
   "uLabelMap",
@@ -52,6 +57,8 @@ const UNIFORMS = [
 const UNIT_BACKDROP = 0;
 const UNIT_FROST = 1;
 const UNIT_LABELS = 2;
+const UNIT_EDGE_A = 3;
+const UNIT_EDGE_B = 4;
 
 /** Shapes in the order the shader wants them: bodies, then lenses and thumbs, then pills. */
 export interface ShapeSet {
@@ -125,6 +132,9 @@ export function readBounds(set: ShapeSet): Box {
 
 /** Frost is averaged in a gamma that favours the lighter (light) or darker (dark) detail. */
 export function frostGamma(material: Material): number {
+  // A progressive blur takes the page's content apart from what it was painted over, which only
+  // adds up when the frost is a plain average.
+  if (material.edge) return 1;
   return material.appearance === "dark" ? 0.8 : 1.4;
 }
 
@@ -143,6 +153,8 @@ export interface GlassDraw {
   readonly backdrop: WebGLTexture;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly frost: Frost | null;
+  /** A replacing progressive blur: `backdrop` and `frost` hold only the content it replaces. */
+  readonly replacing: boolean;
   readonly labels: { texture: WebGLTexture; map: readonly [number, number, number, number] } | null;
   /** Blend over the target (composites) or replace it (the canvas, cleared first). */
   readonly blend: boolean;
@@ -214,6 +226,28 @@ export class GlassPass {
     gl.uniform1i(u.uFrosted, d.frost ? 1 : 0);
     gl.uniform2f(u.uFrostScale, d.frost?.uvScale[0] ?? 0, d.frost?.uvScale[1] ?? 0);
     gl.uniform1f(u.uFrostGamma, d.frost?.gamma ?? 1);
+    const edge = material.edge ?? null;
+    const [edgeA, edgeB] = d.frost?.lighter ?? [];
+    gl.activeTexture(gl.TEXTURE0 + UNIT_EDGE_A);
+    gl.bindTexture(gl.TEXTURE_2D, edgeA?.texture ?? this.empty);
+    gl.uniform1i(u.uEdgeFrostA, UNIT_EDGE_A);
+    gl.activeTexture(gl.TEXTURE0 + UNIT_EDGE_B);
+    gl.bindTexture(gl.TEXTURE_2D, edgeB?.texture ?? this.empty);
+    gl.uniform1i(u.uEdgeFrostB, UNIT_EDGE_B);
+    gl.uniform4f(
+      u.uEdgeScale,
+      edgeA?.uvScale[0] ?? 0,
+      edgeA?.uvScale[1] ?? 0,
+      edgeB?.uvScale[0] ?? 0,
+      edgeB?.uvScale[1] ?? 0,
+    );
+    gl.uniform4f(
+      u.uEdge,
+      edge && edgeA && edgeB ? (d.replacing ? 2 : 1) : 0,
+      edge?.side === "left" ? 1 : edge?.side === "right" ? -1 : 0,
+      edge?.side === "top" ? 1 : edge?.side === "bottom" ? -1 : 0,
+      EDGE_COVER_END,
+    );
     gl.activeTexture(gl.TEXTURE0 + UNIT_LABELS);
     gl.bindTexture(gl.TEXTURE_2D, d.labels?.texture ?? this.empty);
     gl.uniform1i(u.uLabels, UNIT_LABELS);

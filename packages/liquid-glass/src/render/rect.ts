@@ -58,3 +58,52 @@ export function toPixels(b: Box, scale: number, width: number, height: number): 
     [0, 0, width, height],
   );
 }
+
+/**
+ * Boxes that together cover what a layer needs, or holds. Far apart, they stay separate, so glass
+ * at the top and at the bottom of a page doesn't make everything between them part of the region.
+ */
+export type Region = readonly Box[];
+
+const area = (b: Box) => (isEmpty(b) ? 0 : (b[2] - b[0]) * (b[3] - b[1]));
+
+/** `region` with `box` added, joined with the boxes it overlaps or nearly touches. */
+export function withBox(region: Region, box: Box): Box[] {
+  if (isEmpty(box)) return [...region];
+  let joined = box;
+  let apart = [...region];
+  for (let again = true; again;) {
+    again = false;
+    const rest: Box[] = [];
+    for (const other of apart) {
+      const both = union(joined, other);
+      // Joining wastes little when the bounding box is hardly larger than the two.
+      if (area(both) <= 1.25 * (area(joined) + area(other))) {
+        joined = both;
+        again = true;
+      } else rest.push(other);
+    }
+    apart = rest;
+  }
+  return [...apart, joined];
+}
+
+/** The box of `region` that holds all of `box`, or the one sharing most with it. */
+export function holding(region: Region, box: Box): Box {
+  let best: Box = EMPTY;
+  let shared = -1;
+  for (const candidate of region) {
+    if (contains(candidate, box)) return candidate;
+    const overlap = area(intersect(candidate, box));
+    if (overlap > shared) {
+      best = candidate;
+      shared = overlap;
+    }
+  }
+  return best;
+}
+
+/** Whether one box of `region` holds all of `box`. */
+export function covers(region: Region, box: Box): boolean {
+  return isEmpty(box) || region.some((candidate) => contains(candidate, box));
+}

@@ -21,11 +21,18 @@ Chrome, Safari, Firefox and Electron, and moves at the display's rate, up to 120
   default.
 - `tintAmount` on the scene: regular glass from clear to tinted.
 - Glass adapts to what is behind it, so labels on it stay readable (`adaptive`, `useGlassTone`).
-- `GlassProgressiveBlur` deepens towards its edge in five layers of the browser's backdrop blur,
-  each reaching less far in, so content softens gradually and its colours run together at the
-  edge. `GlassProgressiveBlurFilter` draws the same blur as an SVG filter on the element itself,
-  for surfaces that are see-through, where a blur laid over them would let the sharp content
-  show. Neither needs a glass scene.
+- `GlassProgressiveBlur`: content softens as it scrolls under a bar, blurred most at one edge and
+  not at all a little way in. The renderer draws it, like glass, so it costs what a glass surface
+  of its size costs. With `replace` it works over see-through content too (a pane over a
+  translucent window): it draws only what scrolls beside it, and `progressiveBlurMask` hides that
+  content under it, so the sharp content never shows through the blurred copy.
+- Glass far apart no longer repaints or frosts the page between it. A bar at the top and one at
+  the bottom of a long page each keep their own part of the backdrop.
+- The texture atlas starts small, grows as it fills, and gives pages back once content that
+  scrolled away has left them mostly empty. Scrolling a long page under glass no longer holds
+  hundreds of megabytes of GPU memory.
+- Readings of what is behind glass are spaced out, so glass that redraws every frame doesn't
+  wait on the GPU every frame.
 
 ### Breaking changes
 

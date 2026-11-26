@@ -61,7 +61,13 @@ uniform float uDispersion;
 uniform vec4 uFace;
 // Lighting: specular rims, sheen, hairline on the flanks, hairline kept at top and bottom
 uniform vec4 uLighting;
-// A progressive blur instead of glass: on, and the direction (x, y) from its strongest side in
+// A progressive blur instead of glass: 0 for glass, 1 laid over the page, 2 replacing the page's
+// own content; the direction (x, y) from its strongest side in; and how far along it covers the
+// page fully. uFrost is its strongest frost, these its two lighter ones (uv scales: A.xy, B.zw).
+uniform vec4 uEdge;
+uniform sampler2D uEdgeFrostA;
+uniform sampler2D uEdgeFrostB;
+uniform vec4 uEdgeScale;
 // Frosted glass's sharp share: in the middle, and added towards the rim
 uniform vec2 uSharp;
 // The light: its axis on screen (y down) and the strength of specular glass's highlight (0: none)
@@ -377,8 +383,41 @@ vec4 pillsAt(vec2 p) {
 
 // The bodies with everything on them, premultiplied: glass, pills and labels inside, the shadow
 // and outline outside.
+// A progressive blur. Along it, from the faint side to the strong one, what is behind passes
+// through three frosts, each about three times the last, blended so the blur deepens without a
+// step. It covers the page fully early on, while it still looks like the page, and fades out to
+// nothing at the faint side, where the page shows exactly as it is.
+//
+// Laid over an opaque page, it reads the page and is opaque where it covers. Replacing the
+// content of a see-through page, it reads a backdrop holding only that content, and is as
+// see-through as the content is.
+vec4 edgeAt(vec2 p) {
+  vec4 box = uBox[0];
+  vec2 rel = (p - box.xy) / max(box.zw, vec2(1e-3));
+  // 1 at the strong side, 0 at the other.
+  float t = clamp(0.5 - 0.5 * dot(rel, uEdge.yz), 0.0, 1.0);
+  vec2 screen = toScreen(p);
+  vec4 sharp = texture(uBackdrop, screen / uViewport);
+  vec4 light = texture(uEdgeFrostA, screen * uEdgeScale.xy);
+  vec4 middle = texture(uEdgeFrostB, screen * uEdgeScale.zw);
+  vec4 strong = texture(uFrost, screen * uFrostScale);
+  // Slow to start, so the blur is still light halfway and deepens fast near the strong side.
+  float level = 3.0 * t * t;
+  vec4 seen = level < 1.0
+    ? mix(sharp, light, level)
+    : level < 2.0 ? mix(light, middle, level - 1.0) : mix(middle, strong, level - 2.0);
+  if (uEdge.x < 1.5) seen.a = 1.0;
+  if (uTint.a > 0.0) {
+    float tinted = uTint.a * t * t * (3.0 - 2.0 * t);
+    seen = vec4(uTint.rgb * tinted, tinted) + seen * (1.0 - tinted);
+  }
+  float c = clamp(t / max(uEdge.w, 1e-3), 0.0, 1.0);
+  return seen * (c * c * (3.0 - 2.0 * c));
+}
+
 vec4 groundAt(vec2 p) {
   if (uBodyEnd <= 0) return vec4(0.0);
+  if (uEdge.x > 0.5) return edgeAt(p);
   Field f = groupField(0, uBodyEnd, p);
   float cover = coverage(f.d) * f.alpha;
   float dark = 0.0;

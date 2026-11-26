@@ -222,7 +222,7 @@ export class DisplayList {
    * from the frame's [id, dx, dy, ...] scroll-position deltas. Content moves opposite to the
    * scroll position, and a nested scroller carries every ancestor's movement too.
    */
-  scrollOffsets(scroll: Float32Array): Float32Array {
+  scrollOffsets(scroll: Float32Array, replaced: ReadonlySet<number>): Float32Array {
     this.ensureTables();
     const count = this.scrollerParent.length;
     const own = new Float32Array(count * 2);
@@ -245,6 +245,25 @@ export class DisplayList {
       return [out[index * 4] ?? 0, out[index * 4 + 1] ?? 0];
     };
     for (let index = 0; index < count; index += 1) resolve(index, 0);
+    // The third number marks scrollers a progressive blur replaces, and everything inside them.
+    if (replaced.size > 0) {
+      const roots = new Set<number>();
+      for (const id of replaced) {
+        const at = this.scrollerIndex.get(id);
+        if (at !== undefined) roots.add(at);
+      }
+      for (let index = 0; index < count; index += 1) {
+        for (let at = index, guard = 0; at >= 0 && guard < 64; guard += 1) {
+          if (roots.has(at)) {
+            out[index * 4 + 2] = 1;
+            break;
+          }
+          const parent = this.scrollerParent[at] ?? -1;
+          if (parent === at) break;
+          at = parent;
+        }
+      }
+    }
     return out;
   }
 

@@ -84,6 +84,8 @@ export interface Capture {
   flush(): void;
   /** Feed a canvas or video element's frames live. Returns a stop function. */
   addSource(element: HTMLCanvasElement | HTMLVideoElement): () => void;
+  /** The outermost scroll container inside `container` (or `container` itself), by id. */
+  scrollerIn(container: Element): number | null;
   destroy(): void;
 }
 
@@ -756,6 +758,14 @@ export function createCapture(
     invalidate,
     flush,
     addSource: (element) => sources.add(element),
+    scrollerIn(container) {
+      let found: ScrollerState | null = null;
+      for (const state of frames.scrollers.values()) {
+        if (!state.el || !container.contains(state.el)) continue;
+        if (!found || (found.el && state.el.contains(found.el))) found = state;
+      }
+      return found?.id ?? null;
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;

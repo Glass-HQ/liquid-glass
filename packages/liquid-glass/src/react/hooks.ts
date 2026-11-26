@@ -121,6 +121,7 @@ export function useGlassSurface(options: SurfaceOptions): {
     appearance,
     adaptive,
     specular,
+    edge,
   } = options;
 
   // Without an engine there is no scene to mark the fallback, so mark it here.
@@ -153,6 +154,8 @@ export function useGlassSurface(options: SurfaceOptions): {
     appearance,
     adaptive,
     specular,
+    edge?.side,
+    edge?.replace,
   ]);
 
   const ref = useCallback((node: HTMLElement | null) => setElement(node), []);

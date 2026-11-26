@@ -137,6 +137,18 @@ export type MaterialKind = "regular" | "clear";
 
 /** The side a progressive blur is strongest at; it fades to nothing at the opposite side. */
 export type BlurEdge = "top" | "right" | "bottom" | "left";
+
+/**
+ * A progressive blur: what is behind is blurred most at `side` of the surface and not at all at
+ * the opposite side. Over an opaque page the blur is laid over it. Over a see-through one
+ * (`replace`), only the content of the scroller beside it is drawn, as see-through as it is, and
+ * the page hides that content under the blur with `progressiveBlurMask`, so the sharp content
+ * never shows through the blurred copy.
+ */
+export interface ProgressiveEdge {
+  readonly side: BlurEdge;
+  readonly replace: boolean;
+}
 export type Appearance = "light" | "dark";
 
 /**
@@ -189,6 +201,8 @@ export interface Material {
    */
   readonly dim: number;
   readonly shadow: BoxShadow | null;
+  /** A progressive blur instead of glass: frost only, with no rim, tone, light or shadow. */
+  readonly edge?: ProgressiveEdge | null;
   /**
    * Specular glass: the axis its two moving highlights lie on, radians on screen (y down,
    * following the pointer or the device's tilt). Null: the fixed light from above.
@@ -244,6 +258,11 @@ export interface SurfaceFrame {
   readonly bleed: readonly [top: number, right: number, bottom: number, left: number];
   /** Whether items owned by this surface are drawn by the worker on top of the glass. */
   readonly labelsInGlass: boolean;
+  /**
+   * For a replacing progressive blur: the scroller whose content it stands in for. It draws
+   * what scrolls in there and nothing of what is behind (a pane's own background).
+   */
+  readonly replaces?: number;
 }
 
 // ---------------------------------------------------------------------------------------------

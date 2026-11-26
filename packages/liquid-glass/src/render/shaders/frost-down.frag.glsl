@@ -18,13 +18,17 @@ out vec4 outColor;
 void main() {
   vec2 origin = (gl_FragCoord.xy - 0.5) * uCell;
   vec3 sum = vec3(0.0);
+  // How much of the cell the page's own content covers, averaged as it is.
+  float cover = 0.0;
   for (int y = 0; y < 8; y += 1) {
     if (y >= uTaps) break;
     for (int x = 0; x < 8; x += 1) {
       if (x >= uTaps) break;
       vec2 at = origin + (vec2(float(x), float(y)) + 0.5) / float(uTaps) * uCell;
-      sum += pow(max(texture(uSource, at / uSourceSize).rgb, vec3(0.0)), vec3(uGamma));
+      vec4 texel = texture(uSource, at / uSourceSize);
+      sum += pow(max(texel.rgb, vec3(0.0)), vec3(uGamma));
+      cover += texel.a;
     }
   }
-  outColor = vec4(sum / float(uTaps * uTaps), 1.0);
+  outColor = vec4(sum, cover) / float(uTaps * uTaps);
 }

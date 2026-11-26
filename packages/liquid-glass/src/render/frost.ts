@@ -23,9 +23,14 @@ const CELLS_PER_SIGMA = 2.5;
 /** Most taps to either side of the separable Gaussian (the shader's loop bound). */
 const MAX_TAPS = 16;
 
-/** The cell size, CSS px, for a frost of `sigma`. */
+/**
+ * The cell size, CSS px, for a frost of `sigma`. A frost too wide for the Gaussian's taps at the
+ * largest cell (a progressive blur's strongest) takes larger cells, so the taps still span 2.5
+ * sigma to either side.
+ */
 export function frostCell(sigma: number): number {
-  return Math.min(MAX_CELL, Math.max(1, sigma / CELLS_PER_SIGMA));
+  const cell = Math.min(MAX_CELL, Math.max(1, sigma / CELLS_PER_SIGMA));
+  return Math.max(cell, (2.5 * sigma) / MAX_TAPS);
 }
 
 export interface FrostSource {
@@ -41,6 +46,8 @@ export interface Frost {
   /** Multiply a screen CSS position by this to get the frost texture's uv. */
   readonly uvScale: readonly [number, number];
   readonly gamma: number;
+  /** A progressive blur's lighter frosts, lightest first; this one is its strongest. */
+  readonly lighter?: readonly Frost[];
 }
 
 interface Entry {

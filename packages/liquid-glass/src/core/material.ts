@@ -1,4 +1,11 @@
-import type { Appearance, BoxShadow, Material, MaterialKind, Rgba } from "../protocol";
+import type {
+  Appearance,
+  BoxShadow,
+  Material,
+  MaterialKind,
+  ProgressiveEdge,
+  Rgba,
+} from "../protocol";
 
 /**
  * The glass materials.
@@ -32,12 +39,33 @@ export interface MaterialOptions {
   readonly floating?: boolean;
   /** How tinted regular glass is (see `TintAmount`). Default: "default", 0.5. */
   readonly tintAmount?: TintAmount;
+  /** A progressive blur instead of glass. */
+  readonly edge?: ProgressiveEdge | null;
   /**
    * 0..1: how far the shadow has moved from resting glass's towards floating glass's, as a
    * button's does while it opens into a menu panel.
    */
   readonly shadowLift?: number;
 }
+
+/**
+ * A progressive blur's frosts (Gaussian sigma, CSS px), lightest first. The blur moves through
+ * them from its faint side to its strong one, so each is four times the last: close
+ * enough that blending two neighbours reads as one blur in between.
+ */
+export const EDGE_FROSTS = [4, 16, 64] as const;
+
+/**
+ * How much of a progressive blur covers the page, at points along it from its faint side (0) to
+ * its strong side (1). It is fully there well before the blur is strong, so the page's own
+ * sharp content has gone while the two still look alike. The glass shader draws this curve; a
+ * see-through page masks its content with what is left of it (`progressiveBlurMask`).
+ */
+export const EDGE_COVER_END = 0.4;
+export const edgeCover = (along: number): number => {
+  const t = Math.min(1, Math.max(0, along / EDGE_COVER_END));
+  return t * t * (3 - 2 * t);
+};
 
 /**
  * How tinted regular glass is: from 0, "clear" (more of what is behind shows through, sharper), to 1, "tinted" (frostier, a
@@ -101,6 +129,32 @@ export function resolveMaterial(options: MaterialOptions): Material {
     : lifted > 0
       ? mixShadow(restingShadow(panel), floatingShadow(dark), lifted)
       : restingShadow(panel);
+
+  if (options.edge) {
+    return {
+      kind,
+      appearance,
+      frost: EDGE_FROSTS[EDGE_FROSTS.length - 1] ?? 0,
+      bezel: 0,
+      pull: 0,
+      falloff: 1,
+      dispersion: 0,
+      sharp: 0,
+      rimSharp: 0,
+      lift: 0,
+      gain: 1,
+      curve: 0,
+      saturation: 1,
+      shine: 0,
+      sheen: 0,
+      hairline: 0,
+      hairlineCap: 0,
+      tint,
+      dim: 0,
+      shadow: null,
+      edge: options.edge,
+    };
+  }
 
   if (kind === "clear") {
     return {

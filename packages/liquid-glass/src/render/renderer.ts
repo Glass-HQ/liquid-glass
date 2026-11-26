@@ -1,3 +1,4 @@
+import { EDGE_FROSTS } from "../core/material";
 import type { BackdropReading, DisplayListPatch, FrameMessage, SurfaceFrame } from "../protocol";
 import { Atlas } from "./atlas";
 import { DisplayList, surfaceScale } from "./display-list";
@@ -8,6 +9,7 @@ import { BackdropMeter } from "./measure";
 import { ItemPainter } from "./painter";
 import {
   contains,
+  covers,
   EMPTY,
   expand,
   fromRect,
@@ -15,8 +17,11 @@ import {
   intersects,
   isEmpty,
   toPixels,
+  holding,
   union,
+  withBox,
   type Box,
+  type Region,
 } from "./rect";
 
 /**
@@ -104,6 +109,10 @@ interface Plan {
   readonly footprint: Box;
   /** Frost sigma rounded to half px (0: none). */
   readonly sigma: number;
+  /** A progressive blur's lighter frosts, lightest first (none for glass). */
+  readonly lighter: readonly number[];
+  /** A progressive blur that draws only the content of the scroller it replaces. */
+  readonly replacing: boolean;
   readonly gamma: number;
   /** Placeholder size in device px. */
   readonly width: number;
@@ -115,7 +124,8 @@ interface Plan {
 interface Layer {
   target: Target | null;
   signature: string;
-  valid: Box;
+  /** Where the layer holds what its signature says, CSS px. */
+  valid: Region;
   usedAt: number;
 }
 
@@ -138,13 +148,16 @@ export class Renderer {
   readonly atlas: Atlas;
   private gpu: Gpu | null;
   private readonly slots = new Map<number, Slot>();
-  private page: Layer = { target: null, signature: "", valid: EMPTY, usedAt: 0 };
+  private page: Layer = { target: null, signature: "", valid: [], usedAt: 0 };
+  /** Only what scrolls inside the scrollers progressive blurs replace, over nothing. */
+  private content: Layer = { target: null, signature: "", valid: [], usedAt: 0 };
   private layers: Layer[] = [];
   private sceneWidth = 0;
   private sceneHeight = 0;
   private scrollVersion = 0;
   private lastOffsets: Float32Array = new Float32Array(0);
   private frameIndex = 0;
+  private compactedAt = -Infinity;
   /** The GL canvas size each of the last frames needed. */
   private readonly recent: [number, number][] = [];
   private readonly maxTexture: number;
@@ -190,6 +203,9 @@ export class Renderer {
 
   display(patch: DisplayListPatch): void {
     this.list.apply(patch, this.atlas);
+    // Packing the atlas again uploads every bitmap, so it's done at most once a second.
+    const now = performance.now();
+    if (now - this.compactedAt > 1000 && this.atlas.compact()) this.compactedAt = now;
     for (const id of this.atlas.dropped) {
       console.warn(`liquid-glass: bitmap ${id} does not fit the texture atlas and is not drawn`);
     }
@@ -206,7 +222,8 @@ export class Renderer {
     this.gl = gl;
     this.atlas.restore(gl);
     this.list.invalidate();
-    this.page = { target: null, signature: "", valid: EMPTY, usedAt: 0 };
+    this.page = { target: null, signature: "", valid: [], usedAt: 0 };
+    this.content = { target: null, signature: "", valid: [], usedAt: 0 };
     this.layers = [];
     this.sceneWidth = 0;
     this.sceneHeight = 0;
@@ -262,7 +279,11 @@ export class Renderer {
     let started = performance.now();
 
     // Display list and per-frame tables.
-    const offsets = this.list.scrollOffsets(frame.scroll);
+    const replaced = new Set<number>();
+    for (const surface of frame.surfaces)
+      if (surface.material.edge?.replace && surface.replaces !== undefined)
+        replaced.add(surface.replaces);
+    const offsets = this.list.scrollOffsets(frame.scroll, replaced);
     this.list.assignAnchors(frame.surfaces, offsets);
     gpu.painter.sync(this.list, this.atlas, this.list.clipVersion);
     if (!sameFloats(offsets, this.lastOffsets)) {
@@ -293,11 +314,15 @@ export class Renderer {
       plan.level = level;
       (groups[level] ??= []).push(plan);
     });
-    const need: Box[] = groups.map(() => EMPTY);
+    // What each level's backdrop must hold: where its surfaces read, and what the levels above
+    // need of it. Kept as separate boxes, so far apart glass repaints only what is behind it.
+    const need: Region[] = groups.map(() => []);
     for (let level = groups.length - 1; level >= 0; level -= 1) {
-      let box = need[level + 1] ?? EMPTY;
-      for (const plan of groups[level] ?? []) box = union(box, plan.paint);
-      need[level] = intersect(box, view);
+      let region: Region = need[level + 1] ?? [];
+      // A replacing progressive blur reads the content layer, not its level's backdrop.
+      for (const plan of groups[level] ?? [])
+        if (!plan.replacing) region = withBox(region, intersect(plan.paint, view));
+      need[level] = region;
     }
     const levels: Level[] = [];
     for (let level = 0; level < groups.length; level += 1) {
@@ -311,8 +336,8 @@ export class Renderer {
         continue;
       }
       const lower = groups[level - 1] ?? [];
-      const mine = need[level] ?? EMPTY;
-      if (!lower.some((plan) => intersects(plan.footprint, mine))) {
+      const mine = need[level] ?? [];
+      if (!lower.some((plan) => mine.some((box) => intersects(plan.footprint, box)))) {
         levels.push(below);
         continue;
       }
@@ -320,19 +345,29 @@ export class Renderer {
       const layer = (this.layers[level] ??= {
         target: null,
         signature: "",
-        valid: EMPTY,
+        valid: [],
         usedAt: 0,
       });
       levels.push({ key: `layer${level}`, signature: `${below.signature}|${contents}`, layer });
     }
-    // Frost is shared by every surface that reads the same backdrop at the same sigma, so its
-    // region is the union of all of theirs.
-    const frostNeed = new Map<string, Box>();
+    // Frost is shared by surfaces that read the same backdrop at the same sigma close to one
+    // another; surfaces far apart each get their own, so nothing between them is frosted.
+    // A replacing progressive blur reads the content layer instead of its level's backdrop.
+    const contentLevel: Level = {
+      key: "content",
+      signature: `${levels[0]?.signature ?? ""}`,
+      layer: this.content,
+    };
+    const sourceOf = (plan: Plan): Level | undefined =>
+      plan.replacing ? contentLevel : levels[plan.level];
+    const frostNeed = new Map<string, Region>();
     for (const plan of plans) {
-      const level = levels[plan.level];
+      const level = sourceOf(plan);
       if (!level || plan.sigma <= 0) continue;
-      const id = frostId(level, plan);
-      frostNeed.set(id, union(frostNeed.get(id) ?? EMPTY, plan.read));
+      for (const sigma of [plan.sigma, ...plan.lighter]) {
+        const id = frostId(level, sigma, plan.gamma);
+        frostNeed.set(id, withBox(frostNeed.get(id) ?? [], plan.read));
+      }
     }
     // What each placeholder shows depends only on the page where it reads and on the lower
     // surfaces that overlap that region (with everything they depend on in turn): a lens gliding
@@ -377,20 +412,25 @@ export class Renderer {
 
     // 2-4, level by level.
     const frosts = new Map<string, Frost>();
-    const frostFor = (plan: Plan, level: Level): Frost | null => {
-      if (plan.sigma <= 0) return null;
-      const id = frostId(level, plan);
+    const frostAt = (plan: Plan, level: Level, sigma: number): Frost | null => {
+      const shared = frostNeed.get(frostId(level, sigma, plan.gamma)) ?? [plan.read];
+      const cluster = Math.max(
+        0,
+        shared.findIndex((box) => contains(box, plan.read)),
+      );
+      const need = shared[cluster] ?? plan.read;
+      const id = `${frostId(level, sigma, plan.gamma)}#${cluster}`;
       let frost = frosts.get(id);
       if (!frost) {
         const at = performance.now();
         const target = level.layer.target;
         if (!target) return null;
         frost = gpu.frost.ensure(
-          level.key,
-          { target, signature: level.signature, valid: level.layer.valid },
-          plan.sigma,
+          `${level.key}#${cluster}`,
+          { target, signature: level.signature, valid: holding(level.layer.valid, need) },
+          sigma,
           plan.gamma,
-          frostNeed.get(id) ?? plan.read,
+          need,
           { width: vw, height: vh },
         );
         frosts.set(id, frost);
@@ -398,7 +438,34 @@ export class Renderer {
       }
       return frost;
     };
+    const frostFor = (plan: Plan, level: Level): Frost | null => {
+      if (plan.sigma <= 0) return null;
+      const frost = frostAt(plan, level, plan.sigma);
+      if (!frost || plan.lighter.length === 0) return frost;
+      const lighter: Frost[] = [];
+      for (const sigma of plan.lighter) {
+        const found = frostAt(plan, level, sigma);
+        if (found) lighter.push(found);
+      }
+      return { ...frost, lighter };
+    };
     const copies: Copy[] = [];
+
+    // Every replacing blur's content, when anything is drawn: a blur that isn't redrawn may
+    // still be drawn into the backdrop of glass above it.
+    const contentNeed = drawn.length
+      ? plans.reduce<Region>(
+          (region, plan) =>
+            plan.replacing ? withBox(region, intersect(plan.paint, view)) : region,
+          [],
+        )
+      : [];
+    if (contentNeed.length) {
+      started = performance.now();
+      this.ensurePage(gpu, contentLevel, contentNeed, scale, view, true);
+      this.content.usedAt = this.frameIndex;
+      timings.underlay += performance.now() - started;
+    }
 
     // Levels above the highest dirty surface are not needed this frame.
     const top = drawn.reduce((most, plan) => Math.max(most, plan.level), -1);
@@ -407,17 +474,18 @@ export class Renderer {
       const group = groups[index];
       if (!level || !group) continue;
       started = performance.now();
-      if (index === 0) this.ensurePage(gpu, level, need[0] ?? EMPTY, scale, view);
+      if (index === 0) this.ensurePage(gpu, level, need[0] ?? [], scale, view);
       else if (level.key !== levels[index - 1]?.key) {
         this.ensureLayer(
           gpu,
           level,
           levels[index - 1],
           groups[index - 1] ?? [],
-          need[index] ?? EMPTY,
+          need[index] ?? [],
           scale,
           view,
           frostFor,
+          contentLevel,
         );
       }
       level.layer.usedAt = this.frameIndex;
@@ -431,13 +499,14 @@ export class Renderer {
           slot.signature = signatures.get(plan) ?? "";
           continue;
         }
-        const target = level.layer.target;
+        const source = plan.replacing ? contentLevel : level;
+        const target = source.layer.target;
         if (!target) continue;
         const width = region[2] - region[0];
         const height = region[3] - region[1];
         if (width !== plan.width || height !== plan.height) timings.partial += 1;
         timings.pixels += width * height;
-        const frost = frostFor(plan, level);
+        const frost = frostFor(plan, source);
         started = performance.now();
         let spot = spots.get(plan) ?? overflow.place(width, height);
         if (!spot) {
@@ -451,9 +520,21 @@ export class Renderer {
         const labels = this.labelsFor(gpu, plan, slot, scale);
         // The placeholder's origin in the GL canvas, so that `region` lands on `spot`.
         const origin = [spot[0] - region[0], spot[1] - region[1]] as const;
-        this.drawPlaceholder(gpu, plan, origin[0], origin[1], region, target, frost, labels, view);
+        this.drawPlaceholder(
+          gpu,
+          plan,
+          origin[0],
+          origin[1],
+          region,
+          target,
+          frost,
+          labels,
+          view,
+          plan.replacing,
+        );
         const body = bodyScreenBox(plan);
-        if (!isEmpty(body))
+        // A progressive blur has no tone to adapt, so nothing behind it is measured.
+        if (!isEmpty(body) && !plan.surface.material.edge)
           gpu.meter.measure(plan.surface.id, target.texture, body, { width: vw, height: vh });
         slot.signature = signatures.get(plan) ?? "";
         copies.push({
@@ -486,6 +567,7 @@ export class Renderer {
       this.gpu.meter.dispose();
     }
     deleteTarget(gl, this.page.target);
+    deleteTarget(gl, this.content.target);
     for (const layer of this.layers) deleteTarget(gl, layer?.target);
     for (const slot of this.slots.values()) deleteTarget(gl, slot.labels);
     this.atlas.dispose();
@@ -504,9 +586,12 @@ export class Renderer {
   }
 
   private resizeScene(width: number, height: number): void {
+    this.gpu?.meter.forget();
     deleteTarget(this.gl, this.page.target);
+    deleteTarget(this.gl, this.content.target);
     for (const layer of this.layers) deleteTarget(this.gl, layer?.target);
-    this.page = { target: null, signature: "", valid: EMPTY, usedAt: 0 };
+    this.page = { target: null, signature: "", valid: [], usedAt: 0 };
+    this.content = { target: null, signature: "", valid: [], usedAt: 0 };
     this.layers = [];
     this.sceneWidth = width;
     this.sceneHeight = height;
@@ -608,29 +693,50 @@ export class Renderer {
     return area(region) > 0.7 * area(full) ? full : region;
   }
 
-  private ensurePage(gpu: Gpu, level: Level, need: Box, scale: number, view: Box): void {
+  /**
+   * Paint the page into `level`'s layer where `need` asks. `replacedOnly`: only what scrolls
+   * inside the scrollers progressive blurs replace, over nothing, so its alpha is the content's.
+   */
+  private ensurePage(
+    gpu: Gpu,
+    level: Level,
+    need: Region,
+    scale: number,
+    view: Box,
+    replacedOnly = false,
+  ): void {
     const layer = level.layer;
-    if (isEmpty(need)) return;
-    if (layer.signature === level.signature && contains(layer.valid, need) && layer.target) return;
+    const current = layer.signature === level.signature && layer.target !== null;
+    const missing = current ? need.filter((box) => !covers(layer.valid, box)) : need;
+    if (!missing.length) return;
     const gl = this.gl;
     layer.target ??= createTarget(gl, this.sceneWidth, this.sceneHeight);
-    const region = intersect(expand(need, MARGIN), view);
-    const pixels = toPixels(region, scale, this.sceneWidth, this.sceneHeight);
-    if (isEmpty(pixels)) return;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.target.framebuffer);
-    gl.viewport(0, 0, this.sceneWidth, this.sceneHeight);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(pixels[0], pixels[1], pixels[2] - pixels[0], pixels[3] - pixels[1]);
-    const [r, g, b, a] = this.list.backdrop;
-    gl.clearColor(r * a, g * a, b * a, a);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gpu.painter.paint(
-      0,
-      layer.target,
-      { space: 0, localOrigin: [0, 0], scale, region: pixels },
-      this.atlas,
-    );
-    layer.valid = pixelsToCss(pixels, scale);
+    const painted: Box[] = [];
+    const [r, g, b, a] = replacedOnly ? [0, 0, 0, 0] : this.list.backdrop;
+    for (const box of missing) {
+      const pixels = toPixels(
+        intersect(expand(box, MARGIN), view),
+        scale,
+        this.sceneWidth,
+        this.sceneHeight,
+      );
+      if (isEmpty(pixels)) continue;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, layer.target.framebuffer);
+      gl.viewport(0, 0, this.sceneWidth, this.sceneHeight);
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(pixels[0], pixels[1], pixels[2] - pixels[0], pixels[3] - pixels[1]);
+      gl.clearColor(r * a, g * a, b * a, a);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gpu.painter.paint(
+        0,
+        layer.target,
+        { space: 0, localOrigin: [0, 0], scale, region: pixels, replacedOnly },
+        this.atlas,
+      );
+      painted.push(pixelsToCss(pixels, scale));
+    }
+    // Boxes that overlap join, so glass gliding over a still page keeps one growing box.
+    layer.valid = painted.reduce<Region>(withBox, current ? layer.valid : []);
     layer.signature = level.signature;
   }
 
@@ -639,80 +745,94 @@ export class Renderer {
     level: Level,
     below: Level | undefined,
     lower: readonly Plan[],
-    need: Box,
+    need: Region,
     scale: number,
     view: Box,
     frostFor: (plan: Plan, level: Level) => Frost | null,
+    content: Level,
   ): void {
     const layer = level.layer;
     const source = below?.layer.target;
-    if (!below || !source || isEmpty(need)) return;
-    if (layer.signature === level.signature && contains(layer.valid, need) && layer.target) return;
+    if (!below || !source) return;
+    const current = layer.signature === level.signature && layer.target !== null;
+    const missing = current ? need.filter((box) => !covers(layer.valid, box)) : need;
+    if (!missing.length) return;
     const gl = this.gl;
-    layer.target ??= createTarget(gl, this.sceneWidth, this.sceneHeight);
-    const region = intersect(intersect(expand(need, MARGIN), below.layer.valid), view);
-    const pixels = toPixels(region, scale, this.sceneWidth, this.sceneHeight);
-    if (isEmpty(pixels)) return;
-    gl.disable(gl.SCISSOR_TEST);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, source.framebuffer);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, layer.target.framebuffer);
-    gl.blitFramebuffer(
-      pixels[0],
-      pixels[1],
-      pixels[2],
-      pixels[3],
-      pixels[0],
-      pixels[1],
-      pixels[2],
-      pixels[3],
-      gl.COLOR_BUFFER_BIT,
-      gl.NEAREST,
-    );
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    for (const plan of lower) {
-      if (!intersects(plan.footprint, region)) continue;
-      const surface = plan.surface;
-      const [kx, ky] = plan.scale;
-      const slot = this.slots.get(surface.id);
-      const labels = slot ? this.labelsFor(gpu, plan, slot, scale) : null;
-      gpu.glass.draw({
-        surface,
-        set: plan.set,
-        framebuffer: layer.target.framebuffer,
-        targetWidth: this.sceneWidth,
-        targetHeight: this.sceneHeight,
-        scissor: toPixels(
-          intersect(plan.footprint, region),
-          scale,
-          this.sceneWidth,
-          this.sceneHeight,
-        ),
-        fragToLocal: [
-          1 / (scale * kx),
-          1 / (scale * ky),
-          -surface.screen.x / kx,
-          -surface.screen.y / ky,
-        ],
-        pixel: 1 / (scale * Math.min(kx, ky)),
-        backdrop: source.texture,
-        viewport: { width: view[2], height: view[3] },
-        frost: frostFor(plan, below),
-        labels,
-        blend: true,
-        opacity: surface.opacity,
-      });
-      // Items on the surface (its DOM content) sit over its glass, unless the glass drew them.
-      if (!(surface.labelsInGlass && labels)) {
-        gpu.painter.paint(
-          surface.id,
-          layer.target,
-          { space: 0, localOrigin: [0, 0], scale, region: pixels },
-          this.atlas,
-        );
+    const target = (layer.target ??= createTarget(gl, this.sceneWidth, this.sceneHeight));
+    const composed: Box[] = [];
+    for (const box of missing) {
+      const region = intersect(
+        intersect(expand(box, MARGIN), holding(below.layer.valid, box)),
+        view,
+      );
+      const pixels = toPixels(region, scale, this.sceneWidth, this.sceneHeight);
+      if (isEmpty(pixels)) continue;
+      gl.disable(gl.SCISSOR_TEST);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, source.framebuffer);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, target.framebuffer);
+      gl.blitFramebuffer(
+        pixels[0],
+        pixels[1],
+        pixels[2],
+        pixels[3],
+        pixels[0],
+        pixels[1],
+        pixels[2],
+        pixels[3],
+        gl.COLOR_BUFFER_BIT,
+        gl.NEAREST,
+      );
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+      for (const plan of lower) {
+        if (!intersects(plan.footprint, region)) continue;
+        const surface = plan.surface;
+        const [kx, ky] = plan.scale;
+        const slot = this.slots.get(surface.id);
+        const labels = slot ? this.labelsFor(gpu, plan, slot, scale) : null;
+        const replacing = plan.replacing ? content.layer.target : null;
+        gpu.glass.draw({
+          surface,
+          set: plan.set,
+          framebuffer: target.framebuffer,
+          targetWidth: this.sceneWidth,
+          targetHeight: this.sceneHeight,
+          scissor: toPixels(
+            intersect(plan.footprint, region),
+            scale,
+            this.sceneWidth,
+            this.sceneHeight,
+          ),
+          fragToLocal: [
+            1 / (scale * kx),
+            1 / (scale * ky),
+            -surface.screen.x / kx,
+            -surface.screen.y / ky,
+          ],
+          pixel: 1 / (scale * Math.min(kx, ky)),
+          // A replacing blur lays its blurred content over the page here. The page's own content
+          // shows through it a little, which the glass above then frosts or bends anyway.
+          backdrop: replacing ? replacing.texture : source.texture,
+          viewport: { width: view[2], height: view[3] },
+          frost: frostFor(plan, replacing ? content : below),
+          replacing: replacing !== null,
+          labels,
+          blend: true,
+          opacity: surface.opacity,
+        });
+        // Items on the surface (its DOM content) sit over its glass, unless the glass drew them.
+        if (!(surface.labelsInGlass && labels)) {
+          gpu.painter.paint(
+            surface.id,
+            target,
+            { space: 0, localOrigin: [0, 0], scale, region: pixels },
+            this.atlas,
+          );
+        }
       }
+      composed.push(pixelsToCss(pixels, scale));
     }
-    layer.valid = pixelsToCss(pixels, scale);
+    layer.valid = composed.reduce<Region>(withBox, current ? layer.valid : []);
     layer.signature = level.signature;
   }
 
@@ -767,6 +887,7 @@ export class Renderer {
     frost: Frost | null,
     labels: { texture: WebGLTexture; map: readonly [number, number, number, number] } | null,
     view: Box,
+    replacing: boolean,
   ): void {
     const gl = this.gl;
     const surface = plan.surface;
@@ -820,6 +941,7 @@ export class Renderer {
       backdrop: backdrop.texture,
       viewport: { width: view[2], height: view[3] },
       frost,
+      replacing,
       labels,
       blend: false,
       opacity: 1,
@@ -912,10 +1034,11 @@ export class Renderer {
     for (let index = 0; index < this.layers.length; index += 1) {
       const layer = this.layers[index];
       if (layer?.target && (index >= levelCount || this.frameIndex - layer.usedAt > 120)) {
+        gpu.meter.forget();
         deleteTarget(this.gl, layer.target);
         layer.target = null;
         layer.signature = "";
-        layer.valid = EMPTY;
+        layer.valid = [];
       }
     }
   }
@@ -953,6 +1076,8 @@ function planSurface(surface: SurfaceFrame, view: Box, dpr: number): Plan {
     paint,
     footprint,
     sigma,
+    lighter: material.edge && sigma > 0 ? EDGE_FROSTS.slice(0, -1) : [],
+    replacing: material.edge?.replace === true && surface.replaces !== undefined,
     gamma: frostGamma(material),
     width: Math.min(limit, Math.max(1, Math.ceil((surface.size.width + left + right) * dpr))),
     height: Math.min(limit, Math.max(1, Math.ceil((surface.size.height + top + bottom) * dpr))),
@@ -1043,8 +1168,8 @@ function bodyScreenBox(plan: Plan): Box {
   ]);
 }
 
-function frostId(level: Level, plan: Plan): string {
-  return `${level.key}|${plan.sigma}|${plan.gamma}`;
+function frostId(level: Level, sigma: number, gamma: number): string {
+  return `${level.key}|${sigma}|${gamma}`;
 }
 
 function pixelsToCss(pixels: Box, scale: number): Box {

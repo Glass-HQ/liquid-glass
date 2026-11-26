@@ -9,12 +9,26 @@ import measureFragment from "./shaders/measure.frag.glsl?raw";
  * of a small target, the frame ends with one `readPixels` into a pixel buffer and a fence, and
  * `collect` picks the result up once the GPU has passed the fence (usually a few ms later).
  * The page turns readings into the surface's tone, dimming and shadow (core/adapt.ts).
+ *
+ * Picking a result up is still a round trip to the GPU process in Chromium, which waits behind
+ * everything queued there, so readbacks are spaced out: glass that redraws every frame (content
+ * scrolling under it) is measured a few times a second, which is as fast as its tone eases
+ * anyway. A measurement that came too soon is kept and made once the gap has passed, so the last
+ * thing behind a surface is always the one measured.
  */
 
 /** Texels per row of the target; more surfaces than this in one frame wait for a later one. */
 const WIDTH = 64;
 /** Readbacks in flight at once; a frame that finds them all busy measures nothing. */
 const BUFFERS = 3;
+/** The least time between readbacks, ms. */
+const READBACK_GAP_MS = 120;
+
+interface Waiting {
+  readonly backdrop: WebGLTexture;
+  readonly box: readonly [number, number, number, number];
+  readonly viewport: { width: number; height: number };
+}
 
 interface Readback {
   readonly buffer: WebGLBuffer;
@@ -29,6 +43,11 @@ export class BackdropMeter {
   private readonly idle: Readback[] = [];
   private readonly pending: Readback[] = [];
   private ids: number[] = [];
+  /** Measurements asked for too soon after the last readback, by surface. */
+  private readonly waiting = new Map<number, Waiting>();
+  /** Whether this frame's measurements are being gathered for a readback. */
+  private gathering = false;
+  private readAt = -Infinity;
 
   constructor(private readonly gl: GL) {
     this.program = compileProgram(gl, "measure", fullscreenVertex, measureFragment);
@@ -43,7 +62,7 @@ export class BackdropMeter {
 
   /** Whether readbacks are waiting for the GPU. */
   get busy(): boolean {
-    return this.pending.length > 0;
+    return this.pending.length > 0 || this.waiting.size > 0;
   }
 
   /**
@@ -56,8 +75,16 @@ export class BackdropMeter {
     box: readonly [number, number, number, number],
     viewport: { width: number; height: number },
   ): void {
-    if (this.ids.length >= WIDTH || this.idle.length === 0) return;
     if (box[2] - box[0] < 1 || box[3] - box[1] < 1) return;
+    if (!this.gathering) {
+      if (performance.now() - this.readAt < READBACK_GAP_MS || this.idle.length === 0) {
+        this.waiting.set(id, { backdrop, box, viewport });
+        return;
+      }
+      this.gathering = true;
+    }
+    if (this.ids.length >= WIDTH) return;
+    this.waiting.delete(id);
     const gl = this.gl;
     const x = this.ids.length;
     this.ids.push(id);
@@ -75,9 +102,16 @@ export class BackdropMeter {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  /** Drop measurements still waiting: the backdrops they would read are going away. */
+  forget(): void {
+    this.waiting.clear();
+  }
+
   /** Start reading back what this frame measured. */
   flush(): void {
+    this.gathering = false;
     if (!this.ids.length) return;
+    this.readAt = performance.now();
     const readback = this.idle.pop();
     if (!readback) {
       this.ids = [];
@@ -100,6 +134,18 @@ export class BackdropMeter {
   /** Readings whose readback has completed, oldest first. Never waits. */
   collect(): BackdropReading[] {
     const gl = this.gl;
+    // Measurements that came too soon are made now, on the backdrops of the last frame drawn.
+    if (
+      this.waiting.size > 0 &&
+      this.idle.length > 0 &&
+      performance.now() - this.readAt >= READBACK_GAP_MS
+    ) {
+      const waiting = [...this.waiting];
+      this.waiting.clear();
+      for (const [id, { backdrop, box, viewport }] of waiting)
+        this.measure(id, backdrop, box, viewport);
+      this.flush();
+    }
     const readings: BackdropReading[] = [];
     while (this.pending.length) {
       const readback = this.pending[0]!;

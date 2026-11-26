@@ -37,6 +37,8 @@ export {
 } from "./core/geometry";
 export type { Box, RadiusSpec } from "./core/geometry";
 export type { TintAmount } from "./core/material";
+export { progressiveBlurMask } from "./core/progressive";
+export type { ProgressiveEdge } from "./protocol";
 
 export type {
   Appearance,

@@ -32,6 +32,8 @@ uniform float uScale;
 uniform vec2 uTarget;
 // target region in device px [x0, y0, x1, y1]; quads wholly outside are culled
 uniform vec4 uCull;
+// 1: draw only items that scroll inside a scroller a progressive blur replaces
+uniform int uOnly;
 
 out vec2 vPoint;
 flat out vec4 vRect;
@@ -45,8 +47,9 @@ flat out float vOpacity;
 flat out float vPixel;
 flat out vec2 vBase;
 
-vec2 scrollOffset(int index) {
-  return texelFetch(uScroll, ivec2(index % 1024, index / 1024), 0).xy;
+// xy: how far the scroller has moved; z: 1 inside a scroller a progressive blur replaces
+vec3 scrollerAt(int index) {
+  return texelFetch(uScroll, ivec2(index % 1024, index / 1024), 0).xyz;
 }
 
 void main() {
@@ -56,7 +59,8 @@ void main() {
   vec2 base = slot > 0 ? texelFetch(uOwners, ivec2(1, slot), 0).xy : vec2(0.0);
   // Item space: capture coordinates plus scrolling. An owned item moves with its surface, so
   // the scrolling the surface itself already shows (its base scroller) is taken out.
-  vec2 shift = scrollOffset(int(aMeta.z + 0.5)) - base;
+  vec3 scroller = scrollerAt(int(aMeta.z + 0.5));
+  vec2 shift = scroller.xy - base;
   vec4 rect = vec4(aRect.xy + shift, aRect.zw);
 
   // Item space -> target CSS px is a scale and an offset.
@@ -87,6 +91,7 @@ void main() {
   vec2 low = (origin * scale + offset) * uScale;
   vec2 high = ((origin + span) * scale + offset) * uScale;
   bool outside = high.x <= uCull.x || high.y <= uCull.y || low.x >= uCull.z || low.y >= uCull.w || aMeta.w <= 0.0;
+  if (uOnly == 1 && (slot > 0 || scroller.z < 0.5)) outside = true;
   vec2 target = (point * scale + offset) * uScale;
   // Targets are stored top row first, so CSS y grows with clip-space y.
   gl_Position = outside ? vec4(2.0, 2.0, 2.0, 1.0) : vec4(target / uTarget * 2.0 - 1.0, 0.0, 1.0);

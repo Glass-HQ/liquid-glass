@@ -15,6 +15,7 @@ const UNIFORMS = [
   "uScale",
   "uTarget",
   "uCull",
+  "uOnly",
 ] as const;
 
 /** Texture units the painter binds; other passes use their own. */
@@ -38,6 +39,8 @@ export interface PaintOptions {
   readonly scale: number;
   /** Device-px region to paint; everything else is left alone. */
   readonly region: Box;
+  /** Paint only what scrolls inside a scroller a progressive blur replaces. */
+  readonly replacedOnly?: boolean;
 }
 
 /**
@@ -131,6 +134,7 @@ export class ItemPainter {
     gl.uniform1f(u.uScale, options.scale);
     gl.uniform2f(u.uTarget, target.width, target.height);
     gl.uniform4f(u.uCull, x0, y0, x1, y1);
+    gl.uniform1i(u.uOnly, options.replacedOnly ? 1 : 0);
     this.bind(UNIT_SCROLL, this.scroll.texture, u.uScroll);
     this.bind(UNIT_OWNERS, this.owners.texture, u.uOwners);
     this.bind(UNIT_CLIPS, this.clips.texture, u.uClips);

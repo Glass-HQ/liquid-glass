@@ -26,7 +26,13 @@ void main() {
   color = vec4(c.rgb * c.a, c.a);
 }`;
 
-const PAGE_LIMIT = 4;
+/**
+ * Shared pages are made as they fill, each larger than the last up to the largest: a scene with
+ * little under its glass holds a 4 MB page, not a 64 MB one. The limit keeps the room there was
+ * with four of the largest.
+ */
+const PAGE_SIZES = [1024, 2048, 4096] as const;
+const PAGE_LIMIT = 6;
 /** Empty space between bitmaps, so linear filtering at an edge never reads a neighbour. */
 const GAP = 1;
 
@@ -128,6 +134,25 @@ export class Atlas {
     this.dropped.delete(id);
   }
 
+  /**
+   * Give back the pages that released bitmaps left mostly empty. A shelf never takes a bitmap
+   * again once its own was released, so content scrolling under glass (captured, then released
+   * as it leaves) fills page after page with holes. Once more than half of what the pages hold is
+   * holes, everything is packed again into as few pages as it needs. Returns whether it was.
+   */
+  compact(): boolean {
+    let capacity = 0;
+    let smallest = Infinity;
+    for (const page of this.pages) {
+      if (!page || page.dedicated) continue;
+      capacity += page.width * page.height;
+      smallest = Math.min(smallest, page.width * page.height);
+    }
+    if (capacity <= smallest || this.dead < capacity / 2) return false;
+    this.repack();
+    return true;
+  }
+
   /** After a context restore: new pages, every retained bitmap uploaded again. */
   restore(gl: GL): void {
     this.gl = gl;
@@ -189,8 +214,14 @@ export class Atlas {
           pageHeight: page.height,
         };
     }
-    if (this.sharedPages() >= PAGE_LIMIT) return null;
-    const index = this.addPage(this.pageSize, this.pageSize, false);
+    const shared = this.sharedPages();
+    if (shared >= PAGE_LIMIT) return null;
+    // The next size up, or larger when this bitmap needs it.
+    const step = PAGE_SIZES[Math.min(shared, PAGE_SIZES.length - 1)] ?? this.pageSize;
+    let size = Math.min(step, this.pageSize);
+    while (size < this.pageSize && (width + GAP > size || height + GAP > size)) size *= 2;
+    size = Math.min(size, this.pageSize);
+    const index = this.addPage(size, size, false);
     const page = this.pages[index];
     const spot = page ? shelfFit(page, width + GAP, height + GAP) : null;
     if (!page || !spot) return null;
