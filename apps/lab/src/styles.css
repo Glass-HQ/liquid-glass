@@ -325,6 +325,43 @@ a {
 
 /* Gradients */
 
+.progressive-scroller {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 120px 32px;
+}
+
+.progressive-row {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.progressive-bubble {
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: #8b8ff0;
+  color: #1b1c3a;
+}
+
+.progressive-text {
+  margin: 0;
+  padding: 0 18px;
+  color: #fff;
+}
+
+.progressive-band {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 96px;
+}
+
+.progressive-band-end {
+  inset: auto 0 0;
+}
+
 .gradient-stage {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

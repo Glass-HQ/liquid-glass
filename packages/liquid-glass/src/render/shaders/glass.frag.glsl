@@ -412,7 +412,17 @@ vec4 edgeAt(vec2 p) {
     seen = vec4(uTint.rgb * tinted, tinted) + seen * (1.0 - tinted);
   }
   float c = clamp(t / max(uEdge.w, 1e-3), 0.0, 1.0);
-  return seen * (c * c * (3.0 - 2.0 * c));
+  c = c * c * (3.0 - 2.0 * c);
+  if (uEdge.x < 1.5) return seen * c;
+  // Replacing: the page's content is still under this, masked down to 1 - c. Drawn over it, a
+  // plain seen * c would lose light where the two cross (they'd add up to less than either, and
+  // whatever is behind the page would show as a dark band). So this draws what is missing from
+  // the crossfade once the masked content has shown through it: with the content it reads the
+  // same as the page's, the two come to exactly mix(content, blurred, c).
+  float kept = sharp.a * (1.0 - c);
+  float alpha = clamp(seen.a * c / max(1.0 - kept, 1e-4), 0.0, 1.0);
+  vec4 crossed = seen * c + sharp * (1.0 - c);
+  return vec4(max(crossed.rgb - sharp.rgb * (1.0 - c) * (1.0 - alpha), 0.0), alpha);
 }
 
 vec4 groundAt(vec2 p) {

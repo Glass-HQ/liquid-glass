@@ -18,6 +18,7 @@ import { Highlight } from "./sections/Highlight";
 import { Media } from "./sections/List";
 import { Materials } from "./sections/Materials";
 import { Overlays } from "./sections/Overlays";
+import { Progressive } from "./sections/Progressive";
 import { Readability } from "./sections/Readability";
 import { Scripts } from "./sections/Scripts";
 import { Stress } from "./sections/Stress";
@@ -28,6 +29,7 @@ const sections = [
   ["text", "Text"],
   ["gradients", "Gradients"],
   ["media", "Scrolling and video"],
+  ["progressive", "Progressive blur"],
   ["controls", "Controls"],
   ["highlight", "Highlight and popup"],
   ["scripts", "Emoji and right to left"],
@@ -84,6 +86,7 @@ export function App() {
           <Text auto={settings.auto} />
           <Gradients />
           <Media />
+          <Progressive night={night} />
           <Controls auto={settings.auto} night={night} />
           <Highlight auto={settings.auto} night={night} />
           <Scripts />
