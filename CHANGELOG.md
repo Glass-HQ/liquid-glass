@@ -31,6 +31,10 @@ Chrome, Safari, Firefox and Electron, and moves at the display's rate, up to 120
 - The texture atlas starts small, grows as it fills, and gives pages back once content that
   scrolled away has left them mostly empty. Scrolling a long page under glass no longer holds
   hundreds of megabytes of GPU memory.
+- Every surface that changed in a frame is drawn into the renderer's canvas in one pass, after
+  all the backdrops and frost it needs. Drawing them one by one, with frost and measurements in
+  between, started a new GPU pass on the canvas for each. Content scrolling under several glass
+  surfaces costs about 40% less of the GPU process's time.
 - Readings of what is behind glass are spaced out, so glass that redraws every frame doesn't
   wait on the GPU every frame.
 

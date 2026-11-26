@@ -97,6 +97,17 @@ interface Copy {
   readonly canvasHeight: number;
 }
 
+/** One surface to draw into the GL canvas: where, from which backdrop, with which frost. */
+interface Job {
+  readonly plan: Plan;
+  readonly x: number;
+  readonly y: number;
+  readonly region: Box;
+  readonly backdrop: Target;
+  readonly frost: Frost | null;
+  readonly labels: { texture: WebGLTexture; map: readonly [number, number, number, number] } | null;
+}
+
 interface Plan {
   readonly surface: SurfaceFrame;
   readonly set: ShapeSet;
@@ -450,6 +461,11 @@ export class Renderer {
       return { ...frost, lighter };
     };
     const copies: Copy[] = [];
+    // Every backdrop and frost is made first, then every surface is drawn into the GL canvas in
+    // one go, then what is behind them is measured. Each switch between render targets ends a
+    // pass on the GPU, and a pass on a target costs loading and storing it, so drawing surface
+    // by surface (frost, canvas, measure, frost, canvas, measure) paid for the canvas each time.
+    const jobs: Job[] = [];
 
     // Every replacing blur's content, when anything is drawn: a blur that isn't redrawn may
     // still be drawn into the backdrop of glass above it.
@@ -511,6 +527,8 @@ export class Renderer {
         let spot = spots.get(plan) ?? overflow.place(width, height);
         if (!spot) {
           // More than the GL canvas holds: present what is drawn so far and start over at its top.
+          this.drawJobs(gpu, jobs, view, vw, vh);
+          jobs.length = 0;
           timings.copy += this.copy(copies);
           copies.length = 0;
           overflow.reset();
@@ -520,22 +538,7 @@ export class Renderer {
         const labels = this.labelsFor(gpu, plan, slot, scale);
         // The placeholder's origin in the GL canvas, so that `region` lands on `spot`.
         const origin = [spot[0] - region[0], spot[1] - region[1]] as const;
-        this.drawPlaceholder(
-          gpu,
-          plan,
-          origin[0],
-          origin[1],
-          region,
-          target,
-          frost,
-          labels,
-          view,
-          plan.replacing,
-        );
-        const body = bodyScreenBox(plan);
-        // A progressive blur has no tone to adapt, so nothing behind it is measured.
-        if (!isEmpty(body) && !plan.surface.material.edge)
-          gpu.meter.measure(plan.surface.id, target.texture, body, { width: vw, height: vh });
+        jobs.push({ plan, x: origin[0], y: origin[1], region, backdrop: target, frost, labels });
         slot.signature = signatures.get(plan) ?? "";
         copies.push({
           slot,
@@ -551,6 +554,7 @@ export class Renderer {
         timings.glass += performance.now() - started;
       }
     }
+    this.drawJobs(gpu, jobs, view, vw, vh);
     gl.disable(gl.SCISSOR_TEST);
     timings.copy += this.copy(copies);
     gpu.meter.flush();
@@ -760,6 +764,17 @@ export class Renderer {
     const gl = this.gl;
     const target = (layer.target ??= createTarget(gl, this.sceneWidth, this.sceneHeight));
     const composed: Box[] = [];
+    // Frost and labels are made before the layer is touched, so drawing into it is one pass.
+    const prepared = lower.map((plan) => {
+      const slot = this.slots.get(plan.surface.id);
+      const replacing = plan.replacing ? content.layer.target : null;
+      return {
+        plan,
+        replacing,
+        labels: slot ? this.labelsFor(gpu, plan, slot, scale) : null,
+        frost: frostFor(plan, replacing ? content : below),
+      };
+    });
     for (const box of missing) {
       const region = intersect(
         intersect(expand(box, MARGIN), holding(below.layer.valid, box)),
@@ -784,13 +799,10 @@ export class Renderer {
       );
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-      for (const plan of lower) {
+      for (const { plan, replacing, labels, frost } of prepared) {
         if (!intersects(plan.footprint, region)) continue;
         const surface = plan.surface;
         const [kx, ky] = plan.scale;
-        const slot = this.slots.get(surface.id);
-        const labels = slot ? this.labelsFor(gpu, plan, slot, scale) : null;
-        const replacing = plan.replacing ? content.layer.target : null;
         gpu.glass.draw({
           surface,
           set: plan.set,
@@ -814,7 +826,7 @@ export class Renderer {
           // shows through it a little, which the glass above then frosts or bends anyway.
           backdrop: replacing ? replacing.texture : source.texture,
           viewport: { width: view[2], height: view[3] },
-          frost: frostFor(plan, replacing ? content : below),
+          frost,
           replacing: replacing !== null,
           labels,
           blend: true,
@@ -877,6 +889,40 @@ export class Renderer {
    * Draw `region` (device px of the placeholder) of a surface's glass into the GL canvas, with
    * the placeholder's origin at (x, y) there (outside the canvas when only a part is drawn).
    */
+  /**
+   * Draw the collected surfaces into the GL canvas, then measure what is behind them. The canvas
+   * is cleared whole and once: it holds nothing worth keeping (its last frame was handed over),
+   * and a whole clear starts the pass without loading the canvas first.
+   */
+  private drawJobs(gpu: Gpu, jobs: readonly Job[], view: Box, vw: number, vh: number): void {
+    if (!jobs.length) return;
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    for (const job of jobs)
+      this.drawPlaceholder(
+        gpu,
+        job.plan,
+        job.x,
+        job.y,
+        job.region,
+        job.backdrop,
+        job.frost,
+        job.labels,
+        view,
+        job.plan.replacing,
+      );
+    for (const { plan, backdrop } of jobs) {
+      const body = bodyScreenBox(plan);
+      // A progressive blur has no tone to adapt, so nothing behind it is measured.
+      if (!isEmpty(body) && !plan.surface.material.edge)
+        gpu.meter.measure(plan.surface.id, backdrop.texture, body, { width: vw, height: vh });
+    }
+  }
+
   private drawPlaceholder(
     gpu: Gpu,
     plan: Plan,
@@ -889,23 +935,11 @@ export class Renderer {
     view: Box,
     replacing: boolean,
   ): void {
-    const gl = this.gl;
     const surface = plan.surface;
     const { width, height, dpr } = plan;
     const [top, right, bottom, left] = surface.bleed;
     const canvasHeight = this.canvas.height;
     // The canvas's framebuffer is bottom-up: canvas row y is GL row (height - 1 - y).
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, canvasHeight);
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(
-      x + region[0],
-      canvasHeight - y - region[3],
-      region[2] - region[0],
-      region[3] - region[1],
-    );
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
     if (surface.opacity <= 0 || plan.set.shapes.length === 0) return;
     // Only the shapes and what they cast need the shader; the rest stays clear.
     const drawn = intersect(localDrawBounds(plan), [
