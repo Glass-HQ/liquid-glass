@@ -1,4 +1,17 @@
-import { EDGE_COVER_END, edgeCover } from "./material";
+// Nothing is imported here: the React entry uses this file, and anything it pulled in would
+// load with the page instead of with the engine.
+
+/**
+ * How much of a progressive blur covers the page, at points along it from its faint side (0) to
+ * its strong side (1). It is fully there well before the blur is strong, so the page's own
+ * sharp content has gone while the two still look alike. The glass shader draws this curve; a
+ * see-through page masks its content with what is left of it (`progressiveBlurMask`).
+ */
+export const EDGE_COVER_END = 0.4;
+export const edgeCover = (along: number): number => {
+  const t = Math.min(1, Math.max(0, along / EDGE_COVER_END));
+  return t * t * (3 - 2 * t);
+};
 
 /**
  * The CSS mask for an element whose content a replacing progressive blur stands in for (a

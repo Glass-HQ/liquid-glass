@@ -56,18 +56,6 @@ export interface MaterialOptions {
 export const EDGE_FROSTS = [4, 16, 64] as const;
 
 /**
- * How much of a progressive blur covers the page, at points along it from its faint side (0) to
- * its strong side (1). It is fully there well before the blur is strong, so the page's own
- * sharp content has gone while the two still look alike. The glass shader draws this curve; a
- * see-through page masks its content with what is left of it (`progressiveBlurMask`).
- */
-export const EDGE_COVER_END = 0.4;
-export const edgeCover = (along: number): number => {
-  const t = Math.min(1, Math.max(0, along / EDGE_COVER_END));
-  return t * t * (3 - 2 * t);
-};
-
-/**
  * How tinted regular glass is: from 0, "clear" (more of what is behind shows through, sharper), to 1, "tinted" (frostier, a
  * milkier face in light, a darker one in dark). "default" is 0.5. Only regular glass takes it: the clear material is a different glass, for
  * controls over media.

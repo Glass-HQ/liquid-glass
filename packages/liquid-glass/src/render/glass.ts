@@ -1,4 +1,4 @@
-import { EDGE_COVER_END } from "../core/material";
+import { EDGE_COVER_END } from "../core/progressive";
 import type { Material, Shape, SurfaceFrame } from "../protocol";
 import type { Frost } from "./frost";
 import { compileProgram, type GL, uniforms } from "./gl";

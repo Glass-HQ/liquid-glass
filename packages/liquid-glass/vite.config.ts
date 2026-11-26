@@ -19,11 +19,16 @@ export default defineConfig({
         entryFileNames: "[name].js",
         chunkFileNames: "chunks/[name]-[hash].js",
         // Name the shared chunks for what they hold instead of after one of their modules. The
-        // React entry must stay small: it shares only `styles` (the CSS and slider value math)
-        // with the rest, and reaches `scene` (scene, motion, core) through the lazy `engine`.
+        // React entry must stay small: it shares only `styles` (the CSS, slider value math and
+        // the progressive blur's mask) with the rest, and reaches `scene` (scene, motion, core)
+        // through the lazy `engine`.
         codeSplitting: {
           groups: [
-            { name: "styles", test: /\/src\/(scene\/styles|motion\/range)\.ts$/, priority: 2 },
+            {
+              name: "styles",
+              test: /\/src\/(scene\/styles|motion\/range|core\/progressive)\.ts$/,
+              priority: 2,
+            },
             {
               name: "scene",
               test: /\/src\/(core|scene|motion)\/|\/src\/react\/engine\.ts$/,
