@@ -18,6 +18,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactElement,
   ReactNode,
+  Ref,
 } from "react";
 import { createPortal } from "react-dom";
 import type { Appearance, MaterialKind, Rect } from "../protocol";
@@ -164,6 +165,7 @@ export function GlassMenuTrigger({
   const mergedRef = useMergedRef<HTMLButtonElement>(
     menu.trigger as React.RefObject<HTMLButtonElement | null>,
     ref,
+    refOf(render),
   );
   const own = {
     id: menu.triggerId,
@@ -230,6 +232,7 @@ export function GlassContextMenuTrigger({
   const mergedRef = useMergedRef<HTMLDivElement>(
     menu.trigger as React.RefObject<HTMLDivElement | null>,
     ref,
+    refOf(render),
   );
   const press = useRef<{ timer: number; x: number; y: number } | null>(null);
   const cancelPress = () => {
@@ -336,6 +339,9 @@ export interface GlassMenuPopupProps extends Omit<ComponentPropsWithRef<"div">, 
 
 /** A `render` element's props, whatever its component. */
 const propsOf = (element: ReactElement) => element.props as Record<string, unknown>;
+/** The ref of the element given as `render`, kept alongside the component's own. */
+const refOf = <T,>(render: ReactElement | undefined): Ref<T> | undefined =>
+  render && isValidElement(render) ? (propsOf(render).ref as Ref<T> | undefined) : undefined;
 const asAny = (element: ReactElement) => element as ReactElement<Record<string, unknown>>;
 
 const itemSelector = "[data-lg-menu-item]:not([aria-disabled=true])";
@@ -1164,7 +1170,7 @@ export function GlassMenuItem({
 }: GlassMenuItemProps) {
   const menu = useMenu("GlassMenuItem");
   const row = useRef<HTMLElement | null>(null);
-  const mergedRef = useMergedRef<HTMLElement>(row, ref);
+  const mergedRef = useMergedRef<HTMLElement>(row, ref, refOf(render));
   const choose = () => {
     if (disabled) return;
     const event = new Event("select", { cancelable: true });
