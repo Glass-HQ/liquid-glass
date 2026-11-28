@@ -16,6 +16,25 @@ import { snapshot } from "./snapshot";
 const readable = new Map<string, boolean>();
 let probeContext: OffscreenCanvasRenderingContext2D | null | undefined;
 
+/**
+ * Whether a source's pixels can be read: a one-pixel readback. Drawing something unreadable into
+ * the probe taints it for good, and every readback from it would fail after that, so a failed
+ * probe is thrown away and the next check starts on a fresh one.
+ */
+function pixelsReadable(source: CanvasImageSource): boolean {
+  probeContext ??= new OffscreenCanvas(1, 1).getContext("2d", { willReadFrequently: true });
+  if (!probeContext) return false;
+  try {
+    probeContext.clearRect(0, 0, 1, 1);
+    probeContext.drawImage(source, 0, 0, 1, 1, 0, 0, 1, 1);
+    probeContext.getImageData(0, 0, 1, 1);
+    return true;
+  } catch {
+    probeContext = undefined;
+    return false;
+  }
+}
+
 const sameOrigin = (src: string): boolean => {
   if (src.startsWith("data:") || src.startsWith("blob:")) return true;
   try {
@@ -33,18 +52,7 @@ export function imageReadable(image: HTMLImageElement, src: string): boolean {
   if (sameOrigin(src) && !inlineSvg(src)) return true;
   const known = readable.get(src);
   if (known !== undefined) return known;
-  probeContext ??= new OffscreenCanvas(1, 1).getContext("2d", { willReadFrequently: true });
-  let ok = false;
-  if (probeContext) {
-    try {
-      probeContext.clearRect(0, 0, 1, 1);
-      probeContext.drawImage(image, 0, 0, 1, 1, 0, 0, 1, 1);
-      probeContext.getImageData(0, 0, 1, 1);
-      ok = true;
-    } catch {
-      ok = false;
-    }
-  }
+  const ok = pixelsReadable(image);
   if (readable.size > 2048) readable.clear();
   readable.set(src, ok);
   return ok;
@@ -69,20 +77,6 @@ const taintedCanvases = new WeakSet<HTMLCanvasElement>();
  */
 export function canvasReadable(canvas: HTMLCanvasElement): boolean {
   return !taintedCanvases.has(canvas);
-}
-
-/** Whether a bitmap's pixels can be read, so the worker can take it: a one-pixel readback. */
-function bitmapReadable(bitmap: ImageBitmap): boolean {
-  probeContext ??= new OffscreenCanvas(1, 1).getContext("2d", { willReadFrequently: true });
-  if (!probeContext) return false;
-  try {
-    probeContext.clearRect(0, 0, 1, 1);
-    probeContext.drawImage(bitmap, 0, 0, 1, 1, 0, 0, 1, 1);
-    probeContext.getImageData(0, 0, 1, 1);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export interface Placement {
@@ -221,7 +215,7 @@ export async function bitmapOf(
       premultiplyAlpha: "premultiply",
     });
     // A canvas or video can hold pixels from another origin: such a bitmap can't go to the worker.
-    if (source instanceof HTMLImageElement || bitmapReadable(bitmap)) return bitmap;
+    if (source instanceof HTMLImageElement || pixelsReadable(bitmap)) return bitmap;
     bitmap.close();
     if (source instanceof HTMLCanvasElement) taintedCanvases.add(source);
     return null;
@@ -233,7 +227,7 @@ export async function bitmapOf(
       if (!context) return null;
       context.drawImage(source, 0, 0, width, height);
       const bitmap = snapshot(canvas);
-      if (bitmapReadable(bitmap)) return bitmap;
+      if (pixelsReadable(bitmap)) return bitmap;
       bitmap.close();
       return null;
     } catch {
