@@ -3,8 +3,10 @@
  * `object-position` place them, and turning them into bitmaps at the size they are shown.
  *
  * A cross-origin image without CORS taints any canvas it touches, and the worker cannot upload a
- * tainted bitmap, so those are never sent. Same-origin, `data:` and `blob:` sources are readable;
- * anything else is probed once by drawing one pixel and reading it back.
+ * tainted bitmap, so those are never sent. Same-origin, `data:` and `blob:` sources are readable,
+ * except an SVG, which the browser marks unreadable when it holds a `foreignObject` (HTML drawn as
+ * an image), whatever its origin; it and anything else are probed once by drawing one pixel and
+ * reading it back.
  */
 
 import type { Rect } from "../protocol";
@@ -23,9 +25,12 @@ const sameOrigin = (src: string): boolean => {
   }
 };
 
+/** An SVG given inline, which may hold a `foreignObject` and so taint what it's drawn into. */
+const inlineSvg = (src: string): boolean => /^data:image\/svg\+xml[;,]/i.test(src);
+
 /** Whether a loaded image's pixels can be read (and so sent to the worker). */
 export function imageReadable(image: HTMLImageElement, src: string): boolean {
-  if (sameOrigin(src)) return true;
+  if (sameOrigin(src) && !inlineSvg(src)) return true;
   const known = readable.get(src);
   if (known !== undefined) return known;
   probeContext ??= new OffscreenCanvas(1, 1).getContext("2d", { willReadFrequently: true });
@@ -53,31 +58,31 @@ export function videoReadable(video: HTMLVideoElement): boolean {
   return sameOrigin(src) || video.crossOrigin !== null;
 }
 
-const canvasChecks = new WeakMap<HTMLCanvasElement, number>();
-/** A readable canvas is probed again after this long; a tainted one stays tainted. */
-const CANVAS_RECHECK_MS = 2000;
+/** Canvases whose snapshot couldn't be read: tainting is permanent, so they're never sent again. */
+const taintedCanvases = new WeakSet<HTMLCanvasElement>();
 
 /**
- * Whether a canvas can be read. A 2D canvas is probed with a one-pixel read, which costs a GPU
- * readback, so the answer is remembered: tainting is permanent, and a clean canvas is checked
- * again only every couple of seconds. WebGL canvases refuse tainted sources themselves.
+ * Whether a canvas can be read. It's never asked for a context to find out: asking a canvas that
+ * has none yet claims it, for 2D, and a WebGPU or WebGL renderer starting on it a moment later is
+ * left without one. Its snapshot is checked instead (`bitmapOf`), and one that couldn't be read
+ * is remembered here.
  */
 export function canvasReadable(canvas: HTMLCanvasElement): boolean {
-  const checked = canvasChecks.get(canvas);
-  if (checked === -1) return false;
-  const now = performance.now();
-  if (checked !== undefined && now - checked < CANVAS_RECHECK_MS) return true;
-  let ok = true;
+  return !taintedCanvases.has(canvas);
+}
+
+/** Whether a bitmap's pixels can be read, so the worker can take it: a one-pixel readback. */
+function bitmapReadable(bitmap: ImageBitmap): boolean {
+  probeContext ??= new OffscreenCanvas(1, 1).getContext("2d", { willReadFrequently: true });
+  if (!probeContext) return false;
   try {
-    // getContext returns the existing context of the same type, or null for another type.
-    const context = canvas.getContext("2d");
-    if (context && canvas.width > 0 && canvas.height > 0) context.getImageData(0, 0, 1, 1);
-  } catch (error) {
-    // A canvas handed to a worker throws InvalidStateError: its frames come from the worker.
-    ok = !(error instanceof DOMException && error.name === "SecurityError");
+    probeContext.clearRect(0, 0, 1, 1);
+    probeContext.drawImage(bitmap, 0, 0, 1, 1, 0, 0, 1, 1);
+    probeContext.getImageData(0, 0, 1, 1);
+    return true;
+  } catch {
+    return false;
   }
-  canvasChecks.set(canvas, ok ? now : -1);
-  return ok;
 }
 
 export interface Placement {
@@ -209,12 +214,17 @@ export async function bitmapOf(
   height: number,
 ): Promise<ImageBitmap | null> {
   try {
-    return await createImageBitmap(source, {
+    const bitmap = await createImageBitmap(source, {
       resizeWidth: width,
       resizeHeight: height,
       resizeQuality: "high",
       premultiplyAlpha: "premultiply",
     });
+    // A canvas or video can hold pixels from another origin: such a bitmap can't go to the worker.
+    if (source instanceof HTMLImageElement || bitmapReadable(bitmap)) return bitmap;
+    bitmap.close();
+    if (source instanceof HTMLCanvasElement) taintedCanvases.add(source);
+    return null;
   } catch {
     // Some engines refuse SVG images here; drawing them through a canvas works everywhere.
     try {
@@ -222,7 +232,10 @@ export async function bitmapOf(
       const context = canvas.getContext("2d");
       if (!context) return null;
       context.drawImage(source, 0, 0, width, height);
-      return snapshot(canvas);
+      const bitmap = snapshot(canvas);
+      if (bitmapReadable(bitmap)) return bitmap;
+      bitmap.close();
+      return null;
     } catch {
       return null;
     }
@@ -261,7 +274,8 @@ export function loadImage(
     image.src = url;
     image.decode().then(
       () => {
-        created.state = "ready";
+        // Decoded but unreadable (an SVG holding HTML): drawn as a placeholder, like a failure.
+        created.state = imageReadable(image, url) ? "ready" : "failed";
         for (const waiting of created.waiting) onLoad(waiting);
         created.waiting.clear();
       },
