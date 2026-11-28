@@ -1,6 +1,6 @@
 {
   "name": "@glass-sdk/liquid-glass",
-  "version": "0.0.3-beta.10",
+  "version": "0.0.3-beta.11",
   "description": "Liquid Glass for the web: one WebGL2 renderer in a worker, identical in every browser, up to 120 Hz.",
   "keywords": [
     "electron",
